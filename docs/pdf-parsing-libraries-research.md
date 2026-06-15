@@ -71,6 +71,7 @@
 - **호스팅**: 셀프호스트(`pip install marker-pdf`) + Datalab 매니지드 API(고정밀 모델 "Chandra" 별도).
 
 ### 2.2 PaddleOCR-VL (Baidu)
+> 참고: PaddleOCR 계열은 접근 방식이 다른 두 줄기가 있습니다 — 파이프라인형 **PP-StructureV3**(3.2절)와 단일 VLM형 **PaddleOCR-VL**(본 절). 같은 Baidu 팀의 별개 제품입니다.
 - **성격**: 진짜 단일 **VLM**(경량 2단계 파이프라인). NaViT식 동적해상도 비전 인코더 + **ERNIE-4.5-0.3B** LLM = **~0.9B**.
 - **버전**: 0.9B(2025-10), 1.5(2026-01), 1.6.
 - **라이선스**: **Apache-2.0**(코드 확인; 가중치도 Apache로 보고되나 HF 카드 직접 확인 권장).
@@ -155,6 +156,7 @@
 - **출력**: element 객체 → JSON. ★ ~15k.
 
 ### 3.2 PaddleOCR / PP-StructureV3 (Baidu)
+> 참고: PaddleOCR 계열은 두 줄기 — 본 절의 파이프라인형 **PP-StructureV3**와, 단일 VLM형 **PaddleOCR-VL**(2.2절). 같은 Baidu 팀의 별개 제품입니다.
 - **라이선스**: **Apache-2.0(클린)**. 버전 3.7.0(2026-06, PP-OCRv6).
 - **기능**: 레이아웃(PP-DocLayout)·OCR(100+ 언어)·표(PP-TableMagic)·**수식(PP-FormulaNet)**·**차트(PP-Chart2Table)**·인장·읽기순서 — 모두 1급 기능. 출력 Markdown/JSON(+DOCX).
 - **벤치**: 영문 edit distance 0.145로 MinerU 등 상회 주장(*벤더 보고*). ★ ~82k(본 조사 최다).
