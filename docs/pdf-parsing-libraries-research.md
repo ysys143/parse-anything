@@ -304,3 +304,75 @@
 - OmniDocBench: https://github.com/opendatalab/OmniDocBench · https://arxiv.org/abs/2412.07626
 - olmOCR-Bench: https://github.com/allenai/olmocr · https://huggingface.co/datasets/allenai/olmOCR-bench
 - ParseBench: https://github.com/run-llama/ParseBench · https://www.llamaindex.ai/blog/parsebench
+
+---
+
+# 부록 A. 실측 비교 (직접 설치·실행)
+
+> 환경: `/tmp/pdfcmp` venv — `markitdown[pdf]`, `pymupdf`, `pymupdf4llm`, `opendataloader-pdf`(Java 21), `pdf-inspector`(Rust 휠) 설치.
+> 테스트 문서: py-pdf/sample-files의 **GeoTopo.pdf**(117쪽 LaTeX 수학 교재)의 20–27쪽(8쪽) 슬라이스. (arXiv는 403 차단으로 GitHub 샘플 사용.)
+
+## A.1 결과 (동일 8쪽)
+
+| 도구 | 출력 글자수 | 제목 | 표 | 핵심 거동 |
+|---|---|---|---|---|
+| **MarkItDown** | 21,988 | **0** | **가짜 표 대량생성**(파이프 167줄, 빈 셀+`(cid:)` 글리프) | 수식/다단을 표로 오탐해 본문 파괴 |
+| **PyMuPDF** (plain) | 8,602 | 0 | 없음 | 구조 없음, 본문은 깨지지 않은 선형 텍스트 |
+| **PyMuPDF4LLM** | 11,814 | **28** | 0(평탄화) | `##`/굵게 제목, 읽기순서 보존, 수식 italic, 그림 표기 — **가독성 최상** |
+| **OpenDataLoader**(로컬) | (JSON) | 14 | **실제 2개**(셀 구조+좌표) | 의미 분류: para 73·list 22·list item 43·image 8·caption 2; **요소 97%에 bbox + 171개 PDF/UA 태그** |
+| **pdf-inspector** | 8,580 | 12 | 12(절제) | `text_based conf 1.0, OCR 0쪽` 정확 분류; 수학 글리프는 깨짐(인코딩 폴백 신호) |
+
+## A.2 해석
+- **MarkItDown이 최하**: 기하 휴리스틱이 수식/다단을 표로 **오탐**해 본문을 격자로 산산조각(167 파이프). 사용자의 "형편없다"는 관찰이 그대로 재현됨.
+- **PyMuPDF4LLM이 가독성 최상**: 폰트 크기 기반 제목 + 읽기순서 보존. born-digital PDF의 텍스트 품질에선 가장 깔끔.
+- **ODL은 구조/메타데이터 압도**: bbox·타입·PDF/UA 태그·셀 단위 표. 단 마크다운 직렬화 자체는 거칠다(ODL의 가치는 MD가 아니라 JSON).
+- **pdf-inspector는 라우팅 게이트로 정확**: text/scanned 분류 + 페이지별 OCR 필요 판정이 핵심 가치.
+
+# 부록 B. MarkItDown이 약한 이유 (코드 분석)
+
+대상: `microsoft/markitdown@e144e0a`, `converters/_pdf_converter.py` + `pyproject.toml`. **PDF 의존성 = pdfminer.six, pdfplumber 단 2개**(OCR·레이아웃·ML 전무).
+1. **레이아웃 모델 부재** → 단어 x/y 좌표 기하 휴리스틱(`_extract_form_content_from_words`)만으로 표를 추정 → 수식·다단에서 **가짜 표 폭주**.
+2. **OCR 없음** → 스캔/이미지 PDF는 빈 출력(`extract_text`는 텍스트 레이어만).
+3. **폼 미검출 시 전체를 평문 재추출**(`convert()` L570) + 광범위 `except`(L576) → 흔한 산문/논문은 그냥 pdfminer 평문으로 추락.
+4. **폰트 크기 무시** → 제목 0개(Markdown인데 `#` 없음).
+5. **`(cid:NN)` 글리프 노출** → pdfminer 폰트 매핑 실패가 그대로 출력.
+> 설계 철학: MarkItDown은 "수십 종 포맷 → LLM용 텍스트"의 **넓이 우선** 도구. PDF는 경량 변환기 하나일 뿐. 깊이는 ODL/PyMuPDF 영역.
+
+# 부록 C. firecrawl/pdf-inspector 검토
+
+- **정체**: OCR/ML 없이 PDF를 **text/scanned/image/mixed로 분류·라우팅**하는 **Rust 라이브러리(MIT)**, 단일 의존성 `lopdf`. Python·Node 바인딩.
+- **핵심 = 라우터 게이트**: `classify_pdf` → 타입 + confidence + **`pages_needing_ocr`(페이지별 OCR 필요 목록)**. content stream의 `Tj/TJ`·`Do` 연산자 유무를 ms 단위로 샘플링. + 인코딩 깨짐 감지 시 OCR 폴백 신호.
+- **추출도 제공**: 폰트 크기 기반 H1~H4, 리스트, 표(드로잉+정렬 이중검출), 다단 읽기순서, CID/ToUnicode, 하이픈 재결합 등.
+- **ODL을 명시적으로 차용**: 코드 주석에 *"XY-Cut++ inspired by opendataloader"*, *"font rarity ... inspired by opendataloader"*; **opendataloader-bench**로 자체 평가하고 *"제목 검출은 opendataloader에 뒤진다"*고 인정.
+- **벤치(README, opendataloader-bench 200개, 직접추출 엔진만)**: opendataloader 0.84 / pdf-inspector 0.78(표 0.59 최강·속도 4s 최고) / pymupdf4llm 0.73 / **markitdown 0.58(표·제목 0.00)**. OCR/ML 엔진은 0.83–0.88이나 2–180분.
+- **포지션**: 파이프라인 1차 게이트로 적합. AGPL인 PyMuPDF4LLM의 **MIT 대안**으로도 유효. ODL과는 경쟁이 아니라 **같은 결정론·게이팅 철학의 다른 구현**(Rust/MIT vs Java/Apache).
+
+# 부록 D. OpenDataLoader 내부 아키텍처 (JAR 디컴파일 분석)
+
+## D.1 스택
+**veraPDF(Java) → ODL 코어(Java JAR) → Python/Node 래퍼 → (하이브리드 시) Python FastAPI 백엔드가 Docling/OCR 실행.**
+- **veraPDF**: OPF + PDF Association + **Dual Lab**(=ODL 공동개발사)이 만든 PDF/A·PDF/UA 표준 검증기. 100% Java(바이트코드 Java 8 타깃). 라이선스 GPLv3+/MPLv2.
+- ODL JAR은 veraPDF의 **파서·객체모델 + `wcag.algorithms`(콘텐츠 청크·의미구조·표 테두리)**를 번들로 품음.
+
+## D.2 결정론 파싱: 무엇이 veraPDF이고 무엇이 ODL인가
+| 기능 | 출처 |
+|---|---|
+| PDF 파싱·객체모델, 콘텐츠 청크(Text/Line/Image), 의미구조(Heading/List/Table/Figure), 표 테두리/셀 | **veraPDF** |
+| **읽기순서 (XY-Cut++ `XYCutPlusPlusSorter`)** | **ODL 자체** (veraPDF엔 reading-order 없음) |
+| **triage(AI 필요여부 판단)**, 태그드 PDF 생성, JSON/MD/HTML 직렬화, 백엔드 클라이언트 | **ODL 자체** |
+> 즉 "결정론 파싱 = veraPDF 기반"은 대체로 맞되 **읽기순서는 ODL 자체**. triage는 veraPDF *데이터*를 소비할 뿐 veraPDF *기능*이 아님.
+
+## D.3 triage 알고리즘 (`hybrid/TriageProcessor`)
+- veraPDF `IObject` 위에서 동작하는 **룰 기반 다신호 표/복잡도 검출기**(ML 아님). 결정 = **`JAVA`(로컬) vs `BACKEND`(AI)**.
+- 신호 3축: ① 벡터 표(수평/수직선·격자·행 구분선·정렬 짧은 선) ② 텍스트 표(정렬 패턴·연속 streak·patternDensity) ③ 큰 이미지(면적·종횡비). 임계값 예: lineRatio 0.3, gridGap 3.0, 이미지비 0.8–0.95, 종횡비 2.0, patternCount 10.
+- **두 개의 게이트**: (1) triage(복잡도 → 백엔드) + (2) `ocr-strategy=auto`(텍스트 우선, 없으면 OCR fallback). pdf-inspector의 게이트는 (2)에 해당, ODL은 (1) "구조적 복잡성" 축이 추가로 더 정교.
+
+## D.4 AI(하이브리드) 백엔드 모델
+- **`docling-fast`(오픈·기본)**: **Docling** DocumentConverter 호출 → 내부 모델 = **레이아웃(DocLayNet/RT-DETR) + TableFormer(ACCURATE) + OCR(EasyOCR기본/Tesseract/RapidOCR) + 수식 enrichment + 그림설명 VLM = SmolVLM-256M**.
+- **`hancom-ai`(유료/자체호스팅)**: 한컴 자체 AI 모듈(OCR `/hocr/sdk` · 표구조 TSR · 그림 캡션). 구체 모델명 비공개.
+- ODL은 자체 모델을 학습/내장하지 않고 **오케스트레이션**만 함.
+
+## D.5 백엔드 교체 가능성 (MinerU/Paddle 대체?)
+- **Docling 강결합 아님**: `HybridClient` + `HybridSchemaTransformer` 인터페이스 + `HybridClientFactory`로 멀티백엔드 설계. 빌트인 백엔드 enum = `docling-fast, hancom, hancom-ai` + **Azure/Google 스텁**("not yet implemented"). **MinerU/Paddle는 없음.**
+- 추가하려면: ① Java로 `HybridClient`+`SchemaTransformer` 구현 후 팩토리 등록, 또는 ② **DoclingDocument JSON을 흉내 내는 어댑터 서버**를 만들어 `--hybrid=docling-fast --hybrid-url=<어댑터>`로 우회.
+- **진짜 결합점은 Docling이 아니라 veraPDF `IObject` 스키마로의 변환**(모든 백엔드 출력이 이 스키마로 정규화돼야 ODL 파이프라인에 합류).
