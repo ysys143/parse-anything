@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "entries": {
+    "97ef9a9dc83aa9d924204d62f1efdb250d35f1cdae72acfbdf258d682d64612a": {
+      "last_emitted_at_ms": 1782102727113,
+      "message": "Spawning agent: oracle (inherit) | Task: Verify draft accuracy"
+    },
+    "466399dafa2d20f60587180bad0a07358eb7f2bce724df0ff682f038ad33f5ad": {
+      "last_emitted_at_ms": 1782102652830,
+      "message": "Read multiple files in parallel when possible for faster analysis."
+    },
+    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
+      "last_emitted_at_ms": 1782102642687,
+      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    }
+  },
+  "updated_at": "2026-06-22T04:32:07.113Z"
+}
