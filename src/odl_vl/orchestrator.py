@@ -139,7 +139,7 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         page_id=page.page_id,
         page_index=page.page_index,
         fixture_family=page.fixture_family,
-        provider=actual_provider if actual_provider is not None else _UNKNOWN_PROVIDER,
+        provider=provider_label,
         route_reason=route_reason,
         fallback=fallback_used,
         status=status,
