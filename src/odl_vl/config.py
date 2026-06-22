@@ -87,9 +87,10 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
 
 
 def _strip_inline_comment(value: str) -> str:
-    # Drop an unquoted trailing comment introduced by whitespace + '#'.
+    # Drop an unquoted trailing comment introduced by whitespace + '#'. A leading
+    # '#' (index 0) is part of the value, not a comment, so it is preserved.
     for index, char in enumerate(value):
-        if char == "#" and (index == 0 or value[index - 1].isspace()):
+        if char == "#" and index > 0 and value[index - 1].isspace():
             return value[:index].rstrip()
     return value
 

@@ -131,7 +131,9 @@ class SafeTransport:
             except OSError:
                 body = b""
             return HttpResponse(status_code=error.code, body=body)
-        except urllib.error.URLError:
+        except (urllib.error.URLError, TimeoutError):
+            # TimeoutError (socket.timeout) is not a URLError subclass, so it must be
+            # caught explicitly or a read timeout would escape the wrapper.
             return HttpResponse(status_code=0, body=b"")
 
 

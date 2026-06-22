@@ -139,3 +139,15 @@ def test_load_settings_keeps_hash_inside_quoted_value(tmp_path):
 
     # Then
     assert settings.gemini_api_key == "abc#123placeholder"
+
+
+def test_load_settings_keeps_unquoted_value_starting_with_hash(tmp_path):
+    # Given an unquoted value that legitimately starts with '#' (not a comment).
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=#abc123placeholder\n", encoding="utf-8")
+
+    # When
+    settings = load_settings(env_file=env_file, environ={})
+
+    # Then: a leading '#' is part of the value, not an inline comment.
+    assert settings.gemini_api_key == "#abc123placeholder"

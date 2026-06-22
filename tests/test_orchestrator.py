@@ -6,7 +6,7 @@ from itertools import count
 
 import pytest
 
-from odl_vl.ir import NormalizedPage, ProviderName
+from odl_vl.ir import NormalizedPage
 from odl_vl.normalizers import normalize_gemini, normalize_paddle
 from odl_vl.orchestrator import OrchestratorConfig, orchestrate_document
 from odl_vl.orchestrator_input import parse_document_input
@@ -121,33 +121,11 @@ def test_hybrid_paddle_failure_does_not_fall_back_to_text_only_gemini(tmp_path):
     # When
     results = orchestrate_document(document, config)
 
-    # Then
+    # Then: no cross-provider fallback is performed this slice.
     assert results[0].status == "failed"
     assert str(results[0].provider) == "paddle"
     assert results[0].fallback is False
     assert results[0].error == "paddle_poll_timeout"
-
-
-def test_run_with_fallback_recovers_failed_gemini_via_paddle():
-    # Given a fallback-eligible Gemini route (decision built directly) whose gemini fails.
-    from odl_vl.orchestrator import _run_with_fallback
-    from odl_vl.router import RouteDecision
-
-    decision = RouteDecision(ProviderName.GEMINI, "test", fallback=True)
-    config = OrchestratorConfig(
-        family_metadata=_FAMILY_METADATA,
-        paddle_provider=_fake_paddle,
-        gemini_provider=lambda page, _d: (_ for _ in ()).throw(RuntimeError("gemini_http_429")),
-    )
-    page = parse_document_input({"document_id": "d", "pages": [_page("p", 0, "chart_like_page")]}).pages[0]
-
-    # When: gemini fails, paddle (which fetches the image) recovers it.
-    normalized, provider, used = _run_with_fallback(page, decision, config)
-
-    # Then
-    assert provider is ProviderName.PADDLE
-    assert used is True
-    assert normalized.markdown == "paddle:p"
 
 
 def test_provider_failure_becomes_failed_page(tmp_path):

@@ -45,6 +45,21 @@ def test_safe_transport_preserves_http_error_status_and_body():
     assert b"quota exceeded" in response.body
 
 
+def test_safe_transport_catches_read_timeout():
+    # Given an inner transport that raises TimeoutError (socket read timeout), which
+    # is NOT a urllib.error.URLError subclass.
+    @dataclass(slots=True)
+    class _TimingOutTransport:
+        def send(self, request: HttpRequest) -> HttpResponse:
+            raise TimeoutError("timed out")
+
+    transport = SafeTransport(_TimingOutTransport())
+    request = HttpRequest(method="GET", url="https://provider.example/jobs", headers={})
+
+    # When / Then: a timeout is turned into status 0 instead of escaping the wrapper.
+    assert transport.send(request).status_code == 0
+
+
 def test_build_gemini_generate_content_request_uses_safe_default_model():
     # Given
     secret = "fake-gemini-secret-123"

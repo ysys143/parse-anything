@@ -23,13 +23,6 @@ Clock = Callable[[], float]
 _UNKNOWN_PROVIDER = "unknown"
 
 
-class _FallbackExhausted(RuntimeError):
-    """Raised when a fallback-eligible route's primary and alternate both fail.
-
-    Lets the page record that a fallback was actually attempted even though it failed.
-    """
-
-
 _MODEL_ALIASES: Mapping[ProviderName, str] = {
     ProviderName.DETERMINISTIC: "deterministic",
     ProviderName.PADDLE: DEFAULT_PADDLE_MODEL,
@@ -99,21 +92,18 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
     family_meta = config.family_metadata.get(page.fixture_family, {})
     decision: RouteDecision | None = None
     actual_provider: ProviderName | None = None
-    fallback_used = False
     start = config.clock()
     try:
         # Routing is inside the try so a malformed manifest family fails only this
         # page instead of aborting the whole run.
         decision = choose_route(page.routing_task(), family_meta)
-        actual_provider = decision.provider  # default if the call below raises
-        normalized, actual_provider, fallback_used = _run_with_fallback(page, decision, config)
+        actual_provider = decision.provider
+        normalized = _run_provider(decision.provider, page, decision, config)
         status = "ok"
         error: str | None = None
     except Exception as exc:  # routing or provider failure becomes a failed page result
         normalized = None
         status = "failed"
-        # A fallback that was attempted but also failed is still a fallback.
-        fallback_used = isinstance(exc, _FallbackExhausted)
         # Keep the provider's specific message (e.g. "gemini_http_429"); fall back
         # to the class name for exceptions with no message.
         error = str(exc) or type(exc).__name__
@@ -133,7 +123,9 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         route_reason=route_reason,
         latency_ms=latency_ms,
         status=status,
-        fallback=fallback_used,
+        # Cross-provider fallback is deferred (Gemini has no image input this slice),
+        # so no fallback is ever performed.
+        fallback=False,
         cost_estimate_usd=None,
         metadata=_ledger_metadata(page, normalized),
     )
@@ -153,50 +145,14 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         fixture_family=page.fixture_family,
         provider=provider_label,
         route_reason=route_reason,
-        fallback=fallback_used,
+        fallback=False,
         status=status,
         normalized=normalized,
         error=error,
     )
 
 
-def _run_with_fallback(
-    page: PageInput, decision: RouteDecision, config: OrchestratorConfig
-) -> tuple[NormalizedPage, ProviderName, bool]:
-    """Run the routed provider; on failure, try the alternate provider when the route allows it.
-
-    Returns (normalized page, provider that actually produced it, whether fallback was used).
-    """
-    try:
-        return _call_provider(decision.provider, page, decision, config), decision.provider, False
-    except Exception as primary_exc:
-        alternate = _fallback_provider(decision.provider) if decision.fallback else None
-        if alternate is None:
-            raise
-        # Primary failed but the hybrid route allows a second provider.
-        try:
-            return _call_provider(alternate, page, decision, config), alternate, True
-        except Exception as fallback_exc:
-            # Preserve both failures (and the fact a fallback was attempted).
-            raise _FallbackExhausted(
-                f"{decision.provider}:{primary_exc} | fallback {alternate}:{fallback_exc}"
-            ) from fallback_exc
-
-
-def _fallback_provider(primary: ProviderName) -> ProviderName | None:
-    match primary:
-        case ProviderName.GEMINI:
-            # Paddle fetches the page image URL, so it can recover a failed VLM page.
-            return ProviderName.PADDLE
-        case ProviderName.PADDLE:
-            # Gemini is text-only in this slice (no image input), so it cannot recover
-            # a failed OCR page; do not fall back to a blind transcription.
-            return None
-        case ProviderName.DETERMINISTIC:
-            return None
-
-
-def _call_provider(
+def _run_provider(
     provider: ProviderName, page: PageInput, decision: RouteDecision, config: OrchestratorConfig
 ) -> NormalizedPage:
     match provider:

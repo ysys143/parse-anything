@@ -135,7 +135,8 @@ def _build_providers(args: ParsedArgs, runtime: Runtime) -> tuple[ProviderCallab
         return _offline_paddle, _offline_gemini
     # Resolve .env from the repo root so live config does not depend on the CWD.
     settings = load_settings(env_file=_REPO_ROOT / ".env", environ=runtime.environ)
-    live = LiveProviders(settings=settings, runtime=runtime, args=args)
+    # Build the HTTP client once (stateless SafeTransport wrapper) and reuse it.
+    live = LiveProviders(settings=settings, runtime=runtime, args=args, client=safe_client(runtime))
     return live.paddle, live.gemini
 
 
@@ -165,12 +166,9 @@ class LiveProviders:
     settings: Settings
     runtime: Runtime
     args: ParsedArgs
-
-    @property
-    def _client(self) -> ProviderHttpClient:
-        # Wrap so live HTTP/URL errors become status codes and surface as
-        # gemini_http_<code>/paddle_*_<code> rather than opaque URLError.
-        return safe_client(self.runtime)
+    # Client wraps SafeTransport so live HTTP/URL errors become status codes and
+    # surface as gemini_http_<code>/paddle_*_<code> rather than opaque URLError.
+    client: ProviderHttpClient
 
     def gemini(self, page: PageInput, _decision: RouteDecision) -> NormalizedPage:
         if self.settings.gemini_api_key is None:
@@ -179,7 +177,7 @@ class LiveProviders:
         request = build_gemini_generate_content_request(
             GeminiGenerateContentRequest(api_key=self.settings.gemini_api_key, prompt=prompt)
         )
-        response = self._client.send(request)
+        response = self.client.send(request)
         if not is_success_status(response.status_code):
             raise RuntimeError(f"gemini_http_{response.status_code}")
         text = extract_gemini_text(try_decode_json(response.body))
@@ -195,7 +193,7 @@ class LiveProviders:
         api_key = self.settings.paddle_api_key
         base_url = self.settings.paddle_base_url
         model = self.settings.paddle_model or DEFAULT_PADDLE_MODEL
-        submit = self._client.send(
+        submit = self.client.send(
             build_paddle_submit_request(
                 PaddleSubmitRequest(
                     api_key=api_key,
@@ -221,7 +219,7 @@ class LiveProviders:
         json_url = find_result_json_url(completion)
         if json_url is None:
             raise RuntimeError("paddle_result_url_missing")
-        response = self._client.send(HttpRequest(method="GET", url=json_url, headers={}))
+        response = self.client.send(HttpRequest(method="GET", url=json_url, headers={}))
         if not is_success_status(response.status_code):
             raise RuntimeError(f"paddle_result_{response.status_code}")
         result = try_decode_json(response.body)
@@ -233,7 +231,7 @@ class LiveProviders:
 
     def _poll_paddle(self, api_key: str, base_url: str, job_id: str) -> object:
         outcome = poll_job(
-            client=self._client,
+            client=self.client,
             build_request=lambda: build_paddle_poll_request(
                 PaddlePollRequest(api_key=api_key, base_url=base_url, job_id=job_id)
             ),

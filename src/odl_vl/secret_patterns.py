@@ -21,21 +21,21 @@ SECRET_KEY_NAME_RE: Final = re.compile(
     r"(api[_-]?key|token|secret|signature|authorization|credential|password)", re.IGNORECASE
 )
 
-# Query parameters that mark a URL as a signed/pre-authenticated URL.
-SIGNED_URL_QUERY_RE: Final = re.compile(
-    r"(x-amz-signature|x-goog-signature|x-goog-credential|signature|sig|sas|"
-    r"token|access[_-]?token|expires|credential|auth)=",
-    re.IGNORECASE,
+# Single source for the signing/auth query-parameter names, shared by both the
+# "is this a signed URL" detector and the value redactor so they cannot diverge.
+_SIGNED_URL_PARAM_NAMES: Final = (
+    r"x-amz-signature|x-goog-signature|x-goog-credential|signature|sig|sas|"
+    r"token|access[_-]?token|expires|credential|auth"
 )
+
+# Query parameters that mark a URL as a signed/pre-authenticated URL.
+SIGNED_URL_QUERY_RE: Final = re.compile(rf"({_SIGNED_URL_PARAM_NAMES})=", re.IGNORECASE)
 
 # Credentials embedded in a URL authority (the user:pass that precedes the @ host).
 URL_USERINFO_RE: Final = re.compile(r"([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s:@]+@", re.IGNORECASE)
 
 # A signing/auth query parameter together with its value, e.g. "X-Goog-Signature=abc".
-SIGNED_URL_PARAM_VALUE_RE: Final = re.compile(
-    r"(?i)\b(x-amz-signature|x-goog-signature|x-goog-credential|signature|sig|sas|"
-    r"token|access[_-]?token|expires|credential|auth)=([^&\s\"']+)"
-)
+SIGNED_URL_PARAM_VALUE_RE: Final = re.compile(rf"(?i)\b({_SIGNED_URL_PARAM_NAMES})=([^&\s\"']+)")
 
 
 def _redact_urls(value: str) -> str:
