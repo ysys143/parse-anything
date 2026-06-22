@@ -90,12 +90,15 @@ def orchestrate_document(document: DocumentInput, config: OrchestratorConfig) ->
 def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: threading.Lock) -> PageResult:
     family_meta = config.family_metadata.get(page.fixture_family, {})
     decision: RouteDecision | None = None
+    actual_provider: ProviderName | None = None
+    fallback_used = False
     start = config.clock()
     try:
         # Routing is inside the try so a malformed manifest family fails only this
         # page instead of aborting the whole run.
         decision = choose_route(page.routing_task(), family_meta)
-        normalized = _run_provider(page, decision, config)
+        actual_provider = decision.provider  # default if the call below raises
+        normalized, actual_provider, fallback_used = _run_with_fallback(page, decision, config)
         status = "ok"
         error: str | None = None
     except Exception as exc:  # routing or provider failure becomes a failed page result
@@ -106,12 +109,11 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         error = str(exc) or type(exc).__name__
     latency_ms = max(0.0, (config.clock() - start) * 1000.0)
 
-    provider_label = str(decision.provider) if decision is not None else _UNKNOWN_PROVIDER
+    provider_label = str(actual_provider) if actual_provider is not None else _UNKNOWN_PROVIDER
     route_reason = decision.reason if decision is not None else f"route_error:{error}"
-    fallback = decision.fallback if decision is not None else False
     model_alias = (
-        config.model_aliases.get(decision.provider, provider_label)
-        if decision is not None
+        config.model_aliases.get(actual_provider, provider_label)
+        if actual_provider is not None
         else _UNKNOWN_PROVIDER
     )
 
@@ -121,32 +123,65 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         route_reason=route_reason,
         latency_ms=latency_ms,
         status=status,
-        fallback=fallback,
+        fallback=fallback_used,
         cost_estimate_usd=None,
         metadata=_ledger_metadata(page, normalized),
     )
     if config.ledger_path is not None:
-        with ledger_lock:
-            append_ledger_event(config.ledger_path, event)
+        # A ledger write failure (disk full, read-only dir) must not abort the run.
+        try:
+            with ledger_lock:
+                append_ledger_event(config.ledger_path, event)
+        except OSError:
+            pass
 
     return PageResult(
         page_id=page.page_id,
         page_index=page.page_index,
         fixture_family=page.fixture_family,
-        provider=decision.provider if decision is not None else _UNKNOWN_PROVIDER,
+        provider=actual_provider if actual_provider is not None else _UNKNOWN_PROVIDER,
         route_reason=route_reason,
-        fallback=fallback,
+        fallback=fallback_used,
         status=status,
         normalized=normalized,
         error=error,
     )
 
 
-def _run_provider(page: PageInput, decision: RouteDecision, config: OrchestratorConfig) -> NormalizedPage:
-    match decision.provider:
+def _run_with_fallback(
+    page: PageInput, decision: RouteDecision, config: OrchestratorConfig
+) -> tuple[NormalizedPage, ProviderName, bool]:
+    """Run the routed provider; on failure, try the alternate provider when the route allows it.
+
+    Returns (normalized page, provider that actually produced it, whether fallback was used).
+    """
+    try:
+        return _call_provider(decision.provider, page, decision, config), decision.provider, False
+    except Exception:
+        alternate = _fallback_provider(decision.provider) if decision.fallback else None
+        if alternate is None:
+            raise
+        # Primary failed but the hybrid route allows a second provider.
+        return _call_provider(alternate, page, decision, config), alternate, True
+
+
+def _fallback_provider(primary: ProviderName) -> ProviderName | None:
+    match primary:
+        case ProviderName.PADDLE:
+            return ProviderName.GEMINI
+        case ProviderName.GEMINI:
+            return ProviderName.PADDLE
         case ProviderName.DETERMINISTIC:
-            provider = config.deterministic_provider or _default_deterministic
-            return provider(page, decision)
+            return None
+
+
+def _call_provider(
+    provider: ProviderName, page: PageInput, decision: RouteDecision, config: OrchestratorConfig
+) -> NormalizedPage:
+    match provider:
+        case ProviderName.DETERMINISTIC:
+            run = config.deterministic_provider or _default_deterministic
+            return run(page, decision)
         case ProviderName.PADDLE:
             return config.paddle_provider(page, decision)
         case ProviderName.GEMINI:

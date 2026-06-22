@@ -22,8 +22,13 @@ SECRET_KEY_NAME_RE: Final = re.compile(
 
 # Query parameters that mark a URL as a signed/pre-authenticated URL.
 SIGNED_URL_QUERY_RE: Final = re.compile(
-    r"(x-amz-signature|signature|token|expires|x-goog-signature)", re.IGNORECASE
+    r"(x-amz-signature|x-goog-signature|x-goog-credential|signature|sig|sas|"
+    r"token|access[_-]?token|expires|credential|auth)=",
+    re.IGNORECASE,
 )
+
+# Credentials embedded in a URL authority (the user:pass that precedes the @ host).
+URL_USERINFO_RE: Final = re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s:@]+@", re.IGNORECASE)
 
 
 def redact_secrets(value: str) -> str:

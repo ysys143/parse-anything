@@ -13,7 +13,12 @@ _SRC_ROOT: Final = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from odl_vl.secret_patterns import KNOWN_SECRET_PREFIX_RE, LONG_TOKEN_RE  # noqa: E402
+from odl_vl.secret_patterns import (  # noqa: E402
+    KNOWN_SECRET_PREFIX_RE,
+    LONG_TOKEN_RE,
+    SECRET_KEY_NAME_RE,
+    URL_USERINFO_RE,
+)
 
 
 _GOOGLE_API_KEY_RE: Final = re.compile(r"(?<![A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])")
@@ -114,12 +119,16 @@ def _scan_line(path: Path, line_number: int, line: str) -> list[Finding]:
     checks = (
         ("google_api_key", _GOOGLE_API_KEY_RE),
         ("hf_token", _HF_TOKEN_RE),
-        ("hex_token", _HEX_TOKEN_RE),
         ("known_secret_prefix", KNOWN_SECRET_PREFIX_RE),
+        ("url_credentials", URL_USERINFO_RE),
     )
     for kind, pattern in checks:
         if pattern.search(line):
             findings.append(Finding(path=path, line_number=line_number, kind=kind))
+    # Bare hex runs are only treated as secrets in a secret-ish context, so git
+    # SHAs / SHA-256 checksums / hex UUIDs in prose are not false-flagged.
+    if _HEX_TOKEN_RE.search(line) and SECRET_KEY_NAME_RE.search(line):
+        findings.append(Finding(path=path, line_number=line_number, kind="hex_token"))
     if _has_secret_assignment(line):
         findings.append(Finding(path=path, line_number=line_number, kind="secret_assignment"))
     return findings

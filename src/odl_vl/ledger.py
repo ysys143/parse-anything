@@ -6,7 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from odl_vl.secret_patterns import SECRET_KEY_NAME_RE, SIGNED_URL_QUERY_RE, redact_secrets
+from odl_vl.secret_patterns import (
+    SECRET_KEY_NAME_RE,
+    SIGNED_URL_QUERY_RE,
+    URL_USERINFO_RE,
+    redact_secrets,
+)
 
 
 # Sentinel distinguishing "drop this key" (secret/signed URL) from a legitimate None.
@@ -63,7 +68,7 @@ def _redacted_mapping(values: Mapping[str, Any]) -> dict[str, Any]:
 
 def _redacted_value(value: Any) -> Any:
     if isinstance(value, str):
-        if _is_signed_url(value):
+        if _is_sensitive_url(value):
             return _DROP
         return redact_secrets(value)
     if isinstance(value, Mapping):
@@ -79,7 +84,11 @@ def _is_secret_key(key: str) -> bool:
     return SECRET_KEY_NAME_RE.search(key) is not None
 
 
-def _is_signed_url(value: str) -> bool:
-    if not value.startswith(("http://", "https://")):
+def _is_sensitive_url(value: str) -> bool:
+    if "://" not in value:
         return False
+    # Drop URLs that embed credentials in the authority (user:pass@host) or carry
+    # a signing/auth token in the query, regardless of scheme.
+    if URL_USERINFO_RE.search(value):
+        return True
     return SIGNED_URL_QUERY_RE.search(value) is not None

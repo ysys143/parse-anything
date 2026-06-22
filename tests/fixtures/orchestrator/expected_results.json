@@ -18,7 +18,7 @@
       "fixture_family": "merged_table",
       "provider": "paddle",
       "route_reason": "fixture:merged_table expected hybrid",
-      "fallback": true,
+      "fallback": false,
       "status": "ok",
       "markdown_contains": "paddle offline OCR placeholder"
     },

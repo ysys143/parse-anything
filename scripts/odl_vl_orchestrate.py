@@ -138,7 +138,8 @@ def _load_family_metadata(path: str | Path) -> Mapping[str, Mapping[str, object]
 def _build_providers(args: ParsedArgs, runtime: Runtime) -> tuple[ProviderCallable, ProviderCallable]:
     if args["mode"] == "offline":
         return _offline_paddle, _offline_gemini
-    settings = load_settings(environ=runtime.environ)
+    # Resolve .env from the repo root so live config does not depend on the CWD.
+    settings = load_settings(env_file=_REPO_ROOT / ".env", environ=runtime.environ)
     live = LiveProviders(settings=settings, runtime=runtime, args=args)
     return live.paddle, live.gemini
 
@@ -297,6 +298,10 @@ def _print_summary(
         f"ok={ok} providers={providers}",
         file=stdout,
     )
+    # Surface failed pages so an incomplete run is never silent.
+    for result in results:
+        if result.status != "ok":
+            print(f"failed page={result.page_id} reason={result.error}", file=stdout)
 
 
 # --- helpers ----------------------------------------------------------------

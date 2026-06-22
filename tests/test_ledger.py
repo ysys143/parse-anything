@@ -129,6 +129,35 @@ def test_redacted_event_keeps_legitimate_none_but_drops_signed_url():
     assert "result_url" not in payload["metadata"]
 
 
+def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_param():
+    # Given metadata URLs with basic-auth userinfo and a non-standard signing param.
+    event = LedgerEvent(
+        provider="paddle",
+        model_alias="PaddleOCR-VL-1.6",
+        route_reason="hint:no_text_layer",
+        latency_ms=5.0,
+        status="ok",
+        fallback=False,
+        cost_estimate_usd=None,
+        metadata={
+            # Assembled at runtime so this source file is not itself flagged.
+            "userinfo_url": "https://user:" + "supersecretpw" + "@host.example/path",
+            "sas_url": "https://host.example/blob?sas=" + "abc123def456",
+            "safe": "kept",
+        },
+    )
+
+    # When
+    payload = redacted_event(event)
+    rendered = json.dumps(payload, sort_keys=True)
+
+    # Then
+    assert "supersecretpw" not in rendered
+    assert "userinfo_url" not in payload["metadata"]
+    assert "sas_url" not in payload["metadata"]
+    assert payload["metadata"]["safe"] == "kept"
+
+
 def test_redacted_event_removes_long_non_hex_token_like_values_but_keeps_safe_text():
     # Given
     non_hex_token = "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_"

@@ -76,7 +76,8 @@ class PaddleLiveConfig:
 
 def run_cli(argv: Sequence[str], runtime: Runtime) -> int:
     args = _parse_args(argv)
-    settings = load_settings(environ=runtime.environ)
+    # Resolve .env from the repo root so config does not depend on the CWD.
+    settings = load_settings(env_file=_REPO_ROOT / ".env", environ=runtime.environ)
 
     if args["dry_config"]:
         _print_dry_config(args["provider"], settings, runtime.stdout)

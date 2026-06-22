@@ -72,7 +72,8 @@ def test_orchestrate_routes_each_provider_path(tmp_path):
     providers = [str(result.provider) for result in results]
     assert providers == ["deterministic", "paddle", "gemini"]
     assert all(result.status == "ok" for result in results)
-    assert results[1].fallback is True  # merged_table hybrid routes to paddle as fallback
+    # merged_table is hybrid (fallback-eligible) but paddle succeeds, so no fallback was used.
+    assert results[1].fallback is False
     assert results[0].normalized.markdown == "first pass for p1"
     assert results[1].normalized.markdown == "paddle:p2"
     assert results[2].normalized.image_description == "desc"
@@ -100,6 +101,55 @@ def test_max_workers_preserves_order_and_processes_all_pages(tmp_path):
     lines = ledger_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 12
     assert all(json.loads(line)["provider"] == "deterministic" for line in lines)
+
+
+def test_hybrid_page_falls_back_to_gemini_when_paddle_fails(tmp_path):
+    # Given a hybrid (fallback-eligible) page whose paddle provider fails.
+    def _failing_paddle(page, _decision) -> NormalizedPage:
+        raise RuntimeError("paddle_poll_timeout")
+
+    document = _document([_page("p2", 0, "merged_table")])
+    config = OrchestratorConfig(
+        family_metadata=_FAMILY_METADATA,
+        paddle_provider=_failing_paddle,
+        gemini_provider=_fake_gemini,
+        ledger_path=tmp_path / "ledger.jsonl",
+        clock=_stub_clock(),
+    )
+
+    # When
+    results = orchestrate_document(document, config)
+
+    # Then: the alternate provider produced the page and fallback is recorded as used.
+    assert results[0].status == "ok"
+    assert str(results[0].provider) == "gemini"
+    assert results[0].fallback is True
+    assert results[0].normalized.markdown == "gemini:p2"
+    record = json.loads((tmp_path / "ledger.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert record["provider"] == "gemini"
+    assert record["fallback"] is True
+
+
+def test_hybrid_page_failed_when_both_providers_fail(tmp_path):
+    # Given a hybrid page where both primary and fallback providers fail.
+    def _boom(page, _decision) -> NormalizedPage:
+        raise RuntimeError("down")
+
+    document = _document([_page("p2", 0, "merged_table")])
+    config = OrchestratorConfig(
+        family_metadata=_FAMILY_METADATA,
+        paddle_provider=_boom,
+        gemini_provider=_boom,
+        ledger_path=tmp_path / "ledger.jsonl",
+        clock=_stub_clock(),
+    )
+
+    # When
+    results = orchestrate_document(document, config)
+
+    # Then
+    assert results[0].status == "failed"
+    assert results[0].error == "down"
 
 
 def test_provider_failure_becomes_failed_page(tmp_path):
@@ -195,6 +245,24 @@ def test_malformed_manifest_family_fails_only_that_page(tmp_path):
     assert results[1].route_reason.startswith("route_error:")
     records = ledger_path.read_text(encoding="utf-8").splitlines()
     assert len(records) == 3  # ledger written for every page including the failed one
+
+
+def test_ledger_write_failure_does_not_abort_the_run(tmp_path):
+    # Given a ledger path whose parent is a regular file, so the append raises OSError.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    document = _document([_page("p1", 0, "simple_text"), _page("p2", 1, "simple_text")])
+    config = OrchestratorConfig(
+        family_metadata=_FAMILY_METADATA,
+        paddle_provider=_fake_paddle,
+        gemini_provider=_fake_gemini,
+        ledger_path=blocker / "ledger.jsonl",
+        clock=_stub_clock(),
+    )
+
+    # When / Then: the run completes and returns results instead of crashing.
+    results = orchestrate_document(document, config)
+    assert [r.status for r in results] == ["ok", "ok"]
 
 
 def test_ledger_latency_is_non_negative(tmp_path):

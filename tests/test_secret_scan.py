@@ -28,7 +28,7 @@ def test_scanner_reports_google_hf_hex_and_secret_assignments(tmp_path):
             [
                 "google=" + "AI" + "za" + ("A" * 35),
                 "hf=" + "hf" + "_" + ("Z" * 37),
-                "hex=" + ("c" * 32),
+                "secret_hex=" + ("c" * 32),  # hex only flagged in a secret-ish context
                 "SERVICE_TOKEN=" + ("safe" * 8),
             ]
         ),
@@ -74,6 +74,40 @@ def test_scanner_flags_real_secret_that_merely_contains_a_placeholder_word(tmp_p
     # Then: the embedded placeholder substring must NOT whitelist a real secret.
     assert report.has_findings is True
     assert "secret_assignment" in {finding.kind for finding in report.findings}
+
+
+def test_scanner_flags_url_embedded_credentials(tmp_path):
+    # Given a base URL with embedded basic-auth credentials.
+    module = _load_secret_scan_module()
+    sample = tmp_path / "config.txt"
+    sample.write_text("PADDLE_BASE_URL=https://user:" + "secretpw123" + "@host.example/api", encoding="utf-8")
+
+    # When
+    report = module.scan_paths([sample])
+
+    # Then
+    assert "url_credentials" in {finding.kind for finding in report.findings}
+
+
+def test_scanner_does_not_flag_bare_git_sha_or_checksum(tmp_path):
+    # Given hex hashes in prose with no secret-ish context on the line.
+    module = _load_secret_scan_module()
+    sample = tmp_path / "NOTES.md"
+    sample.write_text(
+        "\n".join(
+            [
+                "Pinned at commit " + ("a" * 40) + " for reproducibility.",
+                "sha256 digest: " + ("b" * 64),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    # When
+    report = module.scan_paths([sample])
+
+    # Then: hashes in prose are not false-flagged as secrets.
+    assert report.has_findings is False
 
 
 def test_scanner_ignores_placeholders_and_missing_paths(tmp_path):
