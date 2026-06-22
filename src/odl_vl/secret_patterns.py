@@ -44,18 +44,13 @@ def _redact_urls(value: str) -> str:
 
 
 def redact_secrets(value: str) -> str:
-    """Full redaction for structured fields (metadata): opaque tokens, known prefixes, URLs."""
-    value = LONG_TOKEN_RE.sub("[REDACTED]", value)
-    value = KNOWN_SECRET_PREFIX_RE.sub("[REDACTED]", value)
-    return _redact_urls(value)
+    """Redact secret shapes from any persisted string: opaque tokens, known prefixes, URLs.
 
-
-def redact_free_text(value: str) -> str:
-    """Lighter redaction for human-facing free text (route_reason / error messages).
-
-    Strips known credential prefixes and URL-embedded secrets but NOT every long
-    token, so legitimate identifiers (trace ids, document ids) stay readable for
-    debugging while real credential shapes are still removed.
+    Security-first: applied uniformly to ledger fields, results.jsonl error/route_reason,
+    and metadata so a credential can never survive into a shared artifact. This can
+    over-redact a long non-secret identifier, which is the accepted trade-off for the
+    "no secrets in outputs" guarantee.
     """
+    value = LONG_TOKEN_RE.sub("[REDACTED]", value)
     value = KNOWN_SECRET_PREFIX_RE.sub("[REDACTED]", value)
     return _redact_urls(value)

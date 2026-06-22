@@ -102,6 +102,14 @@ opt-in, experimental concurrency knob for live mode; it preserves output order
 and serializes ledger writes, but live providers may rate-limit concurrent jobs,
 so keep the default of 1 unless you have verified your provider tolerates it.
 
+**Gemini is text-only in this slice.** The Gemini request carries `first_pass_md`
+and `intent_prompt` but not the page image (no `inlineData`), so it transcribes
+the provided text rather than reading `page_image`. Sending the image to Gemini
+(fetch + base64 `inlineData`) is deferred to a follow-up. Because of this,
+cross-provider fallback only runs Gemini -> Paddle (Paddle fetches the image URL
+and can recover a failed VLM page); a failed Paddle OCR page is not silently
+re-run through a blind Gemini.
+
 ## Fixture Plan
 
 The fixture work is metadata-only in this slice. The initial eight fixture families and page-level golden schema contract live under [`tests/fixtures/`](tests/fixtures/README.md). The fixture sufficiency and discriminativeness criteria are documented in [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md#5-fixture-and-golden-set-strategy).

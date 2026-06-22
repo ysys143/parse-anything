@@ -49,6 +49,12 @@ def test_find_result_json_url_locates_signed_url():
     assert find_result_json_url(body) == "https://signed.example/r.json"
 
 
+def test_find_result_json_url_ignores_unrelated_nested_json_url():
+    # Without the documented data.resultUrl.jsonUrl, no other jsonUrl is accepted.
+    body = {"echo": {"jsonUrl": "https://unrelated.example/input.json"}, "data": {"state": "done"}}
+    assert find_result_json_url(body) is None
+
+
 class _ListTransport:
     def __init__(self, responses):
         self.responses = list(responses)

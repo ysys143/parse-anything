@@ -16,7 +16,6 @@ if str(_SRC_ROOT) not in sys.path:
 
 from odl_vl.secret_patterns import (  # noqa: E402
     KNOWN_SECRET_PREFIX_RE,
-    LONG_TOKEN_RE,
     SECRET_KEY_NAME_RE,
     URL_USERINFO_RE,
 )
@@ -26,8 +25,9 @@ from odl_vl.secret_patterns import (  # noqa: E402
 # scanner-specific hex-run heuristic lives here.
 _HEX_TOKEN_RE: Final = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32,}(?![0-9a-fA-F])")
 _SECRET_ASSIGNMENT_RE: Final = re.compile(
-    r"^\s*(?:export\s+)?['\"]?[A-Z0-9_.-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|"
-    r"AUTHORIZATION|SIGNATURE)[A-Z0-9_.-]*['\"]?\s*[:=]\s*['\"]?([^'\"\s#]+)"
+    r"^\s*(?:export\s+)?['\"]?[A-Za-z0-9_.-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|"
+    r"AUTHORIZATION|SIGNATURE)[A-Za-z0-9_.-]*['\"]?\s*[:=]\s*['\"]?([^'\"\s#]+)",
+    re.IGNORECASE,
 )
 # Exact placeholder tokens and template forms that are always safe.
 _SAFE_EXACT_RE: Final = re.compile(
@@ -38,7 +38,10 @@ _SAFE_EXACT_RE: Final = re.compile(
 _SAFE_PLACEHOLDER_RE: Final = re.compile(
     r"(?i)(?:^|[^a-z0-9])(?:placeholder|example|fake|dummy|sample|changeme|redacted|your|xxxx+)(?:[^a-z0-9]|$)"
 )
-_MIN_SECRET_ASSIGNMENT_LENGTH: Final = 20
+# A credential-shaped value is a contiguous token without code punctuation; this
+# excludes code expressions like `self.x.y` or `func(args` that share a secret-ish
+# key name, while still matching real opaque keys/tokens (incl. under lowercase keys).
+_CREDENTIAL_VALUE_RE: Final = re.compile(r"^[A-Za-z0-9_\-+/=:~]{20,}$")
 _SKIPPED_SUFFIXES: Final = frozenset({".pyc", ".pyo", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip"})
 _SKIPPED_DIRS: Final = frozenset({".git", "__pycache__", ".pytest_cache"})
 
@@ -143,7 +146,9 @@ def _has_secret_assignment(line: str) -> bool:
     if match is None:
         return False
     value = match.group(1).strip().rstrip(",")
-    if len(value) < _MIN_SECRET_ASSIGNMENT_LENGTH:
+    # Only a credential-shaped value (no code punctuation) counts, so that a
+    # secret-ish key name assigned a code expression is not a false positive.
+    if _CREDENTIAL_VALUE_RE.fullmatch(value) is None:
         return False
     return not _is_safe_value(value)
 
@@ -151,10 +156,11 @@ def _has_secret_assignment(line: str) -> bool:
 def _is_safe_value(value: str) -> bool:
     if _SAFE_EXACT_RE.fullmatch(value) is not None:
         return True
-    # A value that clearly looks like a real opaque secret is never safe, even if
-    # it happens to contain a placeholder-ish substring.
-    if LONG_TOKEN_RE.search(value) or KNOWN_SECRET_PREFIX_RE.search(value):
+    # A known credential prefix (AIza/hf_/sk-) is never whitelisted.
+    if KNOWN_SECRET_PREFIX_RE.search(value):
         return False
+    # A delimited placeholder word (fake/example/dummy/...) marks a placeholder even
+    # when the value is long; real secrets do not embed such delimited words.
     return _SAFE_PLACEHOLDER_RE.search(value) is not None
 
 

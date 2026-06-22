@@ -81,8 +81,8 @@ def poll_job(
 
 
 def find_result_json_url(body: object) -> str | None:
-    # Prefer the documented location (data.resultUrl.jsonUrl) so an unrelated
-    # nested 'jsonUrl' elsewhere in the payload cannot be picked by mistake.
+    # Only the documented location (data.resultUrl.jsonUrl); no generic search, so an
+    # unrelated nested 'jsonUrl' (echoed input, sibling field) cannot be fetched.
     if isinstance(body, Mapping):
         data = body.get("data")
         if isinstance(data, Mapping):
@@ -91,4 +91,4 @@ def find_result_json_url(body: object) -> str | None:
                 json_url = result_url.get("jsonUrl")
                 if isinstance(json_url, str):
                     return json_url
-    return find_first_string(body, frozenset({"jsonUrl"}))
+    return None

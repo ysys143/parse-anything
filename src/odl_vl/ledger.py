@@ -10,7 +10,6 @@ from odl_vl.secret_patterns import (
     SECRET_KEY_NAME_RE,
     SIGNED_URL_QUERY_RE,
     URL_USERINFO_RE,
-    redact_free_text,
     redact_secrets,
 )
 
@@ -35,9 +34,8 @@ def redacted_event(event: LedgerEvent) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "provider": event.provider,
         "model_alias": event.model_alias,
-        # route_reason can embed an exception string; redact credential shapes but
-        # keep legitimate identifiers readable.
-        "route_reason": redact_free_text(event.route_reason),
+        # route_reason can embed an exception string, so redact it like metadata.
+        "route_reason": redact_secrets(event.route_reason),
         "latency_ms": event.latency_ms,
         "status": event.status,
         "fallback": event.fallback,

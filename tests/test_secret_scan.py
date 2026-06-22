@@ -76,6 +76,19 @@ def test_scanner_flags_real_secret_that_merely_contains_a_placeholder_word(tmp_p
     assert "secret_assignment" in {finding.kind for finding in report.findings}
 
 
+def test_scanner_flags_lowercase_named_secret_assignment(tmp_path):
+    # Given a lowercase-named key with a long opaque secret value.
+    module = _load_secret_scan_module()
+    sample = tmp_path / "conf.py"
+    sample.write_text("my_password = " + repr("a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7"), encoding="utf-8")
+
+    # When
+    report = module.scan_paths([sample])
+
+    # Then: a lowercase key is flagged just like the uppercase form would be.
+    assert "secret_assignment" in {finding.kind for finding in report.findings}
+
+
 def test_scanner_flags_url_embedded_credentials(tmp_path):
     # Given a base URL with embedded basic-auth credentials.
     module = _load_secret_scan_module()

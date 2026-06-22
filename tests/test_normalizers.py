@@ -51,6 +51,14 @@ def test_extract_gemini_text_anchors_on_candidate_part_over_stray_text():
     assert extract_gemini_text(payload) == "the real answer"
 
 
+def test_extract_gemini_text_returns_none_for_safety_blocked_response():
+    # Given a blocked response with no candidate part but a stray 'text' elsewhere.
+    payload = {"promptFeedback": {"safetyRatings": [{"text": "blocked stray text"}]}}
+
+    # When / Then: no model output -> None (caller fails the page), not the stray text.
+    assert extract_gemini_text(payload) is None
+
+
 def test_normalize_paddle_parses_layout_results_and_confidence():
     # Given
     result = {

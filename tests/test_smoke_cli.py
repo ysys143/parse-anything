@@ -94,7 +94,7 @@ def test_live_gemini_sends_minimal_prompt_and_redacts_response_body():
         "candidates": [
             {"content": {"parts": [{"text": "ok"}]}, "finishReason": "STOP"},
         ],
-        "secretEcho": "response-body-must-not-print",
+        "echoField": "response-body-must-not-print",
     }
     transport = FakeTransport([HttpResponse(status_code=200, body=json.dumps(response_body).encode())])
     runtime = module.Runtime(

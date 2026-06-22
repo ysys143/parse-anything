@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from typing import Any
 
 from odl_vl.ir import NormalizedPage, ProviderName
-from odl_vl.jsonsearch import find_first_string
 
 
 def decode_json_body(body: bytes | str) -> Any:
@@ -57,11 +56,11 @@ def normalize_gemini(
 
 
 def extract_gemini_text(payload: Any) -> str | None:
-    """Return the model's text from a Gemini generateContent response.
+    """Return the model's text from a Gemini generateContent response, or None.
 
-    Anchors on candidates[].content.parts[].text so a stray 'text' field in a
-    citation/safety block is not mistaken for the model output; falls back to a
-    shallow search only if the expected structure is absent.
+    Only reads candidates[].content.parts[].text. A safety-blocked / empty response
+    (no candidate part) returns None so the caller can fail the page, rather than
+    surfacing a stray 'text' field from a citation/safety block as model output.
     """
     if isinstance(payload, Mapping):
         candidates = payload.get("candidates")
@@ -80,7 +79,7 @@ def extract_gemini_text(payload: Any) -> str | None:
                         text = part.get("text")
                         if isinstance(text, str) and text != "":
                             return text
-    return find_first_string(payload, frozenset({"text"}))
+    return None
 
 
 def normalize_paddle(

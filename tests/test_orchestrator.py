@@ -6,7 +6,7 @@ from itertools import count
 
 import pytest
 
-from odl_vl.ir import NormalizedPage
+from odl_vl.ir import NormalizedPage, ProviderName
 from odl_vl.normalizers import normalize_gemini, normalize_paddle
 from odl_vl.orchestrator import OrchestratorConfig, orchestrate_document
 from odl_vl.orchestrator_input import parse_document_input
@@ -103,8 +103,9 @@ def test_max_workers_preserves_order_and_processes_all_pages(tmp_path):
     assert all(json.loads(line)["provider"] == "deterministic" for line in lines)
 
 
-def test_hybrid_page_falls_back_to_gemini_when_paddle_fails(tmp_path):
-    # Given a hybrid (fallback-eligible) page whose paddle provider fails.
+def test_hybrid_paddle_failure_does_not_fall_back_to_text_only_gemini(tmp_path):
+    # Given a hybrid page whose paddle provider fails. Gemini is text-only this slice,
+    # so it is NOT a valid recovery for a failed OCR page: the page should just fail.
     def _failing_paddle(page, _decision) -> NormalizedPage:
         raise RuntimeError("paddle_poll_timeout")
 
@@ -120,38 +121,33 @@ def test_hybrid_page_falls_back_to_gemini_when_paddle_fails(tmp_path):
     # When
     results = orchestrate_document(document, config)
 
-    # Then: the alternate provider produced the page and fallback is recorded as used.
-    assert results[0].status == "ok"
-    assert str(results[0].provider) == "gemini"
-    assert results[0].fallback is True
-    assert results[0].normalized.markdown == "gemini:p2"
-    record = json.loads((tmp_path / "ledger.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    assert record["provider"] == "gemini"
-    assert record["fallback"] is True
+    # Then
+    assert results[0].status == "failed"
+    assert str(results[0].provider) == "paddle"
+    assert results[0].fallback is False
+    assert results[0].error == "paddle_poll_timeout"
 
 
-def test_hybrid_page_failed_when_both_providers_fail(tmp_path):
-    # Given a hybrid page where both primary and fallback providers fail.
-    def _boom(page, _decision) -> NormalizedPage:
-        raise RuntimeError("down")
+def test_run_with_fallback_recovers_failed_gemini_via_paddle():
+    # Given a fallback-eligible Gemini route (decision built directly) whose gemini fails.
+    from odl_vl.orchestrator import _run_with_fallback
+    from odl_vl.router import RouteDecision
 
-    document = _document([_page("p2", 0, "merged_table")])
+    decision = RouteDecision(ProviderName.GEMINI, "test", fallback=True)
     config = OrchestratorConfig(
         family_metadata=_FAMILY_METADATA,
-        paddle_provider=_boom,
-        gemini_provider=_boom,
-        ledger_path=tmp_path / "ledger.jsonl",
-        clock=_stub_clock(),
+        paddle_provider=_fake_paddle,
+        gemini_provider=lambda page, _d: (_ for _ in ()).throw(RuntimeError("gemini_http_429")),
     )
+    page = parse_document_input({"document_id": "d", "pages": [_page("p", 0, "chart_like_page")]}).pages[0]
 
-    # When
-    results = orchestrate_document(document, config)
+    # When: gemini fails, paddle (which fetches the image) recovers it.
+    normalized, provider, used = _run_with_fallback(page, decision, config)
 
-    # Then: both failures are preserved, and the page records that a fallback was tried.
-    assert results[0].status == "failed"
-    assert "paddle:down" in results[0].error
-    assert "fallback gemini:down" in results[0].error
-    assert results[0].fallback is True
+    # Then
+    assert provider is ProviderName.PADDLE
+    assert used is True
+    assert normalized.markdown == "paddle:p"
 
 
 def test_provider_failure_becomes_failed_page(tmp_path):

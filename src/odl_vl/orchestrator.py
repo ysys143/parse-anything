@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, assert_never
@@ -14,7 +14,7 @@ from odl_vl.normalizers import normalize_deterministic
 from odl_vl.orchestrator_input import DocumentInput, PageInput
 from odl_vl.providers import DEFAULT_GEMINI_MODEL, DEFAULT_PADDLE_MODEL
 from odl_vl.router import RouteDecision, choose_route
-from odl_vl.secret_patterns import redact_free_text
+from odl_vl.secret_patterns import redact_secrets
 
 
 ProviderCallable = Callable[[PageInput, RouteDecision], NormalizedPage]
@@ -56,10 +56,10 @@ class PageResult:
             "page_index": self.page_index,
             "fixture_family": self.fixture_family,
             "provider": str(self.provider),
-            "route_reason": redact_free_text(self.route_reason),
+            "route_reason": redact_secrets(self.route_reason),
             "fallback": self.fallback,
             "status": self.status,
-            "error": redact_free_text(self.error) if self.error is not None else None,
+            "error": redact_secrets(self.error) if self.error is not None else None,
             "markdown_chars": len(normalized.markdown) if normalized is not None else 0,
             "image_description": normalized.image_description if normalized is not None else None,
             "confidence": normalized.confidence if normalized is not None else None,
@@ -90,7 +90,7 @@ def orchestrate_document(document: DocumentInput, config: OrchestratorConfig) ->
     results: list[PageResult | None] = [None] * len(pages)
     with ThreadPoolExecutor(max_workers=config.max_workers) as executor:
         futures = {executor.submit(_process_page, page, config, lock): index for index, page in enumerate(pages)}
-        for future in futures:
+        for future in as_completed(futures):  # drain as each page finishes
             results[futures[future]] = future.result()
     return [result for result in results if result is not None]
 
@@ -185,10 +185,13 @@ def _run_with_fallback(
 
 def _fallback_provider(primary: ProviderName) -> ProviderName | None:
     match primary:
-        case ProviderName.PADDLE:
-            return ProviderName.GEMINI
         case ProviderName.GEMINI:
+            # Paddle fetches the page image URL, so it can recover a failed VLM page.
             return ProviderName.PADDLE
+        case ProviderName.PADDLE:
+            # Gemini is text-only in this slice (no image input), so it cannot recover
+            # a failed OCR page; do not fall back to a blind transcription.
+            return None
         case ProviderName.DETERMINISTIC:
             return None
 

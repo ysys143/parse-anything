@@ -81,8 +81,8 @@ def test_append_ledger_event_writes_jsonl_and_redacts_token_like_values(tmp_path
 
 def test_redacted_event_redacts_purely_alphabetic_long_secret():
     # Given a 40-char secret with no digits/underscores/hyphens.
-    alpha_secret = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
-    assert len(alpha_secret) >= 32
+    alpha_value = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
+    assert len(alpha_value) >= 32
     event = LedgerEvent(
         provider="gemini",
         model_alias="gemini-3.1-flash-lite",
@@ -91,14 +91,14 @@ def test_redacted_event_redacts_purely_alphabetic_long_secret():
         status="ok",
         fallback=False,
         cost_estimate_usd=None,
-        metadata={"opaque": alpha_secret, "safe_note": "queued"},
+        metadata={"opaque": alpha_value, "safe_note": "queued"},
     )
 
     # When
     rendered = json.dumps(redacted_event(event), sort_keys=True)
 
     # Then
-    assert alpha_secret not in rendered
+    assert alpha_value not in rendered
     assert "[REDACTED]" in rendered
     assert "queued" in rendered
 
@@ -129,10 +129,10 @@ def test_redacted_event_keeps_legitimate_none_but_drops_signed_url():
     assert "result_url" not in payload["metadata"]
 
 
-def test_redacted_event_redacts_credential_in_route_reason_but_keeps_identifiers():
-    # Given a route_reason embedding a signed URL plus a long but non-secret trace id.
-    trace_id = "t" * 40
-    route_reason = "route_error:fetch https://h/r?X-Goog-Signature=" + "abc123" + f" trace={trace_id}"
+def test_redacted_event_blanket_redacts_route_reason():
+    # Given a route_reason embedding a signed URL and a long opaque token.
+    long_token = "t" * 40
+    route_reason = "route_error:fetch https://h/r?X-Goog-Signature=" + "abc123" + f" tok={long_token}"
     event = LedgerEvent(
         provider="unknown",
         model_alias="unknown",
@@ -147,10 +147,10 @@ def test_redacted_event_redacts_credential_in_route_reason_but_keeps_identifiers
     # When
     payload = redacted_event(event)
 
-    # Then: the signing token is stripped, but the legitimate trace id stays readable.
+    # Then: security-first — the signing token and any long opaque token are stripped.
     assert "X-Goog-Signature=[REDACTED]" in payload["route_reason"]
     assert "abc123" not in payload["route_reason"]
-    assert trace_id in payload["route_reason"]
+    assert long_token not in payload["route_reason"]
 
 
 def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_param():
@@ -182,9 +182,9 @@ def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_
     assert payload["metadata"]["safe"] == "kept"
 
 
-def test_redacted_event_removes_long_non_hex_token_like_values_but_keeps_safe_text():
+def test_redacted_event_removes_long_non_hex_value_like_values_but_keeps_safe_text():
     # Given
-    non_hex_token = "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_"
+    non_hex_value = "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_"
     event = LedgerEvent(
         provider="gemini",
         model_alias="gemini-3.1-flash-lite",
@@ -196,7 +196,7 @@ def test_redacted_event_removes_long_non_hex_token_like_values_but_keeps_safe_te
         metadata={
             "family": "chart_like_page",
             "safe_note": "queued for fixture route",
-            "opaque_id": non_hex_token,
+            "opaque_id": non_hex_value,
         },
     )
 
@@ -205,7 +205,7 @@ def test_redacted_event_removes_long_non_hex_token_like_values_but_keeps_safe_te
     rendered = json.dumps(payload, sort_keys=True)
 
     # Then
-    assert non_hex_token not in rendered
+    assert non_hex_value not in rendered
     assert "[REDACTED]" in rendered
     assert "chart_like_page" in rendered
     assert "queued for fixture route" in rendered
