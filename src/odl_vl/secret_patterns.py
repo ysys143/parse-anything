@@ -16,16 +16,18 @@ KNOWN_SECRET_PREFIX_RE: Final = re.compile(
     r"(?<![A-Za-z0-9_])(?:AIza[A-Za-z0-9_-]{10,}|hf_[A-Za-z0-9]{10,}|sk-[A-Za-z0-9_-]{10,})"
 )
 
+# Single vocabulary of secret-bearing key-name fragments, shared by the ledger
+# key-dropper and the pre-commit scanner's assignment detector.
+SECRET_KEY_NAME_PATTERN: Final = r"api[_-]?key|token|secret|signature|authorization|credential|password"
+
 # Secret-bearing key names (matched against mapping keys / assignment names).
-SECRET_KEY_NAME_RE: Final = re.compile(
-    r"(api[_-]?key|token|secret|signature|authorization|credential|password)", re.IGNORECASE
-)
+SECRET_KEY_NAME_RE: Final = re.compile(rf"({SECRET_KEY_NAME_PATTERN})", re.IGNORECASE)
 
 # Single source for the signing/auth query-parameter names, shared by both the
 # "is this a signed URL" detector and the value redactor so they cannot diverge.
 _SIGNED_URL_PARAM_NAMES: Final = (
     r"x-amz-signature|x-goog-signature|x-goog-credential|signature|sig|sas|"
-    r"token|access[_-]?token|expires|credential|auth"
+    r"token|access[_-]?token|credential|auth"
 )
 
 # Query parameters that mark a URL as a signed/pre-authenticated URL.

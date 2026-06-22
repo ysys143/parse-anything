@@ -40,7 +40,11 @@ def load_settings(
     environ: Mapping[str, str] | None = None,
 ) -> Settings:
     env_values = _load_env_file(env_file)
-    env_values.update(dict(os.environ if environ is None else environ))
+    # Merge process/explicit env over the .env file, but skip empty values so an
+    # empty exported var (e.g. GEMINI_API_KEY="") does not mask a valid .env key.
+    for key, value in (os.environ if environ is None else environ).items():
+        if value.strip() != "":
+            env_values[key] = value
 
     return Settings(
         gemini_api_key=_non_empty(env_values.get("GEMINI_API_KEY")),

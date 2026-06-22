@@ -24,6 +24,13 @@ def extract_job_id(body: object) -> str | None:
     return find_first_scalar(body, JOB_ID_KEYS)
 
 
+def submit_job(client: ProviderHttpClient, request: HttpRequest) -> tuple[HttpResponse, str | None]:
+    """Send a Paddle submit request and return (response, job_id). Shared by both CLIs."""
+    response = client.send(request)
+    job_id = extract_job_id(try_decode_json(response.body)) if is_success_status(response.status_code) else None
+    return response, job_id
+
+
 def extract_status(body: object) -> str | None:
     status = find_first_string(body, STATUS_KEYS, strip=True)
     return status.lower() if status is not None else None

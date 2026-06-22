@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -36,9 +37,9 @@ from odl_vl.orchestrator_input import (  # noqa: E402
     load_document_input,
 )
 from odl_vl.paddle_jobs import (  # noqa: E402
-    extract_job_id,
     find_result_json_url,
     poll_job,
+    submit_job,
 )
 from odl_vl.providers import (  # noqa: E402
     DEFAULT_PADDLE_MODEL,
@@ -54,7 +55,6 @@ from odl_vl.providers import (  # noqa: E402
     is_success_status,
 )
 from odl_vl.router import RouteDecision  # noqa: E402
-from odl_vl.secret_patterns import redact_secrets  # noqa: E402
 
 
 _DEFAULT_MANIFEST: Final = _REPO_ROOT / "tests" / "fixtures" / "manifest.json"
@@ -210,7 +210,8 @@ class LiveProviders:
         api_key = self.settings.paddle_api_key
         base_url = self.settings.paddle_base_url
         model = self.settings.paddle_model or DEFAULT_PADDLE_MODEL
-        submit = self.client.send(
+        submit, job_id = submit_job(
+            self.client,
             build_paddle_submit_request(
                 PaddleSubmitRequest(
                     api_key=api_key,
@@ -218,11 +219,10 @@ class LiveProviders:
                     document_url=page.page_image,
                     model=model,
                 )
-            )
+            ),
         )
         if not is_success_status(submit.status_code):
             raise RuntimeError(f"paddle_submit_{submit.status_code}")
-        job_id = extract_job_id(try_decode_json(submit.body))
         if job_id is None:
             raise RuntimeError("paddle_submit_no_job_id")
         completion = self._poll_paddle(api_key, base_url, job_id)
@@ -274,14 +274,8 @@ class LiveProviders:
 
 
 def _guess_image_mime(url: str) -> str:
-    lowered = url.lower().split("?", 1)[0]
-    if lowered.endswith((".jpg", ".jpeg")):
-        return "image/jpeg"
-    if lowered.endswith(".webp"):
-        return "image/webp"
-    if lowered.endswith(".gif"):
-        return "image/gif"
-    return "image/png"
+    guessed, _ = mimetypes.guess_type(url.split("?", 1)[0])
+    return guessed if guessed and guessed.startswith("image/") else "image/png"
 
 
 def _default_prompt(page: PageInput) -> str:
@@ -334,8 +328,8 @@ def _print_summary(
     # Surface failed pages so an incomplete run is never silent.
     for result in results:
         if result.status != "ok":
-            reason = redact_secrets(result.error) if result.error is not None else None
-            print(f"failed page={result.page_id} reason={reason}", file=stdout)
+            # result.error is already redacted when the PageResult is built.
+            print(f"failed page={result.page_id} reason={result.error}", file=stdout)
 
 
 # --- helpers ----------------------------------------------------------------

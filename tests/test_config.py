@@ -141,6 +141,18 @@ def test_load_settings_keeps_hash_inside_quoted_value(tmp_path):
     assert settings.gemini_api_key == "abc#123placeholder"
 
 
+def test_empty_process_env_does_not_mask_valid_env_file_value(tmp_path):
+    # Given a valid key in .env and an empty same-name var in the process env.
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=valid-gemini-placeholder\n", encoding="utf-8")
+
+    # When
+    settings = load_settings(env_file=env_file, environ={"GEMINI_API_KEY": ""})
+
+    # Then: the empty env var is skipped, so the .env value survives.
+    assert settings.gemini_api_key == "valid-gemini-placeholder"
+
+
 def test_load_settings_keeps_unquoted_value_starting_with_hash(tmp_path):
     # Given an unquoted value that legitimately starts with '#' (not a comment).
     env_file = tmp_path / ".env"

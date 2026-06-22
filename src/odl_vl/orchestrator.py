@@ -48,9 +48,10 @@ class PageResult:
             "page_index": self.page_index,
             "fixture_family": self.fixture_family,
             "provider": str(self.provider),
-            "route_reason": redact_secrets(self.route_reason),
+            # route_reason / error are already redacted when the result is built.
+            "route_reason": self.route_reason,
             "status": self.status,
-            "error": redact_secrets(self.error) if self.error is not None else None,
+            "error": self.error,
             "markdown_chars": len(normalized.markdown) if normalized is not None else 0,
             "image_description": normalized.image_description if normalized is not None else None,
             "confidence": normalized.confidence if normalized is not None else None,
@@ -118,6 +119,12 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         if actual_provider is not None
         else _UNKNOWN_PROVIDER
     )
+
+    # Redact once here; PageResult/to_record and the CLI summary reuse these values
+    # instead of re-redacting. (redacted_event still redacts defensively for any
+    # LedgerEvent built elsewhere; on an already-redacted string that is a no-op.)
+    route_reason = redact_secrets(route_reason)
+    error = redact_secrets(error) if error is not None else None
 
     event = LedgerEvent(
         provider=provider_label,

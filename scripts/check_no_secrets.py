@@ -16,6 +16,7 @@ if str(_SRC_ROOT) not in sys.path:
 
 from odl_vl.secret_patterns import (  # noqa: E402
     KNOWN_SECRET_PREFIX_RE,
+    SECRET_KEY_NAME_PATTERN,
     SECRET_KEY_NAME_RE,
     URL_USERINFO_RE,
 )
@@ -25,8 +26,8 @@ from odl_vl.secret_patterns import (  # noqa: E402
 # scanner-specific hex-run heuristic lives here.
 _HEX_TOKEN_RE: Final = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32,}(?![0-9a-fA-F])")
 _SECRET_ASSIGNMENT_RE: Final = re.compile(
-    r"^\s*(?:export\s+)?['\"]?[A-Za-z0-9_.-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|"
-    r"AUTHORIZATION|SIGNATURE)[A-Za-z0-9_.-]*['\"]?\s*[:=]\s*['\"]?([^'\"\s#]+)",
+    rf"^\s*(?:export\s+)?['\"]?[A-Za-z0-9_.-]*(?:{SECRET_KEY_NAME_PATTERN})[A-Za-z0-9_.-]*"
+    r"['\"]?\s*[:=]\s*['\"]?([^'\"\s#]+)",
     re.IGNORECASE,
 )
 # Exact placeholder tokens and template forms that are always safe.
@@ -114,11 +115,11 @@ def _should_scan(path: Path) -> bool:
 
 def _scan_file(path: Path) -> list[Finding]:
     findings: list[Finding] = []
-    # Decode latin-1 (every byte maps to a char) so a non-UTF-8 file is still scanned
-    # for secret patterns rather than silently skipped.
-    contents = path.read_bytes().decode("latin-1")
-    for line_number, line in enumerate(contents.splitlines(), start=1):
-        findings.extend(_scan_line(path, line_number, line))
+    # latin-1 maps every byte to a char (never raises), so a non-UTF-8 file is still
+    # scanned; iterating the handle keeps only one line resident at a time.
+    with path.open(encoding="latin-1") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            findings.extend(_scan_line(path, line_number, line.rstrip("\n")))
     return findings
 
 

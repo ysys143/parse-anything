@@ -146,6 +146,26 @@ def test_redacted_event_blanket_redacts_route_reason():
     assert long_token not in payload["route_reason"]
 
 
+def test_redacted_event_keeps_non_secret_expires_param():
+    # Given a URL carrying a signature plus a non-sensitive expires timestamp.
+    event = LedgerEvent(
+        provider="paddle",
+        model_alias="PaddleOCR-VL-1.6",
+        route_reason="fetched https://h/r?sig=" + "secretsigvalue" + "&expires=1700000000",
+        latency_ms=1.0,
+        status="ok",
+        cost_estimate_usd=None,
+        metadata={},
+    )
+
+    # When
+    payload = redacted_event(event)
+
+    # Then: the signature value is stripped but the expiry timestamp stays readable.
+    assert "sig=[REDACTED]" in payload["route_reason"]
+    assert "expires=1700000000" in payload["route_reason"]
+
+
 def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_param():
     # Given metadata URLs with basic-auth userinfo and a non-standard signing param.
     event = LedgerEvent(

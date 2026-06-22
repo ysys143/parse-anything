@@ -18,7 +18,7 @@ if str(_SRC_ROOT) not in sys.path:
 from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
 from odl_vl.config import Settings, load_settings  # noqa: E402
 from odl_vl.normalizers import extract_gemini_text, try_decode_json  # noqa: E402
-from odl_vl.paddle_jobs import extract_job_id, poll_job  # noqa: E402
+from odl_vl.paddle_jobs import poll_job, submit_job  # noqa: E402
 from odl_vl.providers import (  # noqa: E402
     DEFAULT_GEMINI_MODEL,
     DEFAULT_PADDLE_MODEL,
@@ -142,7 +142,8 @@ def _run_paddle_live(settings: Settings, runtime: Runtime, args: ParsedArgs) -> 
         model=settings.paddle_model or DEFAULT_PADDLE_MODEL,
     )
     client = safe_client(runtime)
-    submit_response = client.send(
+    submit_response, job_id = submit_job(
+        client,
         build_paddle_submit_request(
             PaddleSubmitRequest(
                 api_key=config.api_key,
@@ -150,9 +151,8 @@ def _run_paddle_live(settings: Settings, runtime: Runtime, args: ParsedArgs) -> 
                 document_url=args["demo_url"],
                 model=config.model,
             )
-        )
+        ),
     )
-    job_id = extract_job_id(try_decode_json(submit_response.body))
     if not is_success_status(submit_response.status_code) or job_id is None:
         print(f"provider=paddle live=fail submit_status={submit_response.status_code}", file=runtime.stdout)
         return 1
