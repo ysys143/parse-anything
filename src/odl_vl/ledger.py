@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 
-_LONG_TOKEN_RE = re.compile(
-    r"(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-]))"
-    r"(?=[A-Za-z0-9_-]*[0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])"
-)
+# Redact any 32+ char opaque token, including purely-alphabetic secrets.
+_LONG_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])")
+
+# Sentinel distinguishing "drop this key" (secret/signed URL) from a legitimate None.
+_DROP = object()
 _SECRET_KEY_RE = re.compile(r"(api[_-]?key|token|secret|signature|authorization|credential)", re.IGNORECASE)
 _SIGNED_URL_QUERY_RE = re.compile(r"(x-amz-signature|signature|token|expires|x-goog-signature)", re.IGNORECASE)
 
@@ -58,23 +59,23 @@ def _redacted_mapping(values: Mapping[str, Any]) -> dict[str, Any]:
         if _is_secret_key(key):
             continue
         safe_value = _redacted_value(value)
-        if safe_value is not None:
-            redacted[key] = safe_value
+        if safe_value is _DROP:
+            continue
+        redacted[key] = safe_value
     return redacted
 
 
 def _redacted_value(value: Any) -> Any:
     if isinstance(value, str):
         if _is_signed_url(value):
-            return None
+            return _DROP
         return _LONG_TOKEN_RE.sub("[REDACTED]", value)
     if isinstance(value, Mapping):
         return _redacted_mapping(value)
     if isinstance(value, list):
-        redacted_items = (_redacted_value(item) for item in value)
-        return [item for item in redacted_items if item is not None]
+        return [item for item in (_redacted_value(v) for v in value) if item is not _DROP]
     if isinstance(value, tuple):
-        return tuple(item for item in (_redacted_value(item) for item in value) if item is not None)
+        return tuple(item for item in (_redacted_value(v) for v in value) if item is not _DROP)
     return value
 
 

@@ -143,6 +143,43 @@ def test_live_cli_calls_providers_through_transport(tmp_path):
     assert "signed.example" not in ledger
 
 
+def test_live_cli_gemini_empty_text_marks_page_failed(tmp_path):
+    # Given a Paddle path that succeeds and a Gemini 200 with no candidate text.
+    module = _load_module()
+    output_dir = tmp_path / "out"
+    transport = FakeTransport(
+        responses=[
+            _json_response({"code": 0, "msg": "Success", "data": {"jobId": "job-1"}}),
+            _json_response({"data": {"state": "done", "resultUrl": {"jsonUrl": "https://signed.example/r"}}}),
+            _json_response({"result": {"layoutParsingResults": [{"markdown": {"text": "paddle ok"}}]}}),
+            _json_response({"candidates": []}),  # gemini 200 but empty -> must fail, not silent empty
+        ]
+    )
+    runtime = module.Runtime(
+        environ={
+            "GEMINI_API_KEY": "fake-gemini-secret-value",
+            "PADDLE_API_KEY": "fake-paddle-secret-value",
+            "PADDLE_BASE_URL": "https://paddle.example/api/v2/ocr/jobs",
+        },
+        transport=transport,
+        stdout=io.StringIO(),
+        sleep=lambda _seconds: None,
+    )
+
+    # When
+    code = module.run_cli(
+        ["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"],
+        runtime,
+    )
+
+    # Then
+    assert code == 1
+    results = {record["page_id"]: record for record in _read_results(output_dir)}
+    assert results["p2-table"]["status"] == "ok"
+    assert results["p3-chart"]["status"] == "failed"
+    assert results["p3-chart"]["error"] == "RuntimeError"
+
+
 def test_live_cli_missing_keys_marks_pages_failed(tmp_path):
     # Given
     module = _load_module()

@@ -79,6 +79,56 @@ def test_append_ledger_event_writes_jsonl_and_redacts_token_like_values(tmp_path
     assert "chart_like_page" in contents
 
 
+def test_redacted_event_redacts_purely_alphabetic_long_secret():
+    # Given a 40-char secret with no digits/underscores/hyphens.
+    alpha_secret = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
+    assert len(alpha_secret) >= 32
+    event = LedgerEvent(
+        provider="gemini",
+        model_alias="gemini-3.1-flash-lite",
+        route_reason="fixture:chart_like_page expected gemini_vlm",
+        latency_ms=10.0,
+        status="ok",
+        fallback=False,
+        cost_estimate_usd=None,
+        metadata={"opaque": alpha_secret, "safe_note": "queued"},
+    )
+
+    # When
+    rendered = json.dumps(redacted_event(event), sort_keys=True)
+
+    # Then
+    assert alpha_secret not in rendered
+    assert "[REDACTED]" in rendered
+    assert "queued" in rendered
+
+
+def test_redacted_event_keeps_legitimate_none_but_drops_signed_url():
+    # Given
+    signature_value = "e" * 40
+    event = LedgerEvent(
+        provider="paddle",
+        model_alias="PaddleOCR-VL-1.6",
+        route_reason="hint:no_text_layer",
+        latency_ms=5.0,
+        status="ok",
+        fallback=False,
+        cost_estimate_usd=None,
+        metadata={
+            "optional_field": None,
+            "result_url": f"https://provider.example/r?X-Amz-Signature={signature_value}",
+        },
+    )
+
+    # When
+    payload = redacted_event(event)
+
+    # Then: a legitimate None survives as null; the signed URL key is dropped.
+    assert "metadata" in payload
+    assert payload["metadata"]["optional_field"] is None
+    assert "result_url" not in payload["metadata"]
+
+
 def test_redacted_event_removes_long_non_hex_token_like_values_but_keeps_safe_text():
     # Given
     non_hex_token = "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_"

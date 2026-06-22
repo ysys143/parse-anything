@@ -17,6 +17,8 @@ from odl_vl.router import RouteDecision, choose_route
 ProviderCallable = Callable[[PageInput, RouteDecision], NormalizedPage]
 Clock = Callable[[], float]
 
+_UNKNOWN_PROVIDER = "unknown"
+
 
 _MODEL_ALIASES: Mapping[ProviderName, str] = {
     ProviderName.DETERMINISTIC: "deterministic",
@@ -30,7 +32,7 @@ class PageResult:
     page_id: str
     page_index: int
     fixture_family: str
-    provider: ProviderName
+    provider: ProviderName | str
     route_reason: str
     fallback: bool
     status: str
@@ -71,26 +73,37 @@ def orchestrate_document(document: DocumentInput, config: OrchestratorConfig) ->
 
 def _process_page(page: PageInput, config: OrchestratorConfig) -> PageResult:
     family_meta = config.family_metadata.get(page.fixture_family, {})
-    decision = choose_route(page.routing_task(), family_meta)
-
+    decision: RouteDecision | None = None
     start = config.clock()
     try:
+        # Routing is inside the try so a malformed manifest family fails only this
+        # page instead of aborting the whole run.
+        decision = choose_route(page.routing_task(), family_meta)
         normalized = _run_provider(page, decision, config)
         status = "ok"
         error: str | None = None
-    except Exception as exc:  # provider failure becomes a failed page result, never aborts the run
+    except Exception as exc:  # routing or provider failure becomes a failed page result
         normalized = None
         status = "failed"
         error = type(exc).__name__
     latency_ms = max(0.0, (config.clock() - start) * 1000.0)
 
+    provider_label = str(decision.provider) if decision is not None else _UNKNOWN_PROVIDER
+    route_reason = decision.reason if decision is not None else f"route_error:{error}"
+    fallback = decision.fallback if decision is not None else False
+    model_alias = (
+        config.model_aliases.get(decision.provider, provider_label)
+        if decision is not None
+        else _UNKNOWN_PROVIDER
+    )
+
     event = LedgerEvent(
-        provider=str(decision.provider),
-        model_alias=config.model_aliases.get(decision.provider, str(decision.provider)),
-        route_reason=decision.reason,
+        provider=provider_label,
+        model_alias=model_alias,
+        route_reason=route_reason,
         latency_ms=latency_ms,
         status=status,
-        fallback=decision.fallback,
+        fallback=fallback,
         cost_estimate_usd=None,
         metadata=_ledger_metadata(page, normalized),
     )
@@ -101,9 +114,9 @@ def _process_page(page: PageInput, config: OrchestratorConfig) -> PageResult:
         page_id=page.page_id,
         page_index=page.page_index,
         fixture_family=page.fixture_family,
-        provider=decision.provider,
-        route_reason=decision.reason,
-        fallback=decision.fallback,
+        provider=decision.provider if decision is not None else _UNKNOWN_PROVIDER,
+        route_reason=route_reason,
+        fallback=fallback,
         status=status,
         normalized=normalized,
         error=error,

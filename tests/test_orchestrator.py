@@ -140,6 +140,39 @@ def test_ledger_records_routes_without_secret_or_signed_url(tmp_path):
     assert re.search(r"[A-Za-z0-9_-]{40,}", contents) is None
 
 
+def test_malformed_manifest_family_fails_only_that_page(tmp_path):
+    # Given a manifest where one family has an invalid expected_route.
+    family_metadata = {
+        "simple_text": {"expected_route": "deterministic_only"},
+        "broken_family": {"expected_route": "not_a_real_route"},
+    }
+    document = _document(
+        [
+            _page("p1", 0, "simple_text"),
+            _page("p2", 1, "broken_family"),
+            _page("p3", 2, "simple_text"),
+        ]
+    )
+    ledger_path = tmp_path / "ledger.jsonl"
+    config = OrchestratorConfig(
+        family_metadata=family_metadata,
+        paddle_provider=_fake_paddle,
+        gemini_provider=_fake_gemini,
+        ledger_path=ledger_path,
+        clock=_stub_clock(),
+    )
+
+    # When
+    results = orchestrate_document(document, config)
+
+    # Then: the bad page fails, the run continues, good pages still succeed.
+    assert [r.status for r in results] == ["ok", "failed", "ok"]
+    assert results[1].provider == "unknown"
+    assert results[1].route_reason.startswith("route_error:")
+    records = ledger_path.read_text(encoding="utf-8").splitlines()
+    assert len(records) == 3  # ledger written for every page including the failed one
+
+
 def test_ledger_latency_is_non_negative(tmp_path):
     # Given
     document = _document([_page("p1", 0, "simple_text")])

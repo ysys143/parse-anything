@@ -34,7 +34,8 @@ def test_build_gemini_generate_content_request_uses_safe_default_model():
         "https://generativelanguage.googleapis.com/"
         "v1beta/models/gemini-3.1-flash-lite:generateContent"
     )
-    assert request.headers["Authorization"] == f"Bearer {secret}"
+    assert request.headers["x-goog-api-key"] == secret
+    assert "Authorization" not in request.headers
     assert request.headers["Content-Type"] == "application/json"
     assert payload == {"contents": [{"parts": [{"text": "Extract this page."}]}]}
     assert secret not in repr(spec)

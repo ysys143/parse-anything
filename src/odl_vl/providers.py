@@ -117,12 +117,17 @@ class ProviderHttpClient:
         return self.transport.send(request)
 
 
+def is_success_status(status_code: int) -> bool:
+    return 200 <= status_code < 300
+
+
 def build_gemini_generate_content_request(spec: GeminiGenerateContentRequest) -> HttpRequest:
     payload: GeminiPayload = {"contents": [{"parts": [{"text": spec.prompt}]}]}
     return HttpRequest(
         method="POST",
         url=_join_url(spec.base_url, f"/v1beta/models/{spec.model}:generateContent"),
-        headers=_json_authorization_headers(spec.api_key),
+        # Gemini API keys authenticate via x-goog-api-key, not Authorization: Bearer.
+        headers=_gemini_api_key_headers(spec.api_key),
         body=_json_body(payload),
     )
 
@@ -154,6 +159,13 @@ def _json_authorization_headers(api_key: str) -> Mapping[str, str]:
     return {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": _JSON_CONTENT_TYPE,
+    }
+
+
+def _gemini_api_key_headers(api_key: str) -> Mapping[str, str]:
+    return {
+        "Content-Type": _JSON_CONTENT_TYPE,
+        "x-goog-api-key": api_key,
     }
 
 

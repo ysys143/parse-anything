@@ -18,10 +18,10 @@ if str(_SRC_ROOT) not in sys.path:
 from odl_vl.config import Settings, load_settings  # noqa: E402
 from odl_vl.ir import NormalizedPage  # noqa: E402
 from odl_vl.normalizers import (  # noqa: E402
-    decode_json_body,
     extract_gemini_text,
     normalize_gemini,
     normalize_paddle,
+    try_decode_json,
 )
 from odl_vl.orchestrator import (  # noqa: E402
     OrchestratorConfig,
@@ -33,6 +33,11 @@ from odl_vl.orchestrator_input import (  # noqa: E402
     DocumentInput,
     PageInput,
     load_document_input,
+)
+from odl_vl.paddle_jobs import (  # noqa: E402
+    extract_job_id,
+    find_result_json_url,
+    poll_job,
 )
 from odl_vl.providers import (  # noqa: E402
     DEFAULT_PADDLE_MODEL,
@@ -46,15 +51,12 @@ from odl_vl.providers import (  # noqa: E402
     build_gemini_generate_content_request,
     build_paddle_poll_request,
     build_paddle_submit_request,
+    is_success_status,
 )
 from odl_vl.router import RouteDecision  # noqa: E402
 
 
 _DEFAULT_MANIFEST: Final = _REPO_ROOT / "tests" / "fixtures" / "manifest.json"
-_COMPLETE_STATUSES: Final = frozenset({"done", "completed", "complete", "success", "succeeded", "finished"})
-_FAILED_STATUSES: Final = frozenset({"failed", "fail", "error", "errored", "canceled", "cancelled"})
-_JOB_ID_KEYS: Final = frozenset({"jobId", "job_id", "id", "taskId", "task_id"})
-_STATUS_KEYS: Final = frozenset({"status", "state", "jobStatus", "taskStatus"})
 
 Mode = Literal["offline", "live"]
 
@@ -171,20 +173,17 @@ class LiveProviders:
         if self.settings.gemini_api_key is None:
             raise RuntimeError("missing_gemini_api_key")
         prompt = page.intent_prompt or self.args["intent_prompt"] or _default_prompt(page)
-        base = build_gemini_generate_content_request(
+        request = build_gemini_generate_content_request(
             GeminiGenerateContentRequest(api_key=self.settings.gemini_api_key, prompt=prompt)
-        )
-        # Gemini API keys authenticate via x-goog-api-key, not Authorization: Bearer.
-        request = HttpRequest(
-            method=base.method,
-            url=base.url,
-            headers={"Content-Type": "application/json", "x-goog-api-key": self.settings.gemini_api_key},
-            body=base.body,
         )
         response = self._client.send(request)
         if response.status_code != 200:
             raise RuntimeError(f"gemini_http_{response.status_code}")
-        text = extract_gemini_text(_safe_decode(response.body)) or ""
+        text = extract_gemini_text(try_decode_json(response.body))
+        if text is None or text.strip() == "":
+            # A 200 with no usable text (safety block, empty candidates) is a real
+            # failure, not a successful empty page.
+            raise RuntimeError("gemini_empty_text")
         return normalize_gemini(text, ledger_fields={"mode": "live"})
 
     def paddle(self, page: PageInput, _decision: RouteDecision) -> NormalizedPage:
@@ -203,8 +202,8 @@ class LiveProviders:
                 )
             )
         )
-        job_id = _find_value(_safe_decode(submit.body), _JOB_ID_KEYS)
-        if not _is_success(submit.status_code) or job_id is None:
+        job_id = extract_job_id(try_decode_json(submit.body))
+        if not is_success_status(submit.status_code) or job_id is None:
             raise RuntimeError(f"paddle_submit_{submit.status_code}")
         completion = self._poll_paddle(api_key, base_url, job_id)
         result_doc = self._fetch_paddle_result(completion)
@@ -214,32 +213,34 @@ class LiveProviders:
         # The completed job exposes the layout result behind a signed URL
         # (data.resultUrl.jsonUrl). Fetch it through the same transport; never
         # log the signed URL or the raw result body.
-        json_url = _find_value(completion, frozenset({"jsonUrl"}))
+        json_url = find_result_json_url(completion)
         if json_url is None:
             raise RuntimeError("paddle_result_url_missing")
         response = self._client.send(HttpRequest(method="GET", url=json_url, headers={}))
-        if not _is_success(response.status_code):
+        if not is_success_status(response.status_code):
             raise RuntimeError(f"paddle_result_{response.status_code}")
-        return _safe_decode(response.body)
+        return try_decode_json(response.body)
 
     def _poll_paddle(self, api_key: str, base_url: str, job_id: str) -> object:
-        deadline = time.monotonic() + self.args["timeout_seconds"]
-        last_body: object = None
-        while time.monotonic() <= deadline:
-            response = self._client.send(
-                build_paddle_poll_request(PaddlePollRequest(api_key=api_key, base_url=base_url, job_id=job_id))
-            )
-            if not _is_success(response.status_code):
-                raise RuntimeError(f"paddle_poll_{response.status_code}")
-            last_body = _safe_decode(response.body)
-            status = _find_value(last_body, _STATUS_KEYS)
-            normalized_status = status.lower() if status is not None else None
-            if normalized_status in _COMPLETE_STATUSES:
-                return last_body
-            if normalized_status in _FAILED_STATUSES:
-                raise RuntimeError(f"paddle_status_{normalized_status}")
-            self.runtime.sleep(self.args["poll_interval_seconds"])
-        raise RuntimeError("paddle_poll_timeout")
+        outcome = poll_job(
+            client=self._client,
+            build_request=lambda: build_paddle_poll_request(
+                PaddlePollRequest(api_key=api_key, base_url=base_url, job_id=job_id)
+            ),
+            timeout_seconds=self.args["timeout_seconds"],
+            poll_interval_seconds=self.args["poll_interval_seconds"],
+            sleep=self.runtime.sleep,
+            now=time.monotonic,
+        )
+        match outcome.terminal:
+            case "complete":
+                return outcome.body
+            case "failed":
+                raise RuntimeError(f"paddle_status_{outcome.status}")
+            case "http_error":
+                raise RuntimeError(f"paddle_poll_{outcome.status_code}")
+            case "timeout":
+                raise RuntimeError("paddle_poll_timeout")
 
 
 def _default_prompt(page: PageInput) -> str:
@@ -290,34 +291,6 @@ def _print_summary(
 
 
 # --- helpers ----------------------------------------------------------------
-
-
-def _safe_decode(body: bytes) -> object:
-    try:
-        return decode_json_body(body)
-    except ValueError:
-        return None
-
-
-def _find_value(value: object, keys: frozenset[str]) -> str | None:
-    if isinstance(value, Mapping):
-        for key, nested in value.items():
-            if key in keys and isinstance(nested, str):
-                return nested
-            found = _find_value(nested, keys)
-            if found is not None:
-                return found
-        return None
-    if isinstance(value, list):
-        for nested in value:
-            found = _find_value(nested, keys)
-            if found is not None:
-                return found
-    return None
-
-
-def _is_success(status_code: int) -> bool:
-    return 200 <= status_code < 300
 
 
 def _slug(value: str) -> str:

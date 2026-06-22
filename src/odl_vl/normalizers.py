@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from odl_vl.ir import NormalizedPage, ProviderName
+from odl_vl.jsonsearch import find_first_string
 
 
 def decode_json_body(body: bytes | str) -> Any:
@@ -14,6 +15,17 @@ def decode_json_body(body: bytes | str) -> Any:
         return json.loads(text)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError(f"provider response is not valid JSON: {error}") from error
+
+
+def try_decode_json(body: bytes | str) -> Any:
+    """Best-effort JSON decode for CLI paths; returns None on malformed input.
+
+    Library callers that need an error should use :func:`decode_json_body`.
+    """
+    try:
+        return decode_json_body(body)
+    except ValueError:
+        return None
 
 
 def normalize_deterministic(
@@ -46,7 +58,7 @@ def normalize_gemini(
 
 def extract_gemini_text(payload: Any) -> str | None:
     """Walk a Gemini generateContent response for the first text part."""
-    return _find_first_text(payload, "text")
+    return find_first_string(payload, frozenset({"text"}))
 
 
 def normalize_paddle(
@@ -100,23 +112,6 @@ def normalize_paddle(
         provider=ProviderName.PADDLE,
         ledger_fields=fields,
     )
-
-
-def _find_first_text(value: Any, key: str) -> str | None:
-    if isinstance(value, Mapping):
-        for item_key, nested in value.items():
-            if item_key == key and isinstance(nested, str):
-                return nested
-            found = _find_first_text(nested, key)
-            if found is not None:
-                return found
-        return None
-    if isinstance(value, list):
-        for nested in value:
-            found = _find_first_text(nested, key)
-            if found is not None:
-                return found
-    return None
 
 
 def _coerce_float(value: Any) -> float | None:
