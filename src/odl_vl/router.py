@@ -28,18 +28,20 @@ class RouteDecision:
 
 def choose_route(task: RoutingTask, family_metadata: Mapping[str, object]) -> RouteDecision:
     expected_route = _expected_route(family_metadata)
-    fallback = expected_route == "hybrid"
 
+    # A routing hint is a deliberate provider choice, so it is not fallback-eligible:
+    # falling back to the other provider would contradict the hint (e.g. a page that
+    # needs image description must not silently rerun through OCR-only Paddle).
     if task.needs_image_description:
-        return RouteDecision(RouteProvider.GEMINI, "hint:needs_image_description", fallback)
+        return RouteDecision(RouteProvider.GEMINI, "hint:needs_image_description", False)
     if task.has_text_layer is False:
-        return RouteDecision(RouteProvider.PADDLE, "hint:no_text_layer", fallback)
+        return RouteDecision(RouteProvider.PADDLE, "hint:no_text_layer", False)
     if task.needs_table_structure:
-        return RouteDecision(RouteProvider.PADDLE, "hint:needs_table_structure", fallback)
+        return RouteDecision(RouteProvider.PADDLE, "hint:needs_table_structure", False)
     if task.is_rotated_or_scan:
-        return RouteDecision(RouteProvider.PADDLE, "hint:rotated_or_scan", fallback)
+        return RouteDecision(RouteProvider.PADDLE, "hint:rotated_or_scan", False)
     if task.is_low_quality_scan:
-        return RouteDecision(RouteProvider.PADDLE, "hint:low_quality_scan", fallback)
+        return RouteDecision(RouteProvider.PADDLE, "hint:low_quality_scan", False)
 
     return _route_from_fixture(task.fixture_family, expected_route)
 

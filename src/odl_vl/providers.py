@@ -124,7 +124,12 @@ class SafeTransport:
         try:
             return self.inner.send(request)
         except urllib.error.HTTPError as error:
-            return HttpResponse(status_code=error.code, body=b"")
+            # Preserve the server error body so callers can surface the reason.
+            try:
+                body = error.read()
+            except OSError:
+                body = b""
+            return HttpResponse(status_code=error.code, body=body)
         except urllib.error.URLError:
             return HttpResponse(status_code=0, body=b"")
 

@@ -87,8 +87,12 @@ class Runtime:
 
 def run_cli(argv: Sequence[str], runtime: Runtime) -> int:
     args = _parse_args(argv)
-    document = load_document_input(args["input"])
-    family_metadata = _load_family_metadata(args["manifest"])
+    try:
+        document = load_document_input(args["input"])
+        family_metadata = _load_family_metadata(args["manifest"])
+    except (OSError, ValueError) as error:
+        print(f"error=input_or_manifest_invalid detail={error}", file=runtime.stdout)
+        return 2
 
     paddle_provider, gemini_provider = _build_providers(args, runtime)
     output_dir = Path(args["output_dir"])
@@ -132,7 +136,12 @@ def _parse_args(argv: Sequence[str]) -> ParsedArgs:
 def _load_family_metadata(path: str | Path) -> Mapping[str, Mapping[str, object]]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     families = payload.get("families") if isinstance(payload, Mapping) else None
-    return families if isinstance(families, Mapping) else {}
+    if not isinstance(families, Mapping) or not families:
+        raise ValueError(f"manifest {path} has no non-empty 'families' mapping")
+    for name, meta in families.items():
+        if not isinstance(meta, Mapping):
+            raise ValueError(f"manifest family '{name}' must be a JSON object, got {type(meta).__name__}")
+    return families
 
 
 def _build_providers(args: ParsedArgs, runtime: Runtime) -> tuple[ProviderCallable, ProviderCallable]:
@@ -210,9 +219,11 @@ class LiveProviders:
                 )
             )
         )
-        job_id = extract_job_id(try_decode_json(submit.body))
-        if not is_success_status(submit.status_code) or job_id is None:
+        if not is_success_status(submit.status_code):
             raise RuntimeError(f"paddle_submit_{submit.status_code}")
+        job_id = extract_job_id(try_decode_json(submit.body))
+        if job_id is None:
+            raise RuntimeError("paddle_submit_no_job_id")
         completion = self._poll_paddle(api_key, base_url, job_id)
         result_doc = self._fetch_paddle_result(completion)
         return normalize_paddle(_extract_paddle_result(result_doc), ledger_fields={"mode": "live"})

@@ -128,11 +128,13 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         metadata=_ledger_metadata(page, normalized),
     )
     if config.ledger_path is not None:
-        # A ledger write failure (disk full, read-only dir) must not abort the run.
+        # A ledger write failure must not abort the run: OSError (disk full,
+        # read-only dir) or a serialization error (TypeError/ValueError on exotic
+        # metadata) only loses that one audit line.
         try:
             with ledger_lock:
                 append_ledger_event(config.ledger_path, event)
-        except OSError:
+        except (OSError, TypeError, ValueError):
             pass
 
     return PageResult(
@@ -157,12 +159,18 @@ def _run_with_fallback(
     """
     try:
         return _call_provider(decision.provider, page, decision, config), decision.provider, False
-    except Exception:
+    except Exception as primary_exc:
         alternate = _fallback_provider(decision.provider) if decision.fallback else None
         if alternate is None:
             raise
         # Primary failed but the hybrid route allows a second provider.
-        return _call_provider(alternate, page, decision, config), alternate, True
+        try:
+            return _call_provider(alternate, page, decision, config), alternate, True
+        except Exception as fallback_exc:
+            # Preserve both failures so the primary cause is not lost.
+            raise RuntimeError(
+                f"{decision.provider}:{primary_exc} | fallback {alternate}:{fallback_exc}"
+            ) from fallback_exc
 
 
 def _fallback_provider(primary: ProviderName) -> ProviderName | None:

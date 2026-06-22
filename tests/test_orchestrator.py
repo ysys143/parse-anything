@@ -147,9 +147,10 @@ def test_hybrid_page_failed_when_both_providers_fail(tmp_path):
     # When
     results = orchestrate_document(document, config)
 
-    # Then
+    # Then: both the primary and the fallback failure are preserved.
     assert results[0].status == "failed"
-    assert results[0].error == "down"
+    assert "paddle:down" in results[0].error
+    assert "fallback gemini:down" in results[0].error
 
 
 def test_provider_failure_becomes_failed_page(tmp_path):
@@ -261,6 +262,25 @@ def test_ledger_write_failure_does_not_abort_the_run(tmp_path):
     )
 
     # When / Then: the run completes and returns results instead of crashing.
+    results = orchestrate_document(document, config)
+    assert [r.status for r in results] == ["ok", "ok"]
+
+
+def test_non_serializable_ledger_fields_do_not_abort_the_run(tmp_path):
+    # Given a provider whose ledger_fields carry a value json.dumps cannot serialize.
+    def _bad_metadata_provider(page, _decision) -> NormalizedPage:
+        return normalize_gemini("body", ledger_fields={"weird": {1, 2, 3}})
+
+    document = _document([_page("p3", 0, "chart_like_page"), _page("p3b", 1, "simple_text")])
+    config = OrchestratorConfig(
+        family_metadata=_FAMILY_METADATA,
+        paddle_provider=_fake_paddle,
+        gemini_provider=_bad_metadata_provider,
+        ledger_path=tmp_path / "ledger.jsonl",
+        clock=_stub_clock(),
+    )
+
+    # When / Then: the serialization error is swallowed; the run still completes.
     results = orchestrate_document(document, config)
     assert [r.status for r in results] == ["ok", "ok"]
 

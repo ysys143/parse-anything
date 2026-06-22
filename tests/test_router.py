@@ -46,7 +46,8 @@ def test_choose_route_uses_paddle_for_table_preservation_hint_on_hybrid_family()
     # Then
     assert decision.provider is RouteProvider.PADDLE
     assert decision.reason == "hint:needs_table_structure"
-    assert decision.fallback is True
+    # A hint is a deliberate route, so it is not fallback-eligible.
+    assert decision.fallback is False
 
 
 def test_choose_route_uses_paddle_for_missing_text_layer_hint():

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 from dataclasses import dataclass, field
 
 from odl_vl.providers import (
@@ -12,10 +14,35 @@ from odl_vl.providers import (
     PaddlePollRequest,
     PaddleSubmitRequest,
     ProviderHttpClient,
+    SafeTransport,
     build_gemini_generate_content_request,
     build_paddle_poll_request,
     build_paddle_submit_request,
 )
+
+
+def test_safe_transport_preserves_http_error_status_and_body():
+    # Given an inner transport that raises an HTTPError carrying a server reason body.
+    @dataclass(slots=True)
+    class _RaisingTransport:
+        def send(self, request: HttpRequest) -> HttpResponse:
+            raise urllib.error.HTTPError(
+                url=request.url,
+                code=429,
+                msg="Too Many Requests",
+                hdrs={},  # type: ignore[arg-type]
+                fp=io.BytesIO(b'{"error":"quota exceeded"}'),
+            )
+
+    transport = SafeTransport(_RaisingTransport())
+    request = HttpRequest(method="GET", url="https://provider.example/jobs", headers={})
+
+    # When
+    response = transport.send(request)
+
+    # Then: the error surfaces as a status code with the server body preserved.
+    assert response.status_code == 429
+    assert b"quota exceeded" in response.body
 
 
 def test_build_gemini_generate_content_request_uses_safe_default_model():
