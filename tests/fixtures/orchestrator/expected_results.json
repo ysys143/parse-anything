@@ -1,0 +1,36 @@
+{
+  "document_id": "sample-orchestrator-doc",
+  "mode": "offline",
+  "pages": [
+    {
+      "page_id": "p1-simple",
+      "page_index": 0,
+      "fixture_family": "simple_text",
+      "provider": "deterministic",
+      "route_reason": "fixture:simple_text expected deterministic_only",
+      "fallback": false,
+      "status": "ok",
+      "markdown_contains": "Quarterly Notes"
+    },
+    {
+      "page_id": "p2-table",
+      "page_index": 1,
+      "fixture_family": "merged_table",
+      "provider": "paddle",
+      "route_reason": "fixture:merged_table expected hybrid",
+      "fallback": true,
+      "status": "ok",
+      "markdown_contains": "paddle offline OCR placeholder"
+    },
+    {
+      "page_id": "p3-chart",
+      "page_index": 2,
+      "fixture_family": "chart_like_page",
+      "provider": "gemini",
+      "route_reason": "fixture:chart_like_page expected gemini_vlm",
+      "fallback": false,
+      "status": "ok",
+      "markdown_contains": "Revenue trend"
+    }
+  ]
+}

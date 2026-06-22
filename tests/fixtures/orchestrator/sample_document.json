@@ -1,0 +1,27 @@
+{
+  "document_id": "sample-orchestrator-doc",
+  "pages": [
+    {
+      "page_id": "p1-simple",
+      "page_index": 0,
+      "fixture_family": "simple_text",
+      "page_image": "fixtures://simple_text/page-0.png",
+      "first_pass_md": "# Quarterly Notes\n\nThe born-digital body text parses deterministically."
+    },
+    {
+      "page_id": "p2-table",
+      "page_index": 1,
+      "fixture_family": "merged_table",
+      "page_image": "fixtures://merged_table/page-0.png",
+      "first_pass_md": "## Measurements\n\n| Group | Value |\n| --- | --- |\n| A | 1 |"
+    },
+    {
+      "page_id": "p3-chart",
+      "page_index": 2,
+      "fixture_family": "chart_like_page",
+      "page_image": "fixtures://chart_like_page/page-0.png",
+      "first_pass_md": "Figure 1. Revenue trend.",
+      "intent_prompt": "Summarize the chart trend and legend."
+    }
+  ]
+}

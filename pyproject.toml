@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "odl-vl"
+version = "0.1.0"
+description = "ODL VLM parsing experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odl_vl"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = ["-p", "no:html"]

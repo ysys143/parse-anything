@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "record_scope": "page",
+  "format": "json",
+  "additional_dependencies": [],
+  "fixture_families": [
+    "simple_text",
+    "two_column_ko_en",
+    "merged_table",
+    "formula_symbols",
+    "chart_like_page",
+    "text_as_image",
+    "rotated_scan",
+    "low_quality_scan"
+  ],
+  "required_page_fields": [
+    "fixture_family",
+    "page_index",
+    "expected_route",
+    "reading_order",
+    "table_structure",
+    "key_fields",
+    "image_description_expectation",
+    "bbox_tolerance",
+    "provider_allowances",
+    "scoring_metrics"
+  ],
+  "field_contract": {
+    "fixture_family": "One of the eight family identifiers in manifest.json.",
+    "page_index": "Zero-based page index within the generated fixture artifact.",
+    "expected_route": "Expected routing policy label for the page: deterministic_only, paddle_ocr, gemini_vlm, or hybrid.",
+    "reading_order": "Ordered block identifiers and expected text sequence for reading-order scoring.",
+    "table_structure": "Expected table captions, header hierarchy, row groups, merged cells, and unit rows. Use null when absent.",
+    "key_fields": "Named values or tokens that must be recovered for the page to pass.",
+    "image_description_expectation": "Expected chart, figure, or diagram description. Use null when no semantic image description is expected.",
+    "bbox_tolerance": "Per-block tolerance for bounding-box preservation, expressed as relative page-coordinate deltas.",
+    "provider_allowances": "Provider-specific acceptable differences for PaddleOCR official API and Gemini direct outputs.",
+    "scoring_metrics": "Metric names mapped to thresholds or qualitative pass criteria."
+  },
+  "default_bbox_tolerance": {
+    "x": 0.02,
+    "y": 0.02,
+    "width": 0.03,
+    "height": 0.03
+  },
+  "provider_allowance_contract": {
+    "paddle_ocr": ["bbox_jitter", "ocr_confidence_variation", "line_break_variation"],
+    "gemini_vlm": ["semantic_paraphrase", "caption_wording_variation", "non_deterministic_detail_order"],
+    "deterministic_only": ["whitespace_normalization", "markdown_wrapping"]
+  },
+  "scoring_metric_catalog": [
+    "reading_order",
+    "table_fidelity",
+    "image_description",
+    "ocr_contamination",
+    "routing_accuracy",
+    "cost",
+    "bbox_preservation",
+    "md_json_accuracy",
+    "text_recovery",
+    "confidence_drop"
+  ]
+}
