@@ -116,6 +116,36 @@ def test_build_paddle_submit_request_uses_safe_default_model():
     assert secret not in repr(request)
 
 
+def test_build_gemini_request_attaches_image_as_base64_inline_data():
+    import base64
+
+    from odl_vl.providers import GeminiInlineImage
+
+    image_bytes = b"\x89PNG\r\n\x1a\nrealpixels"
+    spec = GeminiGenerateContentRequest(
+        api_key="fake-gemini-secret-img",
+        prompt="Describe the chart.",
+        image=GeminiInlineImage(mime_type="image/png", data=image_bytes),
+    )
+
+    # When
+    request = build_gemini_generate_content_request(spec)
+    payload = json.loads(request.body.decode("utf-8"))
+
+    # Then: the request carries both the text and the base64-encoded image.
+    parts = payload["contents"][0]["parts"]
+    assert {"text": "Describe the chart."} in parts
+    inline = next(p["inlineData"] for p in parts if "inlineData" in p)
+    assert inline["mimeType"] == "image/png"
+    assert base64.b64decode(inline["data"]) == image_bytes
+
+
+def test_build_gemini_request_without_image_is_text_only():
+    spec = GeminiGenerateContentRequest(api_key="fake-gemini-secret", prompt="hi")
+    payload = json.loads(build_gemini_generate_content_request(spec).body.decode("utf-8"))
+    assert payload == {"contents": [{"parts": [{"text": "hi"}]}]}
+
+
 def test_build_paddle_submit_request_handles_service_root_base_url():
     # Given a base URL that is the OCR service root, missing the trailing /jobs.
     spec = PaddleSubmitRequest(

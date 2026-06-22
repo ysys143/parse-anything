@@ -126,6 +126,26 @@ def test_hybrid_paddle_failure_does_not_fall_back_to_text_only_gemini(tmp_path):
     assert results[0].error == "paddle_poll_timeout"
 
 
+def test_unknown_fixture_family_fails_the_page(tmp_path):
+    # Given a page whose fixture_family is not present in the manifest metadata.
+    document = _document([_page("p1", 0, "simple_text"), _page("px", 1, "not_in_manifest")])
+    config = OrchestratorConfig(
+        family_metadata=_FAMILY_METADATA,
+        paddle_provider=_fake_paddle,
+        gemini_provider=_fake_gemini,
+        ledger_path=tmp_path / "ledger.jsonl",
+        clock=_stub_clock(),
+    )
+
+    # When
+    results = orchestrate_document(document, config)
+
+    # Then: the unknown-family page fails instead of silently routing to deterministic.
+    assert results[0].status == "ok"
+    assert results[1].status == "failed"
+    assert "unknown_fixture_family:not_in_manifest" in results[1].error
+
+
 def test_provider_failure_becomes_failed_page(tmp_path):
     # Given
     def _boom(page, _decision) -> NormalizedPage:

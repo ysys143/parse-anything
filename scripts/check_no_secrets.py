@@ -114,10 +114,9 @@ def _should_scan(path: Path) -> bool:
 
 def _scan_file(path: Path) -> list[Finding]:
     findings: list[Finding] = []
-    try:
-        contents = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return findings
+    # Decode latin-1 (every byte maps to a char) so a non-UTF-8 file is still scanned
+    # for secret patterns rather than silently skipped.
+    contents = path.read_bytes().decode("latin-1")
     for line_number, line in enumerate(contents.splitlines(), start=1):
         findings.extend(_scan_line(path, line_number, line))
     return findings

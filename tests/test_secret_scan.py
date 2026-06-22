@@ -102,6 +102,21 @@ def test_scanner_flags_url_embedded_credentials(tmp_path):
     assert "url_credentials" in {finding.kind for finding in report.findings}
 
 
+def test_scanner_scans_non_utf8_files(tmp_path):
+    # Given a non-UTF-8 (latin-1) file with a secret-shaped assignment.
+    module = _load_secret_scan_module()
+    sample = tmp_path / "config.cfg"
+    # Assembled at runtime so this source file is not itself flagged.
+    secret = "a1b2c3d4e5f6g7h8" + "i9j0k1l2m3n4o5p6q7"
+    sample.write_bytes(("api_key = " + secret + "\n# caf\xe9").encode("latin-1"))
+
+    # When
+    report = module.scan_paths([sample])
+
+    # Then: a non-UTF-8 file is still scanned, not silently treated as clean.
+    assert "secret_assignment" in {finding.kind for finding in report.findings}
+
+
 def test_scanner_does_not_flag_bare_git_sha_or_checksum(tmp_path):
     # Given hex hashes in prose with no secret-ish context on the line.
     module = _load_secret_scan_module()

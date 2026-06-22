@@ -105,7 +105,8 @@ def test_live_cli_calls_providers_through_transport(tmp_path):
             _json_response({"data": {"state": "done", "resultUrl": {"jsonUrl": signed_url}}}),
             # paddle signed-URL result fetch
             _json_response({"result": {"layoutParsingResults": [{"markdown": {"text": "live paddle md"}}]}}),
-            # gemini generateContent
+            # gemini fetches the page image first, then calls generateContent
+            HttpResponse(status_code=200, body=b"\x89PNG\r\n\x1a\nfake-image-bytes"),
             _json_response({"candidates": [{"content": {"parts": [{"text": "live gemini md"}]}}]}),
         ]
     )
@@ -135,6 +136,10 @@ def test_live_cli_calls_providers_through_transport(tmp_path):
     gemini_md = (output_dir / "pages" / "page-002-p3-chart.md").read_text(encoding="utf-8")
     assert "live paddle md" in paddle_md
     assert "live gemini md" in gemini_md
+    # The Gemini request must actually carry the page image (inlineData), not just text.
+    gemini_post = transport.requests[-1]
+    assert b"inlineData" in gemini_post.body
+    assert b"fake-image-bytes" not in gemini_post.body  # sent base64-encoded, not raw
     # Secrets must never leak into ledger output.
     ledger = (output_dir / "ledger.jsonl").read_text(encoding="utf-8")
     assert "fake-gemini-secret-value" not in ledger
@@ -204,6 +209,27 @@ def test_cli_rejects_manifest_without_families(tmp_path):
     # Then: a clear error instead of silently routing every page to deterministic.
     assert code == 2
     assert "families" in runtime.stdout.getvalue()
+
+
+def test_cli_rejects_manifest_with_non_string_expected_route(tmp_path):
+    # Given a manifest whose family has a non-string expected_route (typo as a list).
+    module = _load_module()
+    bad_manifest = tmp_path / "manifest.json"
+    bad_manifest.write_text(
+        json.dumps({"families": {"simple_text": {"expected_route": ["paddle_ocr"]}}}), encoding="utf-8"
+    )
+    runtime = module.Runtime(environ={}, stdout=io.StringIO())
+
+    # When
+    code = module.run_cli(
+        ["--input", str(_SAMPLE), "--output-dir", str(tmp_path / "out"),
+         "--mode", "offline", "--manifest", str(bad_manifest)],
+        runtime,
+    )
+
+    # Then: a clear manifest error instead of a per-page TypeError.
+    assert code == 2
+    assert "expected_route" in runtime.stdout.getvalue()
 
 
 def test_live_cli_paddle_200_without_job_id_reports_distinct_error(tmp_path):
@@ -309,6 +335,7 @@ def test_live_cli_gemini_empty_text_marks_page_failed(tmp_path):
             _json_response({"code": 0, "msg": "Success", "data": {"jobId": "job-1"}}),
             _json_response({"data": {"state": "done", "resultUrl": {"jsonUrl": "https://signed.example/r"}}}),
             _json_response({"result": {"layoutParsingResults": [{"markdown": {"text": "paddle ok"}}]}}),
+            HttpResponse(status_code=200, body=b"fake-image-bytes"),  # gemini image fetch
             _json_response({"candidates": []}),  # gemini 200 but empty -> must fail, not silent empty
         ]
     )

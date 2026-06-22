@@ -102,13 +102,11 @@ opt-in, experimental concurrency knob for live mode; it preserves output order
 and serializes ledger writes, but live providers may rate-limit concurrent jobs,
 so keep the default of 1 unless you have verified your provider tolerates it.
 
-**Gemini is text-only in this slice.** The Gemini request carries `first_pass_md`
-and `intent_prompt` but not the page image (no `inlineData`), so it transcribes
-the provided text rather than reading `page_image`. Sending the image to Gemini
-(fetch + base64 `inlineData`) is deferred to a follow-up. Because Gemini cannot
-read the image, **cross-provider fallback is deferred too**: each page runs only
-its routed provider, and a failed page is reported as failed (not silently re-run
-through another provider).
+In live mode the Gemini path fetches the page image from `page_image` and sends
+it to the model as base64 `inlineData` alongside the prompt, so the VLM actually
+sees the page (not just `first_pass_md`). Cross-provider fallback is not performed
+this slice: each page runs only its routed provider, and a failed page is reported
+as failed rather than silently re-run through another provider.
 
 ## Fixture Plan
 

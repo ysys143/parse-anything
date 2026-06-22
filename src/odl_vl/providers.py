@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Final, Protocol, TypedDict
+from typing import Any, Final, Protocol, TypedDict
 
 
 DEFAULT_GEMINI_MODEL: Final = "gemini-3.1-flash-lite"
@@ -15,18 +16,6 @@ GEMINI_BASE_URL: Final = "https://generativelanguage.googleapis.com"
 _PADDLE_JOBS_PATH: Final = "/api/v2/ocr/jobs"
 _PADDLE_OCR_PATH: Final = "/api/v2/ocr"
 _JSON_CONTENT_TYPE: Final = "application/json"
-
-
-class GeminiPart(TypedDict):
-    text: str
-
-
-class GeminiContent(TypedDict):
-    parts: list[GeminiPart]
-
-
-class GeminiPayload(TypedDict):
-    contents: list[GeminiContent]
 
 
 class PaddleOptionalPayload(TypedDict):
@@ -69,9 +58,16 @@ class Transport(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class GeminiInlineImage:
+    mime_type: str
+    data: bytes = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class GeminiGenerateContentRequest:
     api_key: str = field(repr=False)
     prompt: str
+    image: GeminiInlineImage | None = None
     model: str = DEFAULT_GEMINI_MODEL
     base_url: str = GEMINI_BASE_URL
 
@@ -150,7 +146,18 @@ def is_success_status(status_code: int) -> bool:
 
 
 def build_gemini_generate_content_request(spec: GeminiGenerateContentRequest) -> HttpRequest:
-    payload: GeminiPayload = {"contents": [{"parts": [{"text": spec.prompt}]}]}
+    parts: list[dict[str, Any]] = [{"text": spec.prompt}]
+    if spec.image is not None:
+        # Attach the page image so the VLM actually sees it (base64 inlineData).
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": spec.image.mime_type,
+                    "data": base64.b64encode(spec.image.data).decode("ascii"),
+                }
+            }
+        )
+    payload: dict[str, Any] = {"contents": [{"parts": parts}]}
     return HttpRequest(
         method="POST",
         url=_join_url(spec.base_url, f"/v1beta/models/{spec.model}:generateContent"),
@@ -197,7 +204,7 @@ def _gemini_api_key_headers(api_key: str) -> Mapping[str, str]:
     }
 
 
-def _json_body(payload: GeminiPayload | PaddleSubmitPayload) -> bytes:
+def _json_body(payload: Mapping[str, Any]) -> bytes:
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 

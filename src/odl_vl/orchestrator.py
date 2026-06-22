@@ -87,13 +87,17 @@ def orchestrate_document(document: DocumentInput, config: OrchestratorConfig) ->
 
 
 def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: threading.Lock) -> PageResult:
-    family_meta = config.family_metadata.get(page.fixture_family, {})
     decision: RouteDecision | None = None
     actual_provider: ProviderName | None = None
     start = config.clock()
     try:
-        # Routing is inside the try so a malformed manifest family fails only this
-        # page instead of aborting the whole run.
+        # Routing is inside the try so a bad manifest/family fails only this page
+        # instead of aborting the whole run.
+        if page.fixture_family not in config.family_metadata:
+            # Unknown family would otherwise route to the deterministic default and
+            # silently skip OCR/VLM; surface it instead.
+            raise ValueError(f"unknown_fixture_family:{page.fixture_family}")
+        family_meta = config.family_metadata[page.fixture_family]
         decision = choose_route(page.routing_task(), family_meta)
         actual_provider = decision.provider
         normalized = _run_provider(decision.provider, page, decision, config)

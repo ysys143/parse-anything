@@ -43,6 +43,7 @@ from odl_vl.paddle_jobs import (  # noqa: E402
 from odl_vl.providers import (  # noqa: E402
     DEFAULT_PADDLE_MODEL,
     GeminiGenerateContentRequest,
+    GeminiInlineImage,
     HttpRequest,
     PaddlePollRequest,
     PaddleSubmitRequest,
@@ -53,6 +54,7 @@ from odl_vl.providers import (  # noqa: E402
     is_success_status,
 )
 from odl_vl.router import RouteDecision  # noqa: E402
+from odl_vl.secret_patterns import redact_secrets  # noqa: E402
 
 
 _DEFAULT_MANIFEST: Final = _REPO_ROOT / "tests" / "fixtures" / "manifest.json"
@@ -127,6 +129,9 @@ def _load_family_metadata(path: str | Path) -> Mapping[str, Mapping[str, object]
     for name, meta in families.items():
         if not isinstance(meta, Mapping):
             raise ValueError(f"manifest family '{name}' must be a JSON object, got {type(meta).__name__}")
+        expected_route = meta.get("expected_route")
+        if expected_route is not None and not isinstance(expected_route, str):
+            raise ValueError(f"manifest family '{name}' expected_route must be a string")
     return families
 
 
@@ -174,8 +179,10 @@ class LiveProviders:
         if self.settings.gemini_api_key is None:
             raise RuntimeError("missing_gemini_api_key")
         prompt = page.intent_prompt or self.args["intent_prompt"] or _default_prompt(page)
+        # Fetch the page image and send it to the VLM so it actually sees the page.
+        image = self._fetch_page_image(page.page_image)
         request = build_gemini_generate_content_request(
-            GeminiGenerateContentRequest(api_key=self.settings.gemini_api_key, prompt=prompt)
+            GeminiGenerateContentRequest(api_key=self.settings.gemini_api_key, prompt=prompt, image=image)
         )
         response = self.client.send(request)
         if not is_success_status(response.status_code):
@@ -186,6 +193,16 @@ class LiveProviders:
             # failure, not a successful empty page.
             raise RuntimeError("gemini_empty_text")
         return normalize_gemini(text, ledger_fields={"mode": "live"})
+
+    def _fetch_page_image(self, page_image: str) -> GeminiInlineImage:
+        response = self.client.send(HttpRequest(method="GET", url=page_image, headers={}))
+        if not is_success_status(response.status_code) or not response.body:
+            raise RuntimeError(f"gemini_image_fetch_{response.status_code}")
+        # Use the Content-Type only if it is a real image/* type; many object stores
+        # serve images as application/octet-stream, which the VLM rejects.
+        header_mime = (response.headers.get("Content-Type") or "").split(";")[0].strip()
+        mime = header_mime if header_mime.startswith("image/") else _guess_image_mime(page_image)
+        return GeminiInlineImage(mime_type=mime, data=response.body)
 
     def paddle(self, page: PageInput, _decision: RouteDecision) -> NormalizedPage:
         if self.settings.paddle_api_key is None or self.settings.paddle_base_url is None:
@@ -256,6 +273,17 @@ class LiveProviders:
                 raise RuntimeError("paddle_poll_timeout")
 
 
+def _guess_image_mime(url: str) -> str:
+    lowered = url.lower().split("?", 1)[0]
+    if lowered.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    if lowered.endswith(".webp"):
+        return "image/webp"
+    if lowered.endswith(".gif"):
+        return "image/gif"
+    return "image/png"
+
+
 def _default_prompt(page: PageInput) -> str:
     return f"Describe and transcribe page {page.page_id} as markdown."
 
@@ -306,7 +334,8 @@ def _print_summary(
     # Surface failed pages so an incomplete run is never silent.
     for result in results:
         if result.status != "ok":
-            print(f"failed page={result.page_id} reason={result.error}", file=stdout)
+            reason = redact_secrets(result.error) if result.error is not None else None
+            print(f"failed page={result.page_id} reason={reason}", file=stdout)
 
 
 # --- helpers ----------------------------------------------------------------
