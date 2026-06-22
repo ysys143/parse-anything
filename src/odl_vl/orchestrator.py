@@ -14,12 +14,20 @@ from odl_vl.normalizers import normalize_deterministic
 from odl_vl.orchestrator_input import DocumentInput, PageInput
 from odl_vl.providers import DEFAULT_GEMINI_MODEL, DEFAULT_PADDLE_MODEL
 from odl_vl.router import RouteDecision, choose_route
+from odl_vl.secret_patterns import redact_secrets
 
 
 ProviderCallable = Callable[[PageInput, RouteDecision], NormalizedPage]
 Clock = Callable[[], float]
 
 _UNKNOWN_PROVIDER = "unknown"
+
+
+class _FallbackExhausted(RuntimeError):
+    """Raised when a fallback-eligible route's primary and alternate both fail.
+
+    Lets the page record that a fallback was actually attempted even though it failed.
+    """
 
 
 _MODEL_ALIASES: Mapping[ProviderName, str] = {
@@ -48,10 +56,10 @@ class PageResult:
             "page_index": self.page_index,
             "fixture_family": self.fixture_family,
             "provider": str(self.provider),
-            "route_reason": self.route_reason,
+            "route_reason": redact_secrets(self.route_reason),
             "fallback": self.fallback,
             "status": self.status,
-            "error": self.error,
+            "error": redact_secrets(self.error) if self.error is not None else None,
             "markdown_chars": len(normalized.markdown) if normalized is not None else 0,
             "image_description": normalized.image_description if normalized is not None else None,
             "confidence": normalized.confidence if normalized is not None else None,
@@ -104,6 +112,8 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
     except Exception as exc:  # routing or provider failure becomes a failed page result
         normalized = None
         status = "failed"
+        # A fallback that was attempted but also failed is still a fallback.
+        fallback_used = isinstance(exc, _FallbackExhausted)
         # Keep the provider's specific message (e.g. "gemini_http_429"); fall back
         # to the class name for exceptions with no message.
         error = str(exc) or type(exc).__name__
@@ -167,8 +177,8 @@ def _run_with_fallback(
         try:
             return _call_provider(alternate, page, decision, config), alternate, True
         except Exception as fallback_exc:
-            # Preserve both failures so the primary cause is not lost.
-            raise RuntimeError(
+            # Preserve both failures (and the fact a fallback was attempted).
+            raise _FallbackExhausted(
                 f"{decision.provider}:{primary_exc} | fallback {alternate}:{fallback_exc}"
             ) from fallback_exc
 

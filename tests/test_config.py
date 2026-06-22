@@ -115,3 +115,27 @@ def test_load_settings_does_not_mutate_process_environment(tmp_path, monkeypatch
     # Then
     assert settings.gemini_api_key == "env-gemini-placeholder"
     assert "GEMINI_API_KEY" not in os.environ
+
+
+def test_load_settings_strips_unquoted_inline_comment(tmp_path):
+    # Given a .env value with a trailing inline comment.
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=abc123placeholder # prod key\n", encoding="utf-8")
+
+    # When
+    settings = load_settings(env_file=env_file, environ={})
+
+    # Then: the comment is not folded into the key value.
+    assert settings.gemini_api_key == "abc123placeholder"
+
+
+def test_load_settings_keeps_hash_inside_quoted_value(tmp_path):
+    # Given a quoted value that legitimately contains a '#'.
+    env_file = tmp_path / ".env"
+    env_file.write_text('GEMINI_API_KEY="abc#123placeholder"\n', encoding="utf-8")
+
+    # When
+    settings = load_settings(env_file=env_file, environ={})
+
+    # Then
+    assert settings.gemini_api_key == "abc#123placeholder"

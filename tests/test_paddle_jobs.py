@@ -26,6 +26,17 @@ def test_extract_job_id_ignores_bare_id_key():
     assert extract_job_id({"id": "trace-only"}) is None
 
 
+def test_extract_job_id_accepts_numeric_value():
+    # Some APIs return the job id as a JSON number.
+    assert extract_job_id({"data": {"jobId": 12345}}) == "12345"
+
+
+def test_find_first_string_prefers_shallow_top_level_key():
+    # A top-level authoritative 'status' must win over a nested non-terminal 'state'.
+    body = {"data": {"state": "processing"}, "status": "done"}
+    assert extract_status(body) == "done"
+
+
 def test_extract_status_lowercases_and_classifies():
     assert extract_status({"data": {"state": "DONE"}}) == "done"
     assert classify_status("done") == "complete"

@@ -5,9 +5,9 @@ import json
 import sys
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal, Protocol, TextIO, TypedDict
+from typing import Final, Literal, TextIO, TypedDict
 
 
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
@@ -15,6 +15,7 @@ _SRC_ROOT: Final = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
+from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
 from odl_vl.config import Settings, load_settings  # noqa: E402
 from odl_vl.ir import NormalizedPage  # noqa: E402
 from odl_vl.normalizers import (  # noqa: E402
@@ -46,9 +47,6 @@ from odl_vl.providers import (  # noqa: E402
     PaddlePollRequest,
     PaddleSubmitRequest,
     ProviderHttpClient,
-    SafeTransport,
-    Transport,
-    UrllibTransport,
     build_gemini_generate_content_request,
     build_paddle_poll_request,
     build_paddle_submit_request,
@@ -62,10 +60,6 @@ _DEFAULT_MANIFEST: Final = _REPO_ROOT / "tests" / "fixtures" / "manifest.json"
 Mode = Literal["offline", "live"]
 
 
-class Sleeper(Protocol):
-    def __call__(self, seconds: float) -> None: ...
-
-
 class ParsedArgs(TypedDict):
     input: str
     output_dir: str
@@ -75,14 +69,6 @@ class ParsedArgs(TypedDict):
     timeout_seconds: float
     poll_interval_seconds: float
     max_workers: int
-
-
-@dataclass(frozen=True, slots=True)
-class Runtime:
-    environ: Mapping[str, str] | None = None
-    transport: Transport = field(default_factory=UrllibTransport)
-    stdout: TextIO = sys.stdout
-    sleep: Sleeper = time.sleep
 
 
 def run_cli(argv: Sequence[str], runtime: Runtime) -> int:
@@ -184,7 +170,7 @@ class LiveProviders:
     def _client(self) -> ProviderHttpClient:
         # Wrap so live HTTP/URL errors become status codes and surface as
         # gemini_http_<code>/paddle_*_<code> rather than opaque URLError.
-        return ProviderHttpClient(SafeTransport(self.runtime.transport))
+        return safe_client(self.runtime)
 
     def gemini(self, page: PageInput, _decision: RouteDecision) -> NormalizedPage:
         if self.settings.gemini_api_key is None:
@@ -194,7 +180,7 @@ class LiveProviders:
             GeminiGenerateContentRequest(api_key=self.settings.gemini_api_key, prompt=prompt)
         )
         response = self._client.send(request)
-        if response.status_code != 200:
+        if not is_success_status(response.status_code):
             raise RuntimeError(f"gemini_http_{response.status_code}")
         text = extract_gemini_text(try_decode_json(response.body))
         if text is None or text.strip() == "":

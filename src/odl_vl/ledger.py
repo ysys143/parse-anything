@@ -34,7 +34,8 @@ def redacted_event(event: LedgerEvent) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "provider": event.provider,
         "model_alias": event.model_alias,
-        "route_reason": event.route_reason,
+        # route_reason can embed an exception string, so redact it like metadata.
+        "route_reason": redact_secrets(event.route_reason),
         "latency_ms": event.latency_ms,
         "status": event.status,
         "fallback": event.fallback,

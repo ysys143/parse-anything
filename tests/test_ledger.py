@@ -129,6 +129,28 @@ def test_redacted_event_keeps_legitimate_none_but_drops_signed_url():
     assert "result_url" not in payload["metadata"]
 
 
+def test_redacted_event_redacts_secret_in_route_reason():
+    # Given a route_reason that embeds a long opaque token (e.g. from an exception).
+    token = "x" * 40
+    event = LedgerEvent(
+        provider="unknown",
+        model_alias="unknown",
+        route_reason=f"route_error:boom {token}",
+        latency_ms=1.0,
+        status="failed",
+        fallback=False,
+        cost_estimate_usd=None,
+        metadata={},
+    )
+
+    # When
+    payload = redacted_event(event)
+
+    # Then
+    assert token not in payload["route_reason"]
+    assert "[REDACTED]" in payload["route_reason"]
+
+
 def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_param():
     # Given metadata URLs with basic-auth userinfo and a non-standard signing param.
     event = LedgerEvent(

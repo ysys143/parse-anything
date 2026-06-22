@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from collections.abc import Iterable, Sequence
@@ -92,9 +93,14 @@ def _iter_files(paths: Sequence[str | Path]) -> Iterable[Path]:
                 yield path
             continue
         if path.is_dir():
-            for nested in sorted(path.rglob("*")):
-                if nested.is_file() and _should_scan(nested):
-                    yield nested
+            # Prune skipped directories during the walk so we never stat/sort the
+            # contents of .git/__pycache__/.pytest_cache.
+            for root, dirs, files in os.walk(path):
+                dirs[:] = sorted(d for d in dirs if d not in _SKIPPED_DIRS)
+                for name in sorted(files):
+                    nested = Path(root) / name
+                    if _should_scan(nested):
+                        yield nested
 
 
 def _should_scan(path: Path) -> bool:

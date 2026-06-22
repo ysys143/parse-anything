@@ -79,7 +79,19 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
     if separator == "" or key.strip() == "":
         return None
 
-    return key.strip(), _strip_quotes(value.strip())
+    value = value.strip()
+    if value[:1] in {"'", '"'}:
+        # Quoted value: keep as-is so a '#' inside the quotes is preserved.
+        return key.strip(), _strip_quotes(value)
+    return key.strip(), _strip_inline_comment(value)
+
+
+def _strip_inline_comment(value: str) -> str:
+    # Drop an unquoted trailing comment introduced by whitespace + '#'.
+    for index, char in enumerate(value):
+        if char == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value
 
 
 def _strip_quotes(value: str) -> str:

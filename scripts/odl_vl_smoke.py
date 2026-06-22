@@ -4,10 +4,10 @@ import argparse
 import sys
 import time
 import urllib.parse
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, Literal, Protocol, TextIO, TypedDict, assert_never
+from typing import Final, Literal, TextIO, TypedDict, assert_never
 
 
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
@@ -15,6 +15,7 @@ _SRC_ROOT: Final = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
+from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
 from odl_vl.config import Settings, load_settings  # noqa: E402
 from odl_vl.jsonsearch import find_first_string  # noqa: E402
 from odl_vl.normalizers import try_decode_json  # noqa: E402
@@ -25,10 +26,6 @@ from odl_vl.providers import (  # noqa: E402
     GeminiGenerateContentRequest,
     PaddlePollRequest,
     PaddleSubmitRequest,
-    ProviderHttpClient,
-    SafeTransport,
-    Transport,
-    UrllibTransport,
     build_gemini_generate_content_request,
     build_paddle_poll_request,
     build_paddle_submit_request,
@@ -53,18 +50,6 @@ class ParsedArgs(TypedDict):
     demo_url: str
     timeout_seconds: float
     poll_interval_seconds: float
-
-
-class Sleeper(Protocol):
-    def __call__(self, seconds: float) -> None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class Runtime:
-    environ: Mapping[str, str] | None = None
-    transport: Transport = field(default_factory=UrllibTransport)
-    stdout: TextIO = sys.stdout
-    sleep: Sleeper = time.sleep
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +118,7 @@ def _run_gemini_live(settings: Settings, runtime: Runtime) -> int:
         print("provider=gemini live=fail reason=missing_api_key", file=runtime.stdout)
         return 2
 
-    client = ProviderHttpClient(SafeTransport(runtime.transport))
+    client = safe_client(runtime)
     request = build_gemini_generate_content_request(
         GeminiGenerateContentRequest(api_key=settings.gemini_api_key, prompt=_GEMINI_PROMPT)
     )
@@ -157,7 +142,7 @@ def _run_paddle_live(settings: Settings, runtime: Runtime, args: ParsedArgs) -> 
         base_url=settings.paddle_base_url,
         model=settings.paddle_model or DEFAULT_PADDLE_MODEL,
     )
-    client = ProviderHttpClient(SafeTransport(runtime.transport))
+    client = safe_client(runtime)
     submit_response = client.send(
         build_paddle_submit_request(
             PaddleSubmitRequest(

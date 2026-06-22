@@ -147,10 +147,11 @@ def test_hybrid_page_failed_when_both_providers_fail(tmp_path):
     # When
     results = orchestrate_document(document, config)
 
-    # Then: both the primary and the fallback failure are preserved.
+    # Then: both failures are preserved, and the page records that a fallback was tried.
     assert results[0].status == "failed"
     assert "paddle:down" in results[0].error
     assert "fallback gemini:down" in results[0].error
+    assert results[0].fallback is True
 
 
 def test_provider_failure_becomes_failed_page(tmp_path):

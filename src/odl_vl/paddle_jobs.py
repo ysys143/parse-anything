@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final, Literal
 
-from odl_vl.jsonsearch import find_first_string
+from odl_vl.jsonsearch import find_first_scalar, find_first_string
 from odl_vl.normalizers import try_decode_json
 from odl_vl.providers import HttpRequest, HttpResponse, ProviderHttpClient, is_success_status
 
@@ -20,7 +20,8 @@ Terminal = Literal["complete", "failed", "http_error", "timeout"]
 
 
 def extract_job_id(body: object) -> str | None:
-    return find_first_string(body, JOB_ID_KEYS, strip=True)
+    # Accept a numeric job id (some APIs return it as a JSON number).
+    return find_first_scalar(body, JOB_ID_KEYS)
 
 
 def extract_status(body: object) -> str | None:

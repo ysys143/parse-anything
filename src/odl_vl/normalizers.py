@@ -57,7 +57,29 @@ def normalize_gemini(
 
 
 def extract_gemini_text(payload: Any) -> str | None:
-    """Walk a Gemini generateContent response for the first text part."""
+    """Return the model's text from a Gemini generateContent response.
+
+    Anchors on candidates[].content.parts[].text so a stray 'text' field in a
+    citation/safety block is not mistaken for the model output; falls back to a
+    shallow search only if the expected structure is absent.
+    """
+    if isinstance(payload, Mapping):
+        candidates = payload.get("candidates")
+        if isinstance(candidates, list):
+            for candidate in candidates:
+                if not isinstance(candidate, Mapping):
+                    continue
+                content = candidate.get("content")
+                if not isinstance(content, Mapping):
+                    continue
+                parts = content.get("parts")
+                if not isinstance(parts, list):
+                    continue
+                for part in parts:
+                    if isinstance(part, Mapping):
+                        text = part.get("text")
+                        if isinstance(text, str) and text != "":
+                            return text
     return find_first_string(payload, frozenset({"text"}))
 
 

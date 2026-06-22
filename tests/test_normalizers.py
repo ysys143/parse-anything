@@ -40,6 +40,17 @@ def test_extract_gemini_text_walks_response_payload():
     assert extract_gemini_text(payload) == "extracted body"
 
 
+def test_extract_gemini_text_anchors_on_candidate_part_over_stray_text():
+    # Given a stray 'text' field (e.g. citation metadata) before the real content part.
+    payload = {
+        "promptFeedback": {"text": "stray citation text"},
+        "candidates": [{"content": {"parts": [{"text": "the real answer"}]}}],
+    }
+
+    # When / Then: the model output is returned, not the stray field.
+    assert extract_gemini_text(payload) == "the real answer"
+
+
 def test_normalize_paddle_parses_layout_results_and_confidence():
     # Given
     result = {
