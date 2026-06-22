@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
@@ -107,6 +108,25 @@ class UrllibTransport:
                 body=response.read(),
                 headers=dict(response.getheaders()),
             )
+
+
+@dataclass(frozen=True, slots=True)
+class SafeTransport:
+    """Wrap a transport so HTTP/URL errors surface as a status code instead of raising.
+
+    Lets provider code branch on ``response.status_code`` uniformly for both fake
+    transports (tests) and the live ``UrllibTransport`` (which raises on non-2xx).
+    """
+
+    inner: Transport
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        try:
+            return self.inner.send(request)
+        except urllib.error.HTTPError as error:
+            return HttpResponse(status_code=error.code, body=b"")
+        except urllib.error.URLError:
+            return HttpResponse(status_code=0, body=b"")
 
 
 @dataclass(frozen=True, slots=True)

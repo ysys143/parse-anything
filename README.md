@@ -97,6 +97,11 @@ polled, and the completed layout result is fetched from the job's signed result
 URL. The signed URL and raw provider bodies are never printed or written to the
 ledger.
 
+Pages are processed sequentially by default. `--max-workers N` (N > 1) is an
+opt-in, experimental concurrency knob for live mode; it preserves output order
+and serializes ledger writes, but live providers may rate-limit concurrent jobs,
+so keep the default of 1 unless you have verified your provider tolerates it.
+
 ## Fixture Plan
 
 The fixture work is metadata-only in this slice. The initial eight fixture families and page-level golden schema contract live under [`tests/fixtures/`](tests/fixtures/README.md). The fixture sufficiency and discriminativeness criteria are documented in [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md#5-fixture-and-golden-set-strategy).

@@ -78,6 +78,30 @@ def test_orchestrate_routes_each_provider_path(tmp_path):
     assert results[2].normalized.image_description == "desc"
 
 
+def test_max_workers_preserves_order_and_processes_all_pages(tmp_path):
+    # Given many pages and concurrent processing.
+    document = _document([_page(f"p{i}", i, "simple_text") for i in range(12)])
+    ledger_path = tmp_path / "ledger.jsonl"
+    config = OrchestratorConfig(
+        family_metadata=_FAMILY_METADATA,
+        paddle_provider=_fake_paddle,
+        gemini_provider=_fake_gemini,
+        ledger_path=ledger_path,
+        max_workers=4,
+    )
+
+    # When
+    results = orchestrate_document(document, config)
+
+    # Then: output order matches input order and every page is processed once.
+    assert [r.page_id for r in results] == [f"p{i}" for i in range(12)]
+    assert all(r.status == "ok" for r in results)
+    # Ledger append is serialized: one well-formed JSON line per page, no torn writes.
+    lines = ledger_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 12
+    assert all(json.loads(line)["provider"] == "deterministic" for line in lines)
+
+
 def test_provider_failure_becomes_failed_page(tmp_path):
     # Given
     def _boom(page, _decision) -> NormalizedPage:
@@ -97,7 +121,7 @@ def test_provider_failure_becomes_failed_page(tmp_path):
 
     # Then
     assert results[0].status == "failed"
-    assert results[0].error == "RuntimeError"
+    assert results[0].error == "provider exploded"  # specific message preserved, not just the class
     assert results[0].normalized is None
 
 

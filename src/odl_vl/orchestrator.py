@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, assert_never
@@ -65,13 +67,27 @@ class OrchestratorConfig:
     ledger_path: str | Path | None = None
     clock: Clock = time.monotonic
     model_aliases: Mapping[ProviderName, str] = field(default_factory=lambda: dict(_MODEL_ALIASES))
+    max_workers: int = 1
 
 
 def orchestrate_document(document: DocumentInput, config: OrchestratorConfig) -> list[PageResult]:
-    return [_process_page(page, config) for page in document.pages]
+    pages = document.pages
+    if config.max_workers <= 1 or len(pages) <= 1:
+        lock = threading.Lock()
+        return [_process_page(page, config, lock) for page in pages]
+
+    # Pages are independent; run them concurrently while keeping output order and
+    # serializing the shared ledger append.
+    lock = threading.Lock()
+    results: list[PageResult | None] = [None] * len(pages)
+    with ThreadPoolExecutor(max_workers=config.max_workers) as executor:
+        futures = {executor.submit(_process_page, page, config, lock): index for index, page in enumerate(pages)}
+        for future in futures:
+            results[futures[future]] = future.result()
+    return [result for result in results if result is not None]
 
 
-def _process_page(page: PageInput, config: OrchestratorConfig) -> PageResult:
+def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: threading.Lock) -> PageResult:
     family_meta = config.family_metadata.get(page.fixture_family, {})
     decision: RouteDecision | None = None
     start = config.clock()
@@ -85,7 +101,9 @@ def _process_page(page: PageInput, config: OrchestratorConfig) -> PageResult:
     except Exception as exc:  # routing or provider failure becomes a failed page result
         normalized = None
         status = "failed"
-        error = type(exc).__name__
+        # Keep the provider's specific message (e.g. "gemini_http_429"); fall back
+        # to the class name for exceptions with no message.
+        error = str(exc) or type(exc).__name__
     latency_ms = max(0.0, (config.clock() - start) * 1000.0)
 
     provider_label = str(decision.provider) if decision is not None else _UNKNOWN_PROVIDER
@@ -108,7 +126,8 @@ def _process_page(page: PageInput, config: OrchestratorConfig) -> PageResult:
         metadata=_ledger_metadata(page, normalized),
     )
     if config.ledger_path is not None:
-        append_ledger_event(config.ledger_path, event)
+        with ledger_lock:
+            append_ledger_event(config.ledger_path, event)
 
     return PageResult(
         page_id=page.page_id,

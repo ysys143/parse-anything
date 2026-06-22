@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -64,7 +64,7 @@ def poll_job(
     polls = 0
     last_status: str | None = None
     last_body: object = None
-    while now() <= deadline:
+    while True:  # always poll at least once, even with timeout <= 0
         polls += 1
         response: HttpResponse = client.send(build_request())
         if not is_success_status(response.status_code):
@@ -74,9 +74,20 @@ def poll_job(
         terminal = classify_status(last_status)
         if terminal is not None:
             return PollOutcome(terminal, last_status, last_body, polls)
+        if now() >= deadline:
+            return PollOutcome("timeout", last_status, last_body, polls)
         sleep(poll_interval_seconds)
-    return PollOutcome("timeout", last_status, last_body, polls)
 
 
 def find_result_json_url(body: object) -> str | None:
+    # Prefer the documented location (data.resultUrl.jsonUrl) so an unrelated
+    # nested 'jsonUrl' elsewhere in the payload cannot be picked by mistake.
+    if isinstance(body, Mapping):
+        data = body.get("data")
+        if isinstance(data, Mapping):
+            result_url = data.get("resultUrl")
+            if isinstance(result_url, Mapping):
+                json_url = result_url.get("jsonUrl")
+                if isinstance(json_url, str):
+                    return json_url
     return find_first_string(body, frozenset({"jsonUrl"}))

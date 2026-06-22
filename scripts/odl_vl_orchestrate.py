@@ -46,6 +46,7 @@ from odl_vl.providers import (  # noqa: E402
     PaddlePollRequest,
     PaddleSubmitRequest,
     ProviderHttpClient,
+    SafeTransport,
     Transport,
     UrllibTransport,
     build_gemini_generate_content_request,
@@ -73,6 +74,7 @@ class ParsedArgs(TypedDict):
     intent_prompt: str | None
     timeout_seconds: float
     poll_interval_seconds: float
+    max_workers: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +97,7 @@ def run_cli(argv: Sequence[str], runtime: Runtime) -> int:
         paddle_provider=paddle_provider,
         gemini_provider=gemini_provider,
         ledger_path=output_dir / "ledger.jsonl",
+        max_workers=args["max_workers"],
     )
 
     results = orchestrate_document(document, config)
@@ -112,6 +115,7 @@ def _parse_args(argv: Sequence[str]) -> ParsedArgs:
     parser.add_argument("--intent-prompt", default=None)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--poll-interval", type=float, default=2.0)
+    parser.add_argument("--max-workers", type=int, default=1, help="Process pages concurrently (live mode)")
     namespace = parser.parse_args(argv)
     return {
         "input": namespace.input,
@@ -121,6 +125,7 @@ def _parse_args(argv: Sequence[str]) -> ParsedArgs:
         "intent_prompt": namespace.intent_prompt,
         "timeout_seconds": namespace.timeout,
         "poll_interval_seconds": namespace.poll_interval,
+        "max_workers": max(1, namespace.max_workers),
     }
 
 
@@ -167,7 +172,9 @@ class LiveProviders:
 
     @property
     def _client(self) -> ProviderHttpClient:
-        return ProviderHttpClient(self.runtime.transport)
+        # Wrap so live HTTP/URL errors become status codes and surface as
+        # gemini_http_<code>/paddle_*_<code> rather than opaque URLError.
+        return ProviderHttpClient(SafeTransport(self.runtime.transport))
 
     def gemini(self, page: PageInput, _decision: RouteDecision) -> NormalizedPage:
         if self.settings.gemini_api_key is None:
@@ -265,8 +272,10 @@ def _write_outputs(output_dir: Path, results: Sequence[PageResult]) -> None:
 
     results_path = output_dir / "results.jsonl"
     with results_path.open("w", encoding="utf-8") as results_file:
-        for result in results:
-            markdown_name = f"page-{result.page_index:03d}-{_slug(result.page_id)}.md"
+        for ordinal, result in enumerate(results):
+            # Use the write ordinal (always unique) so page_ids that slug to the
+            # same string cannot overwrite each other's markdown.
+            markdown_name = f"page-{ordinal:03d}-{_slug(result.page_id)}.md"
             markdown = result.normalized.markdown if result.normalized is not None else ""
             (pages_dir / markdown_name).write_text(markdown, encoding="utf-8")
             record = result.to_record()

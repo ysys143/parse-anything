@@ -143,6 +143,46 @@ def test_live_cli_calls_providers_through_transport(tmp_path):
     assert "signed.example" not in ledger
 
 
+def test_offline_cli_does_not_overwrite_slug_colliding_pages(tmp_path):
+    # Given two page_ids that slug to the same string at the same page_index.
+    module = _load_module()
+    doc = tmp_path / "doc.json"
+    doc.write_text(
+        json.dumps(
+            {
+                "document_id": "collide",
+                "pages": [
+                    {
+                        "page_id": "doc.1",
+                        "page_index": 0,
+                        "fixture_family": "simple_text",
+                        "page_image": "fixtures://a.png",
+                        "first_pass_md": "# first page body",
+                    },
+                    {
+                        "page_id": "doc-1",
+                        "page_index": 0,
+                        "fixture_family": "simple_text",
+                        "page_image": "fixtures://b.png",
+                        "first_pass_md": "# second page body",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+
+    # When
+    module.run_cli(["--input", str(doc), "--output-dir", str(output_dir), "--mode", "offline"], module.Runtime(environ={}, stdout=io.StringIO()))
+
+    # Then: both pages keep distinct markdown files (no silent overwrite).
+    markdown_files = sorted((output_dir / "pages").glob("*.md"))
+    assert len(markdown_files) == 2
+    bodies = {f.read_text(encoding="utf-8") for f in markdown_files}
+    assert bodies == {"# first page body", "# second page body"}
+
+
 def test_live_cli_gemini_empty_text_marks_page_failed(tmp_path):
     # Given a Paddle path that succeeds and a Gemini 200 with no candidate text.
     module = _load_module()
@@ -177,7 +217,7 @@ def test_live_cli_gemini_empty_text_marks_page_failed(tmp_path):
     results = {record["page_id"]: record for record in _read_results(output_dir)}
     assert results["p2-table"]["status"] == "ok"
     assert results["p3-chart"]["status"] == "failed"
-    assert results["p3-chart"]["error"] == "RuntimeError"
+    assert results["p3-chart"]["error"] == "gemini_empty_text"  # specific reason preserved
 
 
 def test_live_cli_missing_keys_marks_pages_failed(tmp_path):

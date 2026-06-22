@@ -9,6 +9,13 @@ from pathlib import Path
 from typing import Final, TextIO
 
 
+_SRC_ROOT: Final = Path(__file__).resolve().parents[1] / "src"
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from odl_vl.secret_patterns import KNOWN_SECRET_PREFIX_RE, LONG_TOKEN_RE  # noqa: E402
+
+
 _GOOGLE_API_KEY_RE: Final = re.compile(r"(?<![A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])")
 _HF_TOKEN_RE: Final = re.compile(r"(?<![A-Za-z0-9_-])hf_[A-Za-z0-9]{20,}(?![A-Za-z0-9_-])")
 _HEX_TOKEN_RE: Final = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32,}(?![0-9a-fA-F])")
@@ -16,9 +23,14 @@ _SECRET_ASSIGNMENT_RE: Final = re.compile(
     r"^\s*(?:export\s+)?['\"]?[A-Z0-9_.-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|"
     r"AUTHORIZATION|SIGNATURE)[A-Z0-9_.-]*['\"]?\s*[:=]\s*['\"]?([^'\"\s#]+)"
 )
-_SAFE_VALUE_RE: Final = re.compile(
-    r"(?i)^(?:<[^>]+>|\$\{[^}]+\}|present|absent|none|null|true|false|optional|placeholder|"
-    r".*placeholder.*|.*example.*|.*fake.*|.*override.*|.*dummy.*|.*test.*)$"
+# Exact placeholder tokens and template forms that are always safe.
+_SAFE_EXACT_RE: Final = re.compile(
+    r"(?i)^(?:<[^>]+>|\$\{[^}]+\}|present|absent|none|null|true|false|optional|placeholder)$"
+)
+# A placeholder marker counts only as a delimited word, never as an embedded
+# substring (so "testsecretabc123..." or "realKeyOverride123..." are NOT safe).
+_SAFE_PLACEHOLDER_RE: Final = re.compile(
+    r"(?i)(?:^|[^a-z0-9])(?:placeholder|example|fake|dummy|sample|changeme|redacted|your|xxxx+)(?:[^a-z0-9]|$)"
 )
 _MIN_SECRET_ASSIGNMENT_LENGTH: Final = 20
 _SKIPPED_SUFFIXES: Final = frozenset({".pyc", ".pyo", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip"})
@@ -103,6 +115,7 @@ def _scan_line(path: Path, line_number: int, line: str) -> list[Finding]:
         ("google_api_key", _GOOGLE_API_KEY_RE),
         ("hf_token", _HF_TOKEN_RE),
         ("hex_token", _HEX_TOKEN_RE),
+        ("known_secret_prefix", KNOWN_SECRET_PREFIX_RE),
     )
     for kind, pattern in checks:
         if pattern.search(line):
@@ -119,7 +132,17 @@ def _has_secret_assignment(line: str) -> bool:
     value = match.group(1).strip().rstrip(",")
     if len(value) < _MIN_SECRET_ASSIGNMENT_LENGTH:
         return False
-    return _SAFE_VALUE_RE.fullmatch(value) is None
+    return not _is_safe_value(value)
+
+
+def _is_safe_value(value: str) -> bool:
+    if _SAFE_EXACT_RE.fullmatch(value) is not None:
+        return True
+    # A value that clearly looks like a real opaque secret is never safe, even if
+    # it happens to contain a placeholder-ish substring.
+    if LONG_TOKEN_RE.search(value) or KNOWN_SECRET_PREFIX_RE.search(value):
+        return False
+    return _SAFE_PLACEHOLDER_RE.search(value) is not None
 
 
 if __name__ == "__main__":

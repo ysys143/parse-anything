@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from odl_vl.secret_patterns import SECRET_KEY_NAME_RE, SIGNED_URL_QUERY_RE, redact_secrets
 
-# Redact any 32+ char opaque token, including purely-alphabetic secrets.
-_LONG_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])")
 
 # Sentinel distinguishing "drop this key" (secret/signed URL) from a legitimate None.
 _DROP = object()
-_SECRET_KEY_RE = re.compile(r"(api[_-]?key|token|secret|signature|authorization|credential)", re.IGNORECASE)
-_SIGNED_URL_QUERY_RE = re.compile(r"(x-amz-signature|signature|token|expires|x-goog-signature)", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +65,7 @@ def _redacted_value(value: Any) -> Any:
     if isinstance(value, str):
         if _is_signed_url(value):
             return _DROP
-        return _LONG_TOKEN_RE.sub("[REDACTED]", value)
+        return redact_secrets(value)
     if isinstance(value, Mapping):
         return _redacted_mapping(value)
     if isinstance(value, list):
@@ -80,10 +76,10 @@ def _redacted_value(value: Any) -> Any:
 
 
 def _is_secret_key(key: str) -> bool:
-    return _SECRET_KEY_RE.search(key) is not None
+    return SECRET_KEY_NAME_RE.search(key) is not None
 
 
 def _is_signed_url(value: str) -> bool:
     if not value.startswith(("http://", "https://")):
         return False
-    return _SIGNED_URL_QUERY_RE.search(value) is not None
+    return SIGNED_URL_QUERY_RE.search(value) is not None

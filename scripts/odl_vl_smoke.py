@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-import urllib.error
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -24,11 +23,10 @@ from odl_vl.providers import (  # noqa: E402
     DEFAULT_GEMINI_MODEL,
     DEFAULT_PADDLE_MODEL,
     GeminiGenerateContentRequest,
-    HttpRequest,
-    HttpResponse,
     PaddlePollRequest,
     PaddleSubmitRequest,
     ProviderHttpClient,
+    SafeTransport,
     Transport,
     UrllibTransport,
     build_gemini_generate_content_request,
@@ -129,27 +127,12 @@ def _print_dry_config(provider: ProviderName, settings: Settings, stdout: TextIO
             assert_never(unreachable)
 
 
-@dataclass(frozen=True, slots=True)
-class _SafeTransport:
-    """Wrap a transport so HTTP/URL errors surface as a status code instead of raising."""
-
-    inner: Transport
-
-    def send(self, request: HttpRequest) -> HttpResponse:
-        try:
-            return self.inner.send(request)
-        except urllib.error.HTTPError as error:
-            return HttpResponse(status_code=error.code, body=b"")
-        except urllib.error.URLError:
-            return HttpResponse(status_code=0, body=b"")
-
-
 def _run_gemini_live(settings: Settings, runtime: Runtime) -> int:
     if settings.gemini_api_key is None:
         print("provider=gemini live=fail reason=missing_api_key", file=runtime.stdout)
         return 2
 
-    client = ProviderHttpClient(_SafeTransport(runtime.transport))
+    client = ProviderHttpClient(SafeTransport(runtime.transport))
     request = build_gemini_generate_content_request(
         GeminiGenerateContentRequest(api_key=settings.gemini_api_key, prompt=_GEMINI_PROMPT)
     )
@@ -173,7 +156,7 @@ def _run_paddle_live(settings: Settings, runtime: Runtime, args: ParsedArgs) -> 
         base_url=settings.paddle_base_url,
         model=settings.paddle_model or DEFAULT_PADDLE_MODEL,
     )
-    client = ProviderHttpClient(_SafeTransport(runtime.transport))
+    client = ProviderHttpClient(SafeTransport(runtime.transport))
     submit_response = client.send(
         build_paddle_submit_request(
             PaddleSubmitRequest(

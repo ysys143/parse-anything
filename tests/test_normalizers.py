@@ -60,6 +60,17 @@ def test_normalize_paddle_parses_layout_results_and_confidence():
     assert page.ledger_fields["paddle_image_count"] == 1
 
 
+def test_normalize_paddle_accepts_markdown_as_plain_string():
+    # Given a Paddle response whose markdown is a plain string, not a mapping.
+    result = {"layoutParsingResults": [{"markdown": "## Plain string markdown"}]}
+
+    # When
+    page = normalize_paddle(result)
+
+    # Then
+    assert page.markdown == "## Plain string markdown"
+
+
 def test_normalize_paddle_empty_result_returns_empty_markdown():
     # When
     page = normalize_paddle({"layoutParsingResults": []})

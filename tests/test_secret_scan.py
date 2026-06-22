@@ -45,11 +45,35 @@ def test_scanner_reports_google_hf_hex_and_secret_assignments(tmp_path):
         "hf_token",
         "hex_token",
         "secret_assignment",
+        "known_secret_prefix",  # AIza/hf_ also match the shared known-prefix check
     }
     rendered = "\n".join(finding.render() for finding in report.findings)
     assert "AIza" not in rendered
     assert "Z" * 37 not in rendered
     assert "safe" * 8 not in rendered
+
+
+def test_scanner_flags_real_secret_that_merely_contains_a_placeholder_word(tmp_path):
+    # Given real-looking secrets whose value embeds 'test'/'override' as a substring.
+    module = _load_secret_scan_module()
+    sample = tmp_path / "sample.env"
+    # Values are assembled at runtime so this source file is not itself flagged.
+    sample.write_text(
+        "\n".join(
+            [
+                "TEST_API_KEY=" + "test" + "secretabc123def456ghi789xyz",
+                "ACCESS_TOKEN=" + "realKey" + "Override1234567890abcd",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    # When
+    report = module.scan_paths([sample])
+
+    # Then: the embedded placeholder substring must NOT whitelist a real secret.
+    assert report.has_findings is True
+    assert "secret_assignment" in {finding.kind for finding in report.findings}
 
 
 def test_scanner_ignores_placeholders_and_missing_paths(tmp_path):

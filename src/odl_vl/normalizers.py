@@ -81,7 +81,11 @@ def normalize_paddle(
         if not isinstance(entry, Mapping):
             continue
         markdown = entry.get("markdown")
-        if isinstance(markdown, Mapping):
+        if isinstance(markdown, str):
+            # Some PaddleOCR responses return markdown as a plain string.
+            if markdown != "":
+                markdown_parts.append(markdown)
+        elif isinstance(markdown, Mapping):
             text = markdown.get("text")
             if isinstance(text, str) and text != "":
                 markdown_parts.append(text)
