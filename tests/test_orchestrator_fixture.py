@@ -59,7 +59,6 @@ def test_offline_run_matches_golden_expectations(tmp_path):
         record = produced[golden["page_id"]]
         assert record["provider"] == golden["provider"]
         assert record["route_reason"] == golden["route_reason"]
-        assert record["fallback"] == golden["fallback"]
         assert record["status"] == golden["status"]
         markdown = (output_dir / record["markdown_file"]).read_text(encoding="utf-8")
         assert golden["markdown_contains"] in markdown

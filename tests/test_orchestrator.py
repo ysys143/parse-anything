@@ -73,7 +73,6 @@ def test_orchestrate_routes_each_provider_path(tmp_path):
     assert providers == ["deterministic", "paddle", "gemini"]
     assert all(result.status == "ok" for result in results)
     # merged_table is hybrid (fallback-eligible) but paddle succeeds, so no fallback was used.
-    assert results[1].fallback is False
     assert results[0].normalized.markdown == "first pass for p1"
     assert results[1].normalized.markdown == "paddle:p2"
     assert results[2].normalized.image_description == "desc"
@@ -124,7 +123,6 @@ def test_hybrid_paddle_failure_does_not_fall_back_to_text_only_gemini(tmp_path):
     # Then: no cross-provider fallback is performed this slice.
     assert results[0].status == "failed"
     assert str(results[0].provider) == "paddle"
-    assert results[0].fallback is False
     assert results[0].error == "paddle_poll_timeout"
 
 
@@ -278,4 +276,3 @@ def test_ledger_latency_is_non_negative(tmp_path):
 
     # Then
     assert record["latency_ms"] == pytest.approx(1000.0)
-    assert record["fallback"] is False

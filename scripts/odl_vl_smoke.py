@@ -123,8 +123,8 @@ def _run_gemini_live(settings: Settings, runtime: Runtime) -> int:
     )
     response = client.send(request)
     text = extract_gemini_text(try_decode_json(response.body))
-    if response.status_code == 200 and (text or "").strip() == "ok":
-        print("provider=gemini live=pass status=200 text=ok", file=runtime.stdout)
+    if is_success_status(response.status_code) and (text or "").strip() == "ok":
+        print(f"provider=gemini live=pass status={response.status_code} text=ok", file=runtime.stdout)
         return 0
 
     print(f"provider=gemini live=fail status={response.status_code}", file=runtime.stdout)

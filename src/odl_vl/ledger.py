@@ -25,7 +25,6 @@ class LedgerEvent:
     route_reason: str
     latency_ms: float
     status: str
-    fallback: bool
     cost_estimate_usd: float | None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -38,7 +37,6 @@ def redacted_event(event: LedgerEvent) -> dict[str, Any]:
         "route_reason": redact_secrets(event.route_reason),
         "latency_ms": event.latency_ms,
         "status": event.status,
-        "fallback": event.fallback,
         "cost_estimate_usd": event.cost_estimate_usd,
     }
     metadata = _redacted_mapping(event.metadata)

@@ -105,10 +105,10 @@ so keep the default of 1 unless you have verified your provider tolerates it.
 **Gemini is text-only in this slice.** The Gemini request carries `first_pass_md`
 and `intent_prompt` but not the page image (no `inlineData`), so it transcribes
 the provided text rather than reading `page_image`. Sending the image to Gemini
-(fetch + base64 `inlineData`) is deferred to a follow-up. Because of this,
-cross-provider fallback only runs Gemini -> Paddle (Paddle fetches the image URL
-and can recover a failed VLM page); a failed Paddle OCR page is not silently
-re-run through a blind Gemini.
+(fetch + base64 `inlineData`) is deferred to a follow-up. Because Gemini cannot
+read the image, **cross-provider fallback is deferred too**: each page runs only
+its routed provider, and a failed page is reported as failed (not silently re-run
+through another provider).
 
 ## Fixture Plan
 

@@ -124,16 +124,22 @@ def normalize_paddle(
         if confidence is not None:
             confidences.append(confidence)
 
-    top_confidence = _coerce_float(result.get("confidence"))
-    if top_confidence is not None:
-        confidences.append(top_confidence)
-
     if image_count:
         fields = {**fields, "paddle_image_count": image_count}
 
+    # Prefer the page-level confidence; otherwise average the per-entry ones. The two
+    # are not mixed, since they can be on different scales.
+    top_confidence = _coerce_float(result.get("confidence"))
+    if top_confidence is not None:
+        page_confidence: float | None = top_confidence
+    elif confidences:
+        page_confidence = sum(confidences) / len(confidences)
+    else:
+        page_confidence = None
+
     return NormalizedPage(
         markdown="\n\n".join(markdown_parts),
-        confidence=(sum(confidences) / len(confidences)) if confidences else None,
+        confidence=page_confidence,
         provider=ProviderName.PADDLE,
         ledger_fields=fields,
     )

@@ -8,7 +8,6 @@
       "fixture_family": "simple_text",
       "provider": "deterministic",
       "route_reason": "fixture:simple_text expected deterministic_only",
-      "fallback": false,
       "status": "ok",
       "markdown_contains": "Quarterly Notes"
     },
@@ -18,7 +17,6 @@
       "fixture_family": "merged_table",
       "provider": "paddle",
       "route_reason": "fixture:merged_table expected hybrid",
-      "fallback": false,
       "status": "ok",
       "markdown_contains": "paddle offline OCR placeholder"
     },
@@ -28,7 +26,6 @@
       "fixture_family": "chart_like_page",
       "provider": "gemini",
       "route_reason": "fixture:chart_like_page expected gemini_vlm",
-      "fallback": false,
       "status": "ok",
       "markdown_contains": "Revenue trend"
     }

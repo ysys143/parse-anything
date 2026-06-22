@@ -16,7 +16,6 @@ def test_redacted_event_preserves_required_ledger_fields_without_secret_values()
         route_reason="hint:no_text_layer",
         latency_ms=125.5,
         status="ok",
-        fallback=False,
         cost_estimate_usd=0.0025,
         metadata={
             "PADDLE_API_KEY": key_value,
@@ -34,7 +33,6 @@ def test_redacted_event_preserves_required_ledger_fields_without_secret_values()
     assert payload["route_reason"] == "hint:no_text_layer"
     assert payload["latency_ms"] == 125.5
     assert payload["status"] == "ok"
-    assert payload["fallback"] is False
     assert payload["cost_estimate_usd"] == 0.0025
     rendered = json.dumps(payload, sort_keys=True)
     assert "PADDLE_API_KEY" not in rendered
@@ -54,7 +52,6 @@ def test_append_ledger_event_writes_jsonl_and_redacts_token_like_values(tmp_path
         route_reason="hint:needs_image_description",
         latency_ms=10.0,
         status="fallback_used",
-        fallback=True,
         cost_estimate_usd=None,
         metadata={
             "TOKEN": token_value,
@@ -71,7 +68,6 @@ def test_append_ledger_event_writes_jsonl_and_redacts_token_like_values(tmp_path
     records = [json.loads(line) for line in contents.splitlines()]
     assert len(records) == 1
     assert records[0]["provider"] == "gemini"
-    assert records[0]["fallback"] is True
     assert "API_KEY" not in contents
     assert "TOKEN" not in contents
     assert re.search(r"[0-9a-fA-F]{32,}", contents) is None
@@ -89,7 +85,6 @@ def test_redacted_event_redacts_purely_alphabetic_long_secret():
         route_reason="fixture:chart_like_page expected gemini_vlm",
         latency_ms=10.0,
         status="ok",
-        fallback=False,
         cost_estimate_usd=None,
         metadata={"opaque": alpha_value, "safe_note": "queued"},
     )
@@ -112,7 +107,6 @@ def test_redacted_event_keeps_legitimate_none_but_drops_signed_url():
         route_reason="hint:no_text_layer",
         latency_ms=5.0,
         status="ok",
-        fallback=False,
         cost_estimate_usd=None,
         metadata={
             "optional_field": None,
@@ -139,7 +133,6 @@ def test_redacted_event_blanket_redacts_route_reason():
         route_reason=route_reason,
         latency_ms=1.0,
         status="failed",
-        fallback=False,
         cost_estimate_usd=None,
         metadata={},
     )
@@ -161,7 +154,6 @@ def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_
         route_reason="hint:no_text_layer",
         latency_ms=5.0,
         status="ok",
-        fallback=False,
         cost_estimate_usd=None,
         metadata={
             # Assembled at runtime so this source file is not itself flagged.
@@ -191,7 +183,6 @@ def test_redacted_event_removes_long_non_hex_value_like_values_but_keeps_safe_te
         route_reason="fixture:chart_like_page expected gemini_vlm",
         latency_ms=11.0,
         status="ok",
-        fallback=False,
         cost_estimate_usd=0.001,
         metadata={
             "family": "chart_like_page",

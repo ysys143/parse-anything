@@ -7,11 +7,11 @@ artifacts are generated or committed here; `page_image` values are inert
 - `sample_document.json` — an ODL-like document with exactly three pages, one
   per routed provider path:
   - `simple_text` -> deterministic_only (deterministic route)
-  - `merged_table` -> hybrid (Paddle route with fallback)
+  - `merged_table` -> hybrid (Paddle route)
   - `chart_like_page` -> gemini_vlm (Gemini route)
 - `expected_results.json` — golden expectations for an **offline** orchestration
-  run: routed provider, route reason, fallback flag, and a markdown fragment
-  that must appear in the normalized output.
+  run: routed provider, route reason, and a markdown fragment that must appear in
+  the normalized output.
 
 The expected provider routes are derived from `tests/fixtures/manifest.json`
 family metadata via `odl_vl.router.choose_route`. Offline mode uses synthetic

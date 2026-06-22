@@ -210,7 +210,12 @@ class LiveProviders:
             raise RuntimeError("paddle_submit_no_job_id")
         completion = self._poll_paddle(api_key, base_url, job_id)
         result_doc = self._fetch_paddle_result(completion)
-        return normalize_paddle(_extract_paddle_result(result_doc), ledger_fields={"mode": "live"})
+        normalized = normalize_paddle(_extract_paddle_result(result_doc), ledger_fields={"mode": "live"})
+        if normalized.markdown == "":
+            # A completed job that yields no markdown means the result shape was not
+            # recognized (or was empty); fail rather than emit a silently blank page.
+            raise RuntimeError("paddle_empty_result")
+        return normalized
 
     def _fetch_paddle_result(self, completion: object) -> object:
         # The completed job exposes the layout result behind a signed URL

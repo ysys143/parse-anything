@@ -23,25 +23,21 @@ class RoutingTask:
 class RouteDecision:
     provider: RouteProvider
     reason: str
-    fallback: bool
 
 
 def choose_route(task: RoutingTask, family_metadata: Mapping[str, object]) -> RouteDecision:
     expected_route = _expected_route(family_metadata)
 
-    # A routing hint is a deliberate provider choice, so it is not fallback-eligible:
-    # falling back to the other provider would contradict the hint (e.g. a page that
-    # needs image description must not silently rerun through OCR-only Paddle).
     if task.needs_image_description:
-        return RouteDecision(RouteProvider.GEMINI, "hint:needs_image_description", False)
+        return RouteDecision(RouteProvider.GEMINI, "hint:needs_image_description")
     if task.has_text_layer is False:
-        return RouteDecision(RouteProvider.PADDLE, "hint:no_text_layer", False)
+        return RouteDecision(RouteProvider.PADDLE, "hint:no_text_layer")
     if task.needs_table_structure:
-        return RouteDecision(RouteProvider.PADDLE, "hint:needs_table_structure", False)
+        return RouteDecision(RouteProvider.PADDLE, "hint:needs_table_structure")
     if task.is_rotated_or_scan:
-        return RouteDecision(RouteProvider.PADDLE, "hint:rotated_or_scan", False)
+        return RouteDecision(RouteProvider.PADDLE, "hint:rotated_or_scan")
     if task.is_low_quality_scan:
-        return RouteDecision(RouteProvider.PADDLE, "hint:low_quality_scan", False)
+        return RouteDecision(RouteProvider.PADDLE, "hint:low_quality_scan")
 
     return _route_from_fixture(task.fixture_family, expected_route)
 
@@ -59,18 +55,16 @@ def _route_from_fixture(fixture_family: str | None, expected_route: str | None) 
     family = fixture_family or "unknown"
     match expected_route:
         case "deterministic_only":
-            return RouteDecision(
-                RouteProvider.DETERMINISTIC,
-                f"fixture:{family} expected deterministic_only",
-                False,
-            )
+            return RouteDecision(RouteProvider.DETERMINISTIC, f"fixture:{family} expected deterministic_only")
         case "paddle_ocr":
-            return RouteDecision(RouteProvider.PADDLE, f"fixture:{family} expected paddle_ocr", False)
+            return RouteDecision(RouteProvider.PADDLE, f"fixture:{family} expected paddle_ocr")
         case "gemini_vlm":
-            return RouteDecision(RouteProvider.GEMINI, f"fixture:{family} expected gemini_vlm", False)
+            return RouteDecision(RouteProvider.GEMINI, f"fixture:{family} expected gemini_vlm")
         case "hybrid":
-            return RouteDecision(RouteProvider.PADDLE, f"fixture:{family} expected hybrid", True)
+            # 'hybrid' currently routes to Paddle; cross-provider fallback is deferred
+            # (Gemini has no image input this slice).
+            return RouteDecision(RouteProvider.PADDLE, f"fixture:{family} expected hybrid")
         case None:
-            return RouteDecision(RouteProvider.DETERMINISTIC, "default:deterministic", False)
+            return RouteDecision(RouteProvider.DETERMINISTIC, "default:deterministic")
         case unexpected:
             raise ValueError(f"unsupported expected_route: {unexpected}")

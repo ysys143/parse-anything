@@ -121,6 +121,27 @@ def test_live_gemini_sends_minimal_prompt_and_redacts_response_body():
     assert "response-body-must-not-print" not in rendered
 
 
+def test_live_gemini_accepts_2xx_other_than_200():
+    # Given a 2xx (not exactly 200) Gemini success with valid 'ok' text.
+    module = _load_smoke_module()
+    output = io.StringIO()
+    response_body = {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
+    transport = FakeTransport([HttpResponse(status_code=201, body=json.dumps(response_body).encode())])
+    runtime = module.Runtime(
+        environ={"GEMINI_API_KEY": "fake-gemini-secret"},
+        transport=transport,
+        stdout=output,
+        sleep=lambda seconds: None,
+    )
+
+    # When
+    exit_code = module.run_cli(["--provider", "gemini", "--live"], runtime)
+
+    # Then: any 2xx is treated as success, not just 200.
+    assert exit_code == 0
+    assert "live=pass status=201 text=ok" in output.getvalue()
+
+
 def test_live_paddle_submits_demo_url_and_polls_without_downloading_results():
     # Given
     module = _load_smoke_module()

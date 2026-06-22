@@ -37,7 +37,6 @@ class PageResult:
     fixture_family: str
     provider: ProviderName | str
     route_reason: str
-    fallback: bool
     status: str
     normalized: NormalizedPage | None
     error: str | None = None
@@ -50,7 +49,6 @@ class PageResult:
             "fixture_family": self.fixture_family,
             "provider": str(self.provider),
             "route_reason": redact_secrets(self.route_reason),
-            "fallback": self.fallback,
             "status": self.status,
             "error": redact_secrets(self.error) if self.error is not None else None,
             "markdown_chars": len(normalized.markdown) if normalized is not None else 0,
@@ -123,9 +121,6 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         route_reason=route_reason,
         latency_ms=latency_ms,
         status=status,
-        # Cross-provider fallback is deferred (Gemini has no image input this slice),
-        # so no fallback is ever performed.
-        fallback=False,
         cost_estimate_usd=None,
         metadata=_ledger_metadata(page, normalized),
     )
@@ -145,7 +140,6 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         fixture_family=page.fixture_family,
         provider=provider_label,
         route_reason=route_reason,
-        fallback=False,
         status=status,
         normalized=normalized,
         error=error,
