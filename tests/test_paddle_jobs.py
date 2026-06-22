@@ -31,10 +31,21 @@ def test_extract_job_id_accepts_numeric_value():
     assert extract_job_id({"data": {"jobId": 12345}}) == "12345"
 
 
-def test_find_first_string_prefers_shallow_top_level_key():
-    # A top-level authoritative 'status' must win over a nested non-terminal 'state'.
-    body = {"data": {"state": "processing"}, "status": "done"}
-    assert extract_status(body) == "done"
+def test_extract_status_anchors_on_data_state_over_envelope_status():
+    # The authoritative job state lives at data.state; a top-level HTTP-envelope
+    # 'status' (e.g. "success"/"done") must not flip a still-running job to terminal.
+    body = {"status": "success", "data": {"state": "processing"}}
+    assert extract_status(body) == "processing"
+
+
+def test_extract_status_falls_back_to_recursive_search_without_data():
+    assert extract_status({"jobStatus": "done"}) == "done"
+
+
+def test_extract_job_id_anchors_on_data_over_envelope_trace_id():
+    # A top-level trace 'taskId' must not be mistaken for the real job id under data.
+    body = {"taskId": "trace-xyz", "data": {"jobId": "job-1"}}
+    assert extract_job_id(body) == "job-1"
 
 
 def test_extract_status_lowercases_and_classifies():

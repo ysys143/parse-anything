@@ -232,6 +232,27 @@ def test_cli_rejects_manifest_with_non_string_expected_route(tmp_path):
     assert "expected_route" in runtime.stdout.getvalue()
 
 
+def test_cli_rejects_manifest_with_unknown_expected_route_value(tmp_path):
+    # Given a manifest family with a typo'd expected_route value.
+    module = _load_module()
+    bad_manifest = tmp_path / "manifest.json"
+    bad_manifest.write_text(
+        json.dumps({"families": {"simple_text": {"expected_route": "paddleocr"}}}), encoding="utf-8"
+    )
+    runtime = module.Runtime(environ={}, stdout=io.StringIO())
+
+    # When
+    code = module.run_cli(
+        ["--input", str(_SAMPLE), "--output-dir", str(tmp_path / "out"),
+         "--mode", "offline", "--manifest", str(bad_manifest)],
+        runtime,
+    )
+
+    # Then: a clear manifest error instead of failing every page of that family.
+    assert code == 2
+    assert "expected_route" in runtime.stdout.getvalue()
+
+
 def test_live_cli_paddle_200_without_job_id_reports_distinct_error(tmp_path):
     # Given a Paddle submit that returns HTTP 200 but no recognizable job id.
     module = _load_module()

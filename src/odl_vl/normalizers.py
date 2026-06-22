@@ -91,6 +91,12 @@ def normalize_paddle(
     if not isinstance(result, Mapping):
         return NormalizedPage(markdown="", provider=ProviderName.PADDLE, ledger_fields=fields)
 
+    # Unwrap a {"result": {...}} envelope so callers can pass the raw response body.
+    if "layoutParsingResults" not in result:
+        inner = result.get("result")
+        if isinstance(inner, Mapping) and "layoutParsingResults" in inner:
+            result = inner
+
     parsing_results = result.get("layoutParsingResults")
     if not isinstance(parsing_results, list) or not parsing_results:
         return NormalizedPage(markdown="", provider=ProviderName.PADDLE, ledger_fields=fields)

@@ -54,7 +54,7 @@ from odl_vl.providers import (  # noqa: E402
     build_paddle_submit_request,
     is_success_status,
 )
-from odl_vl.router import RouteDecision  # noqa: E402
+from odl_vl.router import EXPECTED_ROUTES, RouteDecision  # noqa: E402
 
 
 _DEFAULT_MANIFEST: Final = _REPO_ROOT / "tests" / "fixtures" / "manifest.json"
@@ -132,6 +132,11 @@ def _load_family_metadata(path: str | Path) -> Mapping[str, Mapping[str, object]
         expected_route = meta.get("expected_route")
         if expected_route is not None and not isinstance(expected_route, str):
             raise ValueError(f"manifest family '{name}' expected_route must be a string")
+        if expected_route is not None and expected_route not in EXPECTED_ROUTES:
+            raise ValueError(
+                f"manifest family '{name}' expected_route '{expected_route}' is not one of "
+                f"{sorted(EXPECTED_ROUTES)}"
+            )
     return families
 
 
@@ -227,7 +232,7 @@ class LiveProviders:
             raise RuntimeError("paddle_submit_no_job_id")
         completion = self._poll_paddle(api_key, base_url, job_id)
         result_doc = self._fetch_paddle_result(completion)
-        normalized = normalize_paddle(_extract_paddle_result(result_doc), ledger_fields={"mode": "live"})
+        normalized = normalize_paddle(result_doc, ledger_fields={"mode": "live"})
         if normalized.markdown == "":
             # A completed job that yields no markdown means the result shape was not
             # recognized (or was empty); fail rather than emit a silently blank page.
@@ -280,14 +285,6 @@ def _guess_image_mime(url: str) -> str:
 
 def _default_prompt(page: PageInput) -> str:
     return f"Describe and transcribe page {page.page_id} as markdown."
-
-
-def _extract_paddle_result(body: object) -> object:
-    if isinstance(body, Mapping):
-        result = body.get("result")
-        if isinstance(result, Mapping) and "layoutParsingResults" in result:
-            return result
-    return body
 
 
 # --- output writing ---------------------------------------------------------

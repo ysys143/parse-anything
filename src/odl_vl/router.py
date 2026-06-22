@@ -3,10 +3,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from typing import Final
+
 from odl_vl.ir import ProviderName
 
 
 RouteProvider = ProviderName
+
+# The expected_route values a manifest family may declare.
+EXPECTED_ROUTES: Final = frozenset({"deterministic_only", "paddle_ocr", "gemini_vlm", "hybrid"})
 
 
 @dataclass(frozen=True, slots=True)

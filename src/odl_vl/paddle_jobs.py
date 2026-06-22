@@ -20,7 +20,12 @@ Terminal = Literal["complete", "failed", "http_error", "timeout"]
 
 
 def extract_job_id(body: object) -> str | None:
-    # Accept a numeric job id (some APIs return it as a JSON number).
+    # Prefer the documented data.<jobId> location so an envelope/trace id elsewhere
+    # cannot be mistaken for it; fall back to a recursive search. Accept a numeric
+    # job id (some APIs return it as a JSON number).
+    anchored = _anchored_data_value(body, JOB_ID_KEYS)
+    if anchored is not None:
+        return anchored
     return find_first_scalar(body, JOB_ID_KEYS)
 
 
@@ -32,8 +37,24 @@ def submit_job(client: ProviderHttpClient, request: HttpRequest) -> tuple[HttpRe
 
 
 def extract_status(body: object) -> str | None:
-    status = find_first_string(body, STATUS_KEYS, strip=True)
+    # Prefer the documented data.<state/status> location so a top-level HTTP-envelope
+    # 'status' (e.g. {"status":"success",...}) cannot flip a running job to terminal.
+    status = _anchored_data_value(body, STATUS_KEYS) or find_first_string(body, STATUS_KEYS, strip=True)
     return status.lower() if status is not None else None
+
+
+def _anchored_data_value(body: object, keys: frozenset[str]) -> str | None:
+    """First matching key found directly under a top-level 'data' object, if any."""
+    if isinstance(body, Mapping):
+        data = body.get("data")
+        if isinstance(data, Mapping):
+            for key in keys:
+                value = data.get(key)
+                if isinstance(value, str) and value.strip() != "":
+                    return value.strip()
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    return str(value)
+    return None
 
 
 def classify_status(status: str | None) -> Terminal | None:
