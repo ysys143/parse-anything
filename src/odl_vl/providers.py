@@ -11,8 +11,9 @@ from typing import Final, Protocol, TypedDict
 
 DEFAULT_GEMINI_MODEL: Final = "gemini-3.1-flash-lite"
 DEFAULT_PADDLE_MODEL: Final = "PaddleOCR-VL-1.6"
-_GEMINI_BASE_URL: Final = "https://generativelanguage.googleapis.com"
+GEMINI_BASE_URL: Final = "https://generativelanguage.googleapis.com"
 _PADDLE_JOBS_PATH: Final = "/api/v2/ocr/jobs"
+_PADDLE_OCR_PATH: Final = "/api/v2/ocr"
 _JSON_CONTENT_TYPE: Final = "application/json"
 
 
@@ -72,7 +73,7 @@ class GeminiGenerateContentRequest:
     api_key: str = field(repr=False)
     prompt: str
     model: str = DEFAULT_GEMINI_MODEL
-    base_url: str = _GEMINI_BASE_URL
+    base_url: str = GEMINI_BASE_URL
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,7 +206,11 @@ def _join_url(base_url: str, path: str) -> str:
 def _paddle_jobs_url(base_url: str) -> str:
     parsed = urllib.parse.urlparse(base_url)
     path = parsed.path.rstrip("/")
-    if path == _PADDLE_JOBS_PATH:
-        normalized = parsed._replace(path=path, params="", query="", fragment="")
-        return urllib.parse.urlunparse(normalized)
-    return _join_url(base_url, _PADDLE_JOBS_PATH)
+    if path.endswith(_PADDLE_JOBS_PATH):
+        target = path  # already the jobs endpoint
+    elif path.endswith(_PADDLE_OCR_PATH):
+        target = path + "/jobs"  # service root: append the missing /jobs
+    else:
+        return _join_url(base_url, _PADDLE_JOBS_PATH)  # host root or unrelated base
+    normalized = parsed._replace(path=target, params="", query="", fragment="")
+    return urllib.parse.urlunparse(normalized)

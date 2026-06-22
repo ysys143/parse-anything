@@ -22,8 +22,8 @@ from odl_vl.secret_patterns import (  # noqa: E402
 )
 
 
-_GOOGLE_API_KEY_RE: Final = re.compile(r"(?<![A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])")
-_HF_TOKEN_RE: Final = re.compile(r"(?<![A-Za-z0-9_-])hf_[A-Za-z0-9]{20,}(?![A-Za-z0-9_-])")
+# Google/HF/sk- keys are covered by the shared KNOWN_SECRET_PREFIX_RE; only the
+# scanner-specific hex-run heuristic lives here.
 _HEX_TOKEN_RE: Final = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32,}(?![0-9a-fA-F])")
 _SECRET_ASSIGNMENT_RE: Final = re.compile(
     r"^\s*(?:export\s+)?['\"]?[A-Z0-9_.-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|"
@@ -123,8 +123,6 @@ def _scan_file(path: Path) -> list[Finding]:
 def _scan_line(path: Path, line_number: int, line: str) -> list[Finding]:
     findings: list[Finding] = []
     checks = (
-        ("google_api_key", _GOOGLE_API_KEY_RE),
-        ("hf_token", _HF_TOKEN_RE),
         ("known_secret_prefix", KNOWN_SECRET_PREFIX_RE),
         ("url_credentials", URL_USERINFO_RE),
     )

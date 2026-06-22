@@ -17,12 +17,12 @@ if str(_SRC_ROOT) not in sys.path:
 
 from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
 from odl_vl.config import Settings, load_settings  # noqa: E402
-from odl_vl.jsonsearch import find_first_string  # noqa: E402
-from odl_vl.normalizers import try_decode_json  # noqa: E402
+from odl_vl.normalizers import extract_gemini_text, try_decode_json  # noqa: E402
 from odl_vl.paddle_jobs import extract_job_id, poll_job  # noqa: E402
 from odl_vl.providers import (  # noqa: E402
     DEFAULT_GEMINI_MODEL,
     DEFAULT_PADDLE_MODEL,
+    GEMINI_BASE_URL,
     GeminiGenerateContentRequest,
     PaddlePollRequest,
     PaddleSubmitRequest,
@@ -36,7 +36,6 @@ from odl_vl.providers import (  # noqa: E402
 DEFAULT_PADDLE_DEMO_URL: Final = (
     "https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png"
 )
-_GEMINI_BASE_URL: Final = "https://generativelanguage.googleapis.com"
 _GEMINI_PROMPT: Final = "Return exactly: ok"
 
 
@@ -103,7 +102,7 @@ def _print_dry_config(provider: ProviderName, settings: Settings, stdout: TextIO
             print("provider=gemini", file=stdout)
             print(f"api_key={_presence(settings.gemini_api_key)}", file=stdout)
             print(f"model={DEFAULT_GEMINI_MODEL}", file=stdout)
-            print(f"base_url_host={_host(_GEMINI_BASE_URL)}", file=stdout)
+            print(f"base_url_host={_host(GEMINI_BASE_URL)}", file=stdout)
         case "paddle":
             print("provider=paddle", file=stdout)
             print(f"api_key={_presence(settings.paddle_api_key)}", file=stdout)
@@ -123,8 +122,8 @@ def _run_gemini_live(settings: Settings, runtime: Runtime) -> int:
         GeminiGenerateContentRequest(api_key=settings.gemini_api_key, prompt=_GEMINI_PROMPT)
     )
     response = client.send(request)
-    text = find_first_string(try_decode_json(response.body), frozenset({"text"}), strip=True)
-    if response.status_code == 200 and text == "ok":
+    text = extract_gemini_text(try_decode_json(response.body))
+    if response.status_code == 200 and (text or "").strip() == "ok":
         print("provider=gemini live=pass status=200 text=ok", file=runtime.stdout)
         return 0
 

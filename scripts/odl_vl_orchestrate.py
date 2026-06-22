@@ -224,7 +224,12 @@ class LiveProviders:
         response = self._client.send(HttpRequest(method="GET", url=json_url, headers={}))
         if not is_success_status(response.status_code):
             raise RuntimeError(f"paddle_result_{response.status_code}")
-        return try_decode_json(response.body)
+        result = try_decode_json(response.body)
+        if result is None:
+            # A 200 that is not JSON (HTML error/expired-link page) is a real failure,
+            # not a silently empty successful page.
+            raise RuntimeError("paddle_result_not_json")
+        return result
 
     def _poll_paddle(self, api_key: str, base_url: str, job_id: str) -> object:
         outcome = poll_job(

@@ -101,6 +101,21 @@ def test_build_paddle_submit_request_uses_safe_default_model():
     assert secret not in repr(request)
 
 
+def test_build_paddle_submit_request_handles_service_root_base_url():
+    # Given a base URL that is the OCR service root, missing the trailing /jobs.
+    spec = PaddleSubmitRequest(
+        api_key="fake-paddle-secret-root",
+        base_url="https://paddle.example.invalid/api/v2/ocr",
+        document_url="https://fixtures.example.invalid/page.png",
+    )
+
+    # When
+    request = build_paddle_submit_request(spec)
+
+    # Then: the path is not duplicated.
+    assert request.url == "https://paddle.example.invalid/api/v2/ocr/jobs"
+
+
 def test_build_paddle_submit_request_accepts_full_jobs_endpoint_base_url():
     # Given
     secret = "fake-paddle-secret-full-endpoint"

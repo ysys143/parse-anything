@@ -14,7 +14,7 @@ from odl_vl.normalizers import normalize_deterministic
 from odl_vl.orchestrator_input import DocumentInput, PageInput
 from odl_vl.providers import DEFAULT_GEMINI_MODEL, DEFAULT_PADDLE_MODEL
 from odl_vl.router import RouteDecision, choose_route
-from odl_vl.secret_patterns import redact_secrets
+from odl_vl.secret_patterns import redact_free_text
 
 
 ProviderCallable = Callable[[PageInput, RouteDecision], NormalizedPage]
@@ -56,10 +56,10 @@ class PageResult:
             "page_index": self.page_index,
             "fixture_family": self.fixture_family,
             "provider": str(self.provider),
-            "route_reason": redact_secrets(self.route_reason),
+            "route_reason": redact_free_text(self.route_reason),
             "fallback": self.fallback,
             "status": self.status,
-            "error": redact_secrets(self.error) if self.error is not None else None,
+            "error": redact_free_text(self.error) if self.error is not None else None,
             "markdown_chars": len(normalized.markdown) if normalized is not None else 0,
             "image_description": normalized.image_description if normalized is not None else None,
             "confidence": normalized.confidence if normalized is not None else None,

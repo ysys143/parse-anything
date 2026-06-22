@@ -40,12 +40,12 @@ def test_scanner_reports_google_hf_hex_and_secret_assignments(tmp_path):
 
     # Then
     assert report.has_findings is True
+    # AIza/hf_ keys are reported via the shared known-prefix check (no separate
+    # google/hf regexes); the hex value and the long token assignment are also flagged.
     assert {finding.kind for finding in report.findings} == {
-        "google_api_key",
-        "hf_token",
+        "known_secret_prefix",
         "hex_token",
         "secret_assignment",
-        "known_secret_prefix",  # AIza/hf_ also match the shared known-prefix check
     }
     rendered = "\n".join(finding.render() for finding in report.findings)
     assert "AIza" not in rendered

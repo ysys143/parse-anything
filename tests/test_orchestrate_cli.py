@@ -239,6 +239,39 @@ def test_live_cli_paddle_200_without_job_id_reports_distinct_error(tmp_path):
     assert "paddle_submit_no_job_id" in results["p2-table"]["error"]
 
 
+def test_live_cli_non_json_paddle_result_marks_page_failed(tmp_path):
+    # Given a Paddle job whose signed result URL returns a non-JSON (HTML) 200 body.
+    module = _load_module()
+    output_dir = tmp_path / "out"
+    transport = FakeTransport(
+        responses=[
+            _json_response({"code": 0, "msg": "Success", "data": {"jobId": "job-1"}}),
+            _json_response({"data": {"state": "done", "resultUrl": {"jsonUrl": "https://signed.example/r"}}}),
+            HttpResponse(status_code=200, body=b"<html>upstream error</html>"),  # not JSON
+            _json_response({"candidates": []}),  # gemini fallback for the hybrid page -> fails too
+            _json_response({"candidates": [{"content": {"parts": [{"text": "g"}]}}]}),  # p3 gemini ok
+        ]
+    )
+    runtime = module.Runtime(
+        environ={
+            "GEMINI_API_KEY": "fake-gemini-secret-value",
+            "PADDLE_API_KEY": "fake-paddle-secret-value",
+            "PADDLE_BASE_URL": "https://paddle.example/api/v2/ocr/jobs",
+        },
+        transport=transport,
+        stdout=io.StringIO(),
+        sleep=lambda _seconds: None,
+    )
+
+    # When
+    module.run_cli(["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"], runtime)
+
+    # Then: an empty/non-JSON result is a failure, not a silent empty "ok" page.
+    results = {record["page_id"]: record for record in _read_results(output_dir)}
+    assert results["p2-table"]["status"] == "failed"
+    assert "paddle_result_not_json" in results["p2-table"]["error"]
+
+
 def test_live_cli_gemini_empty_text_marks_page_failed(tmp_path):
     # Given a Paddle path that succeeds and a Gemini 200 with no candidate text.
     module = _load_module()

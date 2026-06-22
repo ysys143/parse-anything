@@ -4,8 +4,9 @@ import re
 from typing import Final
 
 
-# Single source of truth shared by the ledger redactor and the pre-commit secret
-# scanner so the two never disagree on what counts as secret-like.
+# Shared secret-shape definitions used by the ledger redactor and the pre-commit
+# scanner. The scanner keeps a couple of stricter, scanner-specific patterns (hex
+# runs) on top of these; these definitions cover the credential shapes both agree on.
 
 # Any opaque 32+ char token (including purely-alphabetic ones).
 LONG_TOKEN_RE: Final = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])")
@@ -28,10 +29,33 @@ SIGNED_URL_QUERY_RE: Final = re.compile(
 )
 
 # Credentials embedded in a URL authority (the user:pass that precedes the @ host).
-URL_USERINFO_RE: Final = re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s:@]+@", re.IGNORECASE)
+URL_USERINFO_RE: Final = re.compile(r"([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s:@]+@", re.IGNORECASE)
+
+# A signing/auth query parameter together with its value, e.g. "X-Goog-Signature=abc".
+SIGNED_URL_PARAM_VALUE_RE: Final = re.compile(
+    r"(?i)\b(x-amz-signature|x-goog-signature|x-goog-credential|signature|sig|sas|"
+    r"token|access[_-]?token|expires|credential|auth)=([^&\s\"']+)"
+)
+
+
+def _redact_urls(value: str) -> str:
+    value = URL_USERINFO_RE.sub(r"\1[REDACTED]@", value)
+    return SIGNED_URL_PARAM_VALUE_RE.sub(lambda match: f"{match.group(1)}=[REDACTED]", value)
 
 
 def redact_secrets(value: str) -> str:
-    """Replace long opaque tokens and known credential prefixes with [REDACTED]."""
+    """Full redaction for structured fields (metadata): opaque tokens, known prefixes, URLs."""
     value = LONG_TOKEN_RE.sub("[REDACTED]", value)
-    return KNOWN_SECRET_PREFIX_RE.sub("[REDACTED]", value)
+    value = KNOWN_SECRET_PREFIX_RE.sub("[REDACTED]", value)
+    return _redact_urls(value)
+
+
+def redact_free_text(value: str) -> str:
+    """Lighter redaction for human-facing free text (route_reason / error messages).
+
+    Strips known credential prefixes and URL-embedded secrets but NOT every long
+    token, so legitimate identifiers (trace ids, document ids) stay readable for
+    debugging while real credential shapes are still removed.
+    """
+    value = KNOWN_SECRET_PREFIX_RE.sub("[REDACTED]", value)
+    return _redact_urls(value)

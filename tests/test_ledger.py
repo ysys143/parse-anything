@@ -129,13 +129,14 @@ def test_redacted_event_keeps_legitimate_none_but_drops_signed_url():
     assert "result_url" not in payload["metadata"]
 
 
-def test_redacted_event_redacts_secret_in_route_reason():
-    # Given a route_reason that embeds a long opaque token (e.g. from an exception).
-    token = "x" * 40
+def test_redacted_event_redacts_credential_in_route_reason_but_keeps_identifiers():
+    # Given a route_reason embedding a signed URL plus a long but non-secret trace id.
+    trace_id = "t" * 40
+    route_reason = "route_error:fetch https://h/r?X-Goog-Signature=" + "abc123" + f" trace={trace_id}"
     event = LedgerEvent(
         provider="unknown",
         model_alias="unknown",
-        route_reason=f"route_error:boom {token}",
+        route_reason=route_reason,
         latency_ms=1.0,
         status="failed",
         fallback=False,
@@ -146,9 +147,10 @@ def test_redacted_event_redacts_secret_in_route_reason():
     # When
     payload = redacted_event(event)
 
-    # Then
-    assert token not in payload["route_reason"]
-    assert "[REDACTED]" in payload["route_reason"]
+    # Then: the signing token is stripped, but the legitimate trace id stays readable.
+    assert "X-Goog-Signature=[REDACTED]" in payload["route_reason"]
+    assert "abc123" not in payload["route_reason"]
+    assert trace_id in payload["route_reason"]
 
 
 def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_param():
