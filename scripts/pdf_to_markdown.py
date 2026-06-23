@@ -24,11 +24,22 @@ from odl_vl.pipeline.output import document_dir, write_outputs  # noqa: E402
 from odl_vl.pipeline.run import run_document  # noqa: E402
 
 
-def run_cli(argv, runtime: Runtime) -> int:
+def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     args = _parse_args(argv)
-    settings = load_settings(env_file=_REPO / ".env", environ=runtime.environ)
+    settings = load_settings(env_file=env_file or _REPO / ".env", environ=runtime.environ)
     key = settings.gemini_api_key
-    mode = "deterministic" if args.no_vlm else args.mode  # the mode IS the lever (no runtime routing)
+    if args.diagnose:
+        # D-1 picks the mode by measurement, then the whole run uses it (no per-page routing).
+        if not key:
+            print("error: --diagnose requires GEMINI_API_KEY (D-1 runs the VLM on sampled pages)", file=runtime.stdout)
+            return 2
+        from odl_vl.pipeline.diagnose import diagnose_source
+
+        diag = diagnose_source(args.pdf, vlm_client=safe_client(runtime), api_key=key, sample_size=args.sample_size)
+        mode = diag.recommended_mode
+        print(f"diagnosis: mode={mode} confidence={diag.confidence:.2f} reason={diag.reasons[0]}", file=runtime.stdout)
+    else:
+        mode = "deterministic" if args.no_vlm else args.mode  # the mode IS the lever (no runtime routing)
     client = None
     if mode == "det_vlm":
         if not key:
@@ -67,6 +78,8 @@ def _parse_args(argv):
     parser.add_argument("--mode", choices=["deterministic", "det_vlm"], default="det_vlm",
                         help="deterministic (ODL+pypdfium2) or det_vlm (+VLM reconciled); default det_vlm")
     parser.add_argument("--no-vlm", action="store_true", help="alias for --mode deterministic")
+    parser.add_argument("--diagnose", action="store_true", help="run D-1 diagnosis first and use the recommended mode")
+    parser.add_argument("--sample-size", type=int, default=4, help="pages D-1 samples when --diagnose (default 4)")
     parser.add_argument("--source-id", default="default", help="source (document stream) id; output groups by it")
     parser.add_argument("--external-id", default=None, help="caller-provided document id, preserved in metadata")
     parser.add_argument("--ingested-from", default=None, help="provenance origin (path/url); defaults to --pdf")

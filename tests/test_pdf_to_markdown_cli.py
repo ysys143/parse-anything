@@ -51,3 +51,11 @@ def test_cli_offline_writes_markdown_and_ledger(tmp_path):
     assert all(r["used_vlm"] is False for r in ledger)  # --no-vlm
     summary = runtime.stdout.getvalue()
     assert "pages=2" in summary and "mode=deterministic" in summary
+
+
+def test_cli_diagnose_requires_api_key(tmp_path):
+    cli = _load_cli()
+    pdf = _text_pdf(tmp_path / "doc.pdf")
+    runtime = cli.Runtime(environ={}, stdout=io.StringIO())  # no GEMINI_API_KEY
+    code = cli.run_cli(["--pdf", pdf, "--out", str(tmp_path / "o"), "--diagnose"], runtime, env_file=tmp_path / "absent.env")
+    assert code == 2 and "--diagnose requires GEMINI_API_KEY" in runtime.stdout.getvalue()
