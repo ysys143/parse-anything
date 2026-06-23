@@ -35,7 +35,8 @@ def test_assets_crops_figure_image_and_sets_pointer(tmp_path):
 
 
 def test_rich_output_document_json_and_tables(tmp_path):
-    table = OdlTable(0, 2, 2, (50, 500, 400, 600), (("H", "V"), ("a", "1")), label="표 1", caption="cap")
+    table = OdlTable(0, 2, 2, (50, 500, 400, 600), (("H", "V"), ("a", "1")), label="표 1", caption="cap",
+                     cell_boxes=(((10, 10, 20, 20), (30, 10, 40, 20)), ((10, 30, 20, 40), (30, 30, 40, 40))))
     figure = OdlImage(0, (50, 100, 400, 300), element_id="i1", label="Figure 2", caption="figcap", kind="figure")
     structure = OdlDocument(1, (OdlPage(0, "text", (table,), (figure,)),))
     meta = DocumentMeta(document_id="abc123def4567890", content_sha256="abc123def4567890ff", original_filename="d.pdf",
@@ -50,11 +51,32 @@ def test_rich_output_document_json_and_tables(tmp_path):
     assert doc["document_id"] == "abc123def4567890" and doc["original_filename"] == "d.pdf"
     assert doc["source"]["source_id"] == "csnl"
     assert len(doc["tables"]) == 1 and doc["tables"][0]["label"] == "표 1"
-    assert doc["tables"][0]["cells"] == [["H", "V"], ["a", "1"]]
+    cells = doc["tables"][0]["cells"]                          # rich per-cell {text, bbox}
+    assert cells[0][0] == {"text": "H", "bbox": [10, 10, 20, 20]}
+    assert cells[1][1] == {"text": "1", "bbox": [30, 30, 40, 40]}
     assert doc["figures"][0]["label"] == "Figure 2" and doc["figures"][0]["kind"] == "figure"
     assert doc["pages"][0]["tables"] == ["t001"] and doc["pages"][0]["figures"] == ["f001"]
     assert (out / "tables" / "t001.json").exists()
     assert "| H | V |" in (out / "tables" / "t001.md").read_text(encoding="utf-8")
+
+
+def test_spanning_tables_merge_into_one_logical_table(tmp_path):
+    # ODL splits a table across pages and links them with previous_table_id -> one logical table.
+    t1 = OdlTable(0, 2, 2, (50, 400, 400, 600), (("H1", "H2"), ("a", "1")), table_id="tbl-1")
+    t2 = OdlTable(1, 1, 2, (50, 600, 400, 700), (("b", "2"),), table_id="tbl-2", previous_table_id="tbl-1")
+    structure = OdlDocument(2, (OdlPage(0, "", (t1,), ()), OdlPage(1, "", (t2,), ())))
+    meta = DocumentMeta("idspanning123456", "idspanning123456ff", "d.pdf", n_pages=2, mode="deterministic")
+    pages = (PageOutcome(0, "deterministic", False, "p1", 0.0, ()), PageOutcome(1, "deterministic", False, "p2", 0.0, ()))
+    result = DocumentResult(pages, structure=structure, meta=meta)
+
+    out = document_dir(tmp_path, result)
+    write_outputs(result, out)
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert len(doc["tables"]) == 1                                  # merged, not two
+    merged = doc["tables"][0]
+    assert merged["source_pages"] == [1, 2] and merged["continued"] is True
+    assert [c["text"] for row in merged["cells"] for c in row] == ["H1", "H2", "a", "1", "b", "2"]
+    assert doc["pages"][0]["tables"] == ["t001"] and doc["pages"][1]["tables"] == ["t001"]  # both pages ref it
 
 
 def test_vlm_labels_fill_table_label_and_add_missing_figures(tmp_path):

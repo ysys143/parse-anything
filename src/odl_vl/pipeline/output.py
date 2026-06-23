@@ -62,47 +62,88 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         _write_tables(out, tables)
 
 
-def _table_md(cells: list[list[str]]) -> str:
+def _table_md(cells: list[list[dict]]) -> str:
     if not cells:
         return ""
-    width = max((len(r) for r in cells), default=0)
-    rows = [list(r) + [""] * (width - len(r)) for r in cells]
+    text = [[c["text"] for c in row] for row in cells]
+    width = max((len(r) for r in text), default=0)
+    rows = [r + [""] * (width - len(r)) for r in text]
     lines = ["| " + " | ".join(c.replace("|", r"\|") for c in rows[0]) + " |",
              "| " + " | ".join("---" for _ in range(width)) + " |"]
     lines += ["| " + " | ".join(c.replace("|", r"\|") for c in r) + " |" for r in rows[1:]]
     return "\n".join(lines)
 
 
+def _rich_cells(cells: tuple, cell_boxes: tuple) -> list[list[dict]]:
+    """Row-major cells as {text, bbox} (per-cell bbox from ODL; None when absent)."""
+    out = []
+    for r, row in enumerate(cells):
+        boxes = cell_boxes[r] if r < len(cell_boxes) else ()
+        out.append([{"text": t, "bbox": list(boxes[i]) if (i < len(boxes) and boxes[i]) else None}
+                    for i, t in enumerate(row)])
+    return out
+
+
+def _table_chains(tables: list) -> list[list]:
+    """Group ODL tables into continuation chains via `previous_table_id` (spanning tables) so a
+    table split across pages becomes one logical table. Tables without an id are their own chain."""
+    by_id = {t.table_id: t for t in tables if t.table_id}
+    next_of = {t.previous_table_id: t for t in tables if t.previous_table_id in by_id}
+    is_continuation = {t.table_id for t in tables if t.previous_table_id in by_id}
+    chains = []
+    for t in tables:
+        if t.table_id in is_continuation:
+            continue  # reached from its chain head
+        chain = [t]
+        cur = t
+        while cur.table_id is not None and cur.table_id in next_of:
+            cur = next_of[cur.table_id]
+            chain.append(cur)
+        chains.append(chain)
+    return chains
+
+
 def _serialize_structure(
     structure, labels_by_page: dict[int, tuple[dict, ...]]
 ) -> tuple[list[dict], list[dict], dict[int, list[str]], dict[int, list[str]]]:
-    """Serialize ODL structure (bbox-grounded), backfilling missing labels from VLM-detected
-    captions (R4.3) and adding VLM-detected figures ODL missed. Every entry is `source`-tagged
-    (odl = bbox-grounded; vlm = detected from the transcription, no bbox)."""
-    tables: list[dict] = []
-    figures: list[dict] = []
+    """Serialize ODL structure (bbox-grounded): merge page-spanning tables into one logical table
+    (source_pages), emit per-cell bbox, backfill missing labels from VLM-detected captions (R4.3),
+    and add VLM-detected figures ODL missed. Every entry is `source`-tagged."""
     page_tables: dict[int, list[str]] = defaultdict(list)
     page_figures: dict[int, list[str]] = defaultdict(list)
+
+    all_tables = [t for page in structure.pages for t in substantial_tables(page)]
+    tables: list[dict] = []
+    for chain in _table_chains(all_tables):
+        head = chain[0]
+        tid = f"t{len(tables) + 1:03d}"
+        source_pages: list[int] = []
+        regions, cells, boxes = [], [], []
+        for seg in chain:
+            p1 = seg.page_index + 1
+            if p1 not in source_pages:
+                source_pages.append(p1)
+            regions.append({"page": p1, "bbox": list(seg.bbox)})
+            cells.extend(seg.cells)
+            boxes.extend(seg.cell_boxes)
+            page_tables[seg.page_index].append(tid)
+        label, caption = head.label, head.caption
+        if label is None:  # ODL missed the caption; use a VLM-read one on the head page
+            vlm_t = [lbl for lbl in labels_by_page.get(head.page_index, ()) if lbl["kind"] == "table"]
+            if vlm_t:
+                label, caption = vlm_t[0]["label"], vlm_t[0]["caption"]
+        tables.append({
+            "table_id": tid, "label": label, "caption": caption, "source": "odl",
+            "source_pages": source_pages,  # start/end = source_pages[0]/[-1]
+            "regions": regions, "n_rows": sum(t.n_rows for t in chain), "n_cols": head.n_cols,
+            "cells": _rich_cells(tuple(cells), tuple(boxes)), "continued": len(chain) > 1,
+            "views": {"md": f"tables/{tid}.md", "json": f"tables/{tid}.json"},
+        })
+
+    figures: list[dict] = []
     for page in structure.pages:
         pi = page.page_index
-        vlm_tables = [lbl for lbl in labels_by_page.get(pi, ()) if lbl["kind"] == "table"]
         vlm_figures = [lbl for lbl in labels_by_page.get(pi, ()) if lbl["kind"] == "figure"]
-        for table in substantial_tables(page):
-            tid = f"t{len(tables) + 1:03d}"
-            p1 = pi + 1  # 1-based source page; R2 v1 tables are single-page
-            label, caption = table.label, table.caption
-            if label is None and vlm_tables:  # ODL missed the caption; use the VLM's
-                vlm = vlm_tables.pop(0)
-                label, caption = vlm["label"], vlm["caption"]
-            tables.append({
-                "table_id": tid, "label": label, "caption": caption, "source": "odl",
-                "source_pages": [p1],  # canonical page linkage; start/end = source_pages[0]/[-1]
-                "regions": [{"page": p1, "bbox": list(table.bbox)}],
-                "n_rows": table.n_rows, "n_cols": table.n_cols,
-                "cells": [list(r) for r in table.cells], "continued": False,
-                "views": {"md": f"tables/{tid}.md", "json": f"tables/{tid}.json"},
-            })
-            page_tables[pi].append(tid)
         for image in page.images:
             fid = f"f{len(figures) + 1:03d}"
             label, caption = image.label, image.caption

@@ -62,6 +62,9 @@ class OdlTable:
     cells: tuple[tuple[str, ...], ...]  # row-major text grid
     label: str | None = None     # original printed number, e.g. "표 5-2"
     caption: str | None = None
+    cell_boxes: tuple[tuple[BBox | None, ...], ...] = ()  # per-cell bbox, aligned to cells
+    table_id: str | None = None              # ODL element id
+    previous_table_id: str | None = None     # ODL continuation link (spanning tables)
 
     @property
     def width(self) -> float:
@@ -116,20 +119,33 @@ def _collect_text(node: object) -> str:
     return " ".join(p for p in parts if p).strip()
 
 
+def _cell_bbox(cell: dict) -> BBox | None:
+    box = cell.get("bounding box")
+    if not box:
+        return None
+    return tuple(float(x) for x in box[:4])  # type: ignore[return-value]
+
+
 def _parse_table(node: dict) -> OdlTable | None:
     page = node.get("page number")
     if not page:
         return None
     bbox = node.get("bounding box") or [0.0, 0.0, 0.0, 0.0]
     grid: list[tuple[str, ...]] = []
+    box_grid: list[tuple[BBox | None, ...]] = []
     for row in node.get("rows", []) or []:
-        grid.append(tuple(_collect_text(cell) for cell in (row.get("cells") or [])))
+        cells = row.get("cells") or []
+        grid.append(tuple(_collect_text(cell) for cell in cells))
+        box_grid.append(tuple(_cell_bbox(cell) for cell in cells))
     return OdlTable(
         page_index=int(page) - 1,
         n_rows=int(node.get("number of rows", len(grid))),
         n_cols=int(node.get("number of columns", max((len(r) for r in grid), default=0))),
         bbox=tuple(float(x) for x in bbox[:4]),  # type: ignore[arg-type]
         cells=tuple(grid),
+        cell_boxes=tuple(box_grid),
+        table_id=node.get("id"),
+        previous_table_id=node.get("previous table id"),
     )
 
 
