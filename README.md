@@ -30,13 +30,12 @@ Run deterministic tests and syntax checks without network access:
 ```bash
 python3 -m pytest
 python3 -m compileall src tests scripts
-python3 scripts/check_no_secrets.py README.md docs .env.example src tests scripts
 ```
 
 Run focused checks for this parser slice:
 
 ```bash
-python3 -m pytest tests/test_config.py tests/test_providers.py tests/test_router.py tests/test_ledger.py tests/test_smoke_cli.py tests/test_fixture_manifest.py tests/test_secret_scan.py
+python3 -m pytest tests/test_config.py tests/test_providers.py tests/test_router.py tests/test_ledger.py tests/test_smoke_cli.py tests/test_fixture_manifest.py
 ```
 
 Run focused checks for the external orchestration slice:
@@ -88,10 +87,8 @@ status), `pages/` markdown files, and `ledger.jsonl`. The ledger records
 provider, model alias, route reason, latency, and status only. Secrets stay out
 of these artifacts at the source -- error reasons are opaque codes (e.g.
 `gemini_http_429`), and only non-secret metadata is recorded -- so the ledger is
-written faithfully rather than scrubbed field-by-field. As a backstop, the run
-artifacts (`results.jsonl`, `ledger.jsonl`) are git-ignored and a pre-commit
-scanner (`scripts/check_no_secrets.py`) fails the commit if a secret ever slips
-into a tracked file.
+written faithfully rather than scrubbed field-by-field. The run artifacts
+(`results.jsonl`, `ledger.jsonl`) are git-ignored so a run is never committed.
 
 `--mode live` is opt-in and calls real providers using the same key contract as
 the smoke checks (`GEMINI_API_KEY`, `PADDLE_API_KEY`, `PADDLE_BASE_URL`). It

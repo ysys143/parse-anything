@@ -285,9 +285,7 @@ class LiveProviders:
 def _require_http_url(url: str, context: str) -> str:
     # Live providers fetch (Gemini) or hand off (Paddle) the page image over HTTP, so a
     # non-http(s) reference (e.g. a fixtures:// or file path used in offline data) must
-    # fail with a clear, secret-free reason instead of an opaque fetch_0 status. The
-    # reason is kept under the 32-char redaction threshold so it stays readable in the
-    # ledger rather than being blanket-redacted as an opaque token.
+    # fail with a clear, human-readable reason instead of an opaque fetch_0 status.
     if not url.startswith(("http://", "https://")):
         raise RuntimeError(f"{context}_non_http_url")
     return url
@@ -349,7 +347,7 @@ def _print_summary(
     # Surface failed pages so an incomplete run is never silent.
     for result in results:
         if result.status != "ok":
-            # result.error is already redacted when the PageResult is built.
+            # result.error is an opaque provider code (e.g. gemini_http_429); no secret to print.
             print(f"failed page={result.page_id} reason={result.error}", file=stdout)
 
 
