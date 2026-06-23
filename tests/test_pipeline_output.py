@@ -2,8 +2,33 @@ from __future__ import annotations
 
 import json
 
-from odl_vl.pipeline.output import write_outputs
+from odl_vl.pipeline.docmeta import DocumentMeta
+from odl_vl.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlTable
+from odl_vl.pipeline.output import document_dir, write_outputs
 from odl_vl.pipeline.run import DocumentResult, PageOutcome
+
+
+def test_rich_output_document_json_and_tables(tmp_path):
+    table = OdlTable(0, 2, 2, (50, 500, 400, 600), (("H", "V"), ("a", "1")), label="표 1", caption="cap")
+    figure = OdlImage(0, (50, 100, 400, 300), element_id="i1", label="Figure 2", caption="figcap", kind="figure")
+    structure = OdlDocument(1, (OdlPage(0, "text", (table,), (figure,)),))
+    meta = DocumentMeta(document_id="abc123def4567890", content_sha256="abc123def4567890ff", original_filename="d.pdf",
+                        source_id="csnl", n_pages=1, mode="deterministic")
+    result = DocumentResult((PageOutcome(0, "deterministic", False, "# md", 0.0, ()),), structure=structure, meta=meta)
+
+    out = document_dir(tmp_path, result)
+    assert out == tmp_path / "csnl" / "abc123def4567890"   # <root>/<source_id>/<document_id>
+    write_outputs(result, out)
+
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert doc["document_id"] == "abc123def4567890" and doc["original_filename"] == "d.pdf"
+    assert doc["source"]["source_id"] == "csnl"
+    assert len(doc["tables"]) == 1 and doc["tables"][0]["label"] == "표 1"
+    assert doc["tables"][0]["cells"] == [["H", "V"], ["a", "1"]]
+    assert doc["figures"][0]["label"] == "Figure 2" and doc["figures"][0]["kind"] == "figure"
+    assert doc["pages"][0]["tables"] == ["t001"] and doc["pages"][0]["figures"] == ["f001"]
+    assert (out / "tables" / "t001.json").exists()
+    assert "| H | V |" in (out / "tables" / "t001.md").read_text(encoding="utf-8")
 
 
 def _result() -> DocumentResult:

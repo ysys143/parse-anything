@@ -53,6 +53,8 @@ class PageOutcome:
 @dataclass(frozen=True, slots=True)
 class DocumentResult:
     pages: tuple[PageOutcome, ...]
+    structure: Any = None  # OdlDocument (tables/figures/text with bbox) for rich output (R2)
+    meta: Any = None       # DocumentMeta (id, source, provenance) for document.json (R2)
 
     def ledger(self) -> list[dict[str, Any]]:
         return [
@@ -75,8 +77,14 @@ def run_document(
     vlm_client: Any | None = None,
     api_key: str = "",
     odl_runner: Any | None = None,
+    source_id: str = "default",
+    external_id: str | None = None,
+    ingested_from: str | None = None,
 ) -> DocumentResult:
     """Run a document in a configured mode (no runtime routing). Delegates to assemble."""
     from .assemble import assemble_document
 
-    return assemble_document(pdf_path, mode=mode, vlm_client=vlm_client, api_key=api_key, odl_runner=odl_runner)
+    return assemble_document(
+        pdf_path, mode=mode, vlm_client=vlm_client, api_key=api_key, odl_runner=odl_runner,
+        source_id=source_id, external_id=external_id, ingested_from=ingested_from,
+    )

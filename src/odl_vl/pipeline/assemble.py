@@ -73,7 +73,12 @@ def assemble_document(
     vlm_client: Any | None = None,
     api_key: str = "",
     odl_runner: Callable[[str], dict] | None = None,
+    source_id: str = "default",
+    external_id: str | None = None,
+    ingested_from: str | None = None,
 ) -> DocumentResult:
+    from .docmeta import build_meta
+
     odl_doc: OdlDocument = odl_extract(pdf_path, runner=odl_runner)
     n = page_count(pdf_path)
     pypdf_texts = [page_text(pdf_path, i) for i in range(n)]
@@ -90,7 +95,8 @@ def assemble_document(
             )
         else:
             raise ValueError(f"unknown mode: {mode!r}")
-    return DocumentResult(tuple(outcomes))
+    meta = build_meta(pdf_path, source_id=source_id, external_id=external_id, ingested_from=ingested_from, mode=mode, n_pages=n)
+    return DocumentResult(tuple(outcomes), structure=odl_doc, meta=meta)
 
 
 def _assemble_deterministic(page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str]) -> PageOutcome:
