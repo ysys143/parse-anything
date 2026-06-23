@@ -53,6 +53,23 @@ def test_cli_offline_writes_markdown_and_ledger(tmp_path):
     assert "pages=2" in summary and "mode=deterministic" in summary
 
 
+def test_cli_use_profile_skips_diagnosis(tmp_path):
+    from odl_vl.pipeline.profile import SourceProfile, save_profile
+
+    cli = _load_cli()
+    pdf = _text_pdf(tmp_path / "doc.pdf")
+    save_profile(SourceProfile("csnl", "deterministic", 0.8, "D-2", ("r",), {}, {}, None), tmp_path / "profiles")
+    runtime = cli.Runtime(environ={}, stdout=io.StringIO())
+    code = cli.run_cli(
+        ["--pdf", pdf, "--out", str(tmp_path / "o"), "--source-id", "csnl", "--use-profile", "--profiles-dir", str(tmp_path / "profiles")],
+        runtime, env_file=tmp_path / "absent.env",
+    )
+    assert code == 0
+    summary = runtime.stdout.getvalue()
+    assert "profile: source=csnl mode=deterministic" in summary and "(stored)" in summary
+    assert "mode=deterministic" in summary  # the run used the stored mode
+
+
 def test_cli_diagnose_requires_api_key(tmp_path):
     cli = _load_cli()
     pdf = _text_pdf(tmp_path / "doc.pdf")

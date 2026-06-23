@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 from odl_vl.pipeline.diagnose import SourceDiagnosis
-from odl_vl.pipeline.profile import SourceProfile, from_d1_diagnosis
+from odl_vl.pipeline.profile import SourceProfile, from_d1_diagnosis, load_profile, save_profile
+
+
+def test_save_and_load_profile_roundtrip(tmp_path):
+    prof = SourceProfile("csnl", "deterministic", 0.75, "D-1", ("r",), {"scan_fraction": 0.25}, {"k": 1}, "2026-06-24T00:00:00")
+    path = save_profile(prof, tmp_path / "profiles")
+    assert path.exists() and path.name == "csnl.json"
+    loaded = load_profile("csnl", tmp_path / "profiles")
+    assert loaded is not None and loaded.recommended_mode == "deterministic" and loaded.tier == "D-1"
+    assert load_profile("missing", tmp_path / "profiles") is None
 
 
 def test_source_profile_roundtrip():

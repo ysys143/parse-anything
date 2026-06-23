@@ -24,21 +24,39 @@ from odl_vl.pipeline.output import document_dir, write_outputs  # noqa: E402
 from odl_vl.pipeline.run import run_document  # noqa: E402
 
 
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     args = _parse_args(argv)
     settings = load_settings(env_file=env_file or _REPO / ".env", environ=runtime.environ)
     key = settings.gemini_api_key
-    if args.diagnose:
+    profiles_dir = args.profiles_dir or (runtime.environ or {}).get("ODL_VL_PROFILE_DIR") or "profiles"
+    mode = None
+    if args.use_profile:
+        # Reuse a stored diagnosis instead of re-running it.
+        from odl_vl.pipeline.profile import load_profile
+
+        profile = load_profile(args.source_id, profiles_dir)
+        if profile is not None:
+            mode = profile.recommended_mode
+            print(f"profile: source={args.source_id} mode={mode} tier={profile.tier} (stored)", file=runtime.stdout)
+    if mode is None and args.diagnose:
         # D-1 picks the mode by measurement, then the whole run uses it (no per-page routing).
         if not key:
             print("error: --diagnose requires GEMINI_API_KEY (D-1 runs the VLM on sampled pages)", file=runtime.stdout)
             return 2
         from odl_vl.pipeline.diagnose import diagnose_source
+        from odl_vl.pipeline.profile import from_d1_diagnosis, save_profile
 
         diag = diagnose_source(args.pdf, vlm_client=safe_client(runtime), api_key=key, sample_size=args.sample_size)
         mode = diag.recommended_mode
-        print(f"diagnosis: mode={mode} confidence={diag.confidence:.2f} reason={diag.reasons[0]}", file=runtime.stdout)
-    else:
+        save_profile(from_d1_diagnosis(diag, source_id=args.source_id, created_at=_now()), profiles_dir)
+        print(f"diagnosis: mode={mode} confidence={diag.confidence:.2f} reason={diag.reasons[0]} (profile saved)", file=runtime.stdout)
+    if mode is None:
         mode = "deterministic" if args.no_vlm else args.mode  # the mode IS the lever (no runtime routing)
     client = None
     if mode == "det_vlm":
@@ -78,7 +96,9 @@ def _parse_args(argv):
     parser.add_argument("--mode", choices=["deterministic", "det_vlm"], default="det_vlm",
                         help="deterministic (ODL+pypdfium2) or det_vlm (+VLM reconciled); default det_vlm")
     parser.add_argument("--no-vlm", action="store_true", help="alias for --mode deterministic")
-    parser.add_argument("--diagnose", action="store_true", help="run D-1 diagnosis first and use the recommended mode")
+    parser.add_argument("--diagnose", action="store_true", help="run D-1 diagnosis first, save a profile, and use the recommended mode")
+    parser.add_argument("--use-profile", action="store_true", help="use a stored SourceProfile's mode (skip diagnosis) if one exists for --source-id")
+    parser.add_argument("--profiles-dir", default=None, help="profile store; default $ODL_VL_PROFILE_DIR or ./profiles")
     parser.add_argument("--sample-size", type=int, default=4, help="pages D-1 samples when --diagnose (default 4)")
     parser.add_argument("--source-id", default="default", help="source (document stream) id; output groups by it")
     parser.add_argument("--external-id", default=None, help="caller-provided document id, preserved in metadata")

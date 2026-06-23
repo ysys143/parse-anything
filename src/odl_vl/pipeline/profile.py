@@ -11,7 +11,9 @@ per domain (D-2 may override D-1's defaults).
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -50,6 +52,25 @@ class SourceProfile:
             evidence=dict(data.get("evidence", {})),
             created_at=data.get("created_at"),
         )
+
+
+def profile_path(profiles_dir: str | Path, source_id: str) -> Path:
+    return Path(profiles_dir) / f"{source_id}.json"
+
+
+def save_profile(profile: SourceProfile, profiles_dir: str | Path) -> Path:
+    """Persist a profile to <profiles_dir>/<source_id>.json so the source is not re-diagnosed."""
+    path = profile_path(profiles_dir, profile.source_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(profile.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def load_profile(source_id: str, profiles_dir: str | Path) -> SourceProfile | None:
+    path = profile_path(profiles_dir, source_id)
+    if not path.exists():
+        return None
+    return SourceProfile.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def from_d1_diagnosis(diagnosis: Any, *, source_id: str, created_at: str | None = None) -> SourceProfile:
