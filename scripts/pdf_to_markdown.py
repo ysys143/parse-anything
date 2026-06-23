@@ -102,7 +102,7 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     )
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
-    write_outputs(result, out_dir, pdf_path=args.pdf)
+    write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic)
     if args.review:
         from odl_vl.pipeline.review import write_review
 

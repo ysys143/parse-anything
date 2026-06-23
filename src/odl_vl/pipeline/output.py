@@ -17,6 +17,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
+from .arithmetic import check_table_arithmetic as _check_arithmetic
 from .odl_extract import substantial_tables
 from .run import DocumentResult
 
@@ -30,7 +31,7 @@ def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
     return Path(out_root) / meta.source_id / meta.document_id
 
 
-def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None) -> None:
+def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None, arithmetic: bool = True) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -55,7 +56,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     if result.meta is not None:
         labels_by_page = {p.page_index: p.labels for p in result.pages}
         tables, figures, page_tables, page_figures = (
-            _serialize_structure(result.structure, labels_by_page) if result.structure is not None else ([], [], {}, {})
+            _serialize_structure(result.structure, labels_by_page, arithmetic=arithmetic) if result.structure is not None else ([], [], {}, {})
         )
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
         _write_document_json(out, result, tables, figures, page_tables, page_figures)
@@ -104,7 +105,7 @@ def _table_chains(tables: list) -> list[list]:
 
 
 def _serialize_structure(
-    structure, labels_by_page: dict[int, tuple[dict, ...]]
+    structure, labels_by_page: dict[int, tuple[dict, ...]], *, arithmetic: bool = True
 ) -> tuple[list[dict], list[dict], dict[int, list[str]], dict[int, list[str]]]:
     """Serialize ODL structure (bbox-grounded): merge page-spanning tables into one logical table
     (source_pages), emit per-cell bbox, backfill missing labels from VLM-detected captions (R4.3),
@@ -132,11 +133,13 @@ def _serialize_structure(
             vlm_t = [lbl for lbl in labels_by_page.get(head.page_index, ()) if lbl["kind"] == "table"]
             if vlm_t:
                 label, caption = vlm_t[0]["label"], vlm_t[0]["caption"]
+        arith = _check_arithmetic(cells) if arithmetic else None  # R8.7 invariant guard (None if no total row)
         tables.append({
             "table_id": tid, "label": label, "caption": caption, "source": "odl",
             "source_pages": source_pages,  # start/end = source_pages[0]/[-1]
             "regions": regions, "n_rows": sum(t.n_rows for t in chain), "n_cols": head.n_cols,
             "cells": _rich_cells(tuple(cells), tuple(boxes)), "continued": len(chain) > 1,
+            "arithmetic": arith,
             "views": {"md": f"tables/{tid}.md", "json": f"tables/{tid}.json"},
         })
 
