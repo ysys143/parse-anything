@@ -28,10 +28,11 @@ def run_cli(argv, runtime: Runtime) -> int:
     args = _parse_args(argv)
     settings = load_settings(env_file=_REPO / ".env", environ=runtime.environ)
     key = settings.gemini_api_key
-    use_vlm = (not args.no_vlm) and key is not None
+    mode = "deterministic" if args.no_vlm else args.mode  # configured mode, no runtime routing
+    use_vlm = (mode == "det_vlm") and key is not None
     client = safe_client(runtime) if use_vlm else None
 
-    result = run_document(args.pdf, vlm_client=client, api_key=key or "")
+    result = run_document(args.pdf, mode=mode, vlm_client=client, api_key=key or "")
     write_outputs(result, args.out)
     if args.review:
         from odl_vl.pipeline.review import write_review
@@ -42,17 +43,19 @@ def run_cli(argv, runtime: Runtime) -> int:
     vlm_pages = sum(1 for p in result.pages if p.used_vlm)
     flagged = sum(1 for p in result.pages if p.flags and p.route != "folded")
     print(
-        f"pages={n} vlm_pages={vlm_pages} flagged={flagged} vlm_enabled={use_vlm} out={args.out}",
+        f"pages={n} mode={mode} vlm_pages={vlm_pages} flagged={flagged} out={args.out}",
         file=runtime.stdout,
     )
     return 0
 
 
 def _parse_args(argv):
-    parser = argparse.ArgumentParser(description="PDF -> Markdown pipeline")
+    parser = argparse.ArgumentParser(description="PDF -> Markdown pipeline (diagnose-then-configure modes)")
     parser.add_argument("--pdf", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--no-vlm", action="store_true", help="deterministic only (skip VLM/OCR)")
+    parser.add_argument("--mode", choices=["deterministic", "det_vlm"], default="det_vlm",
+                        help="deterministic (ODL+pypdfium2) or det_vlm (+VLM reconciled); default det_vlm")
+    parser.add_argument("--no-vlm", action="store_true", help="alias for --mode deterministic")
     parser.add_argument("--review", action="store_true", help="also write review.html (source vs extraction + flags)")
     return parser.parse_args(argv)
 

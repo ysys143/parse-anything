@@ -46,4 +46,4 @@ def test_cli_offline_writes_markdown_and_ledger(tmp_path):
     assert len(ledger) == 2
     assert all(r["used_vlm"] is False for r in ledger)  # --no-vlm
     summary = runtime.stdout.getvalue()
-    assert "pages=2" in summary and "vlm_enabled=False" in summary
+    assert "pages=2" in summary and "mode=deterministic" in summary
