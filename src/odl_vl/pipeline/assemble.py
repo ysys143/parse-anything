@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from .deterministic import page_text
@@ -21,6 +22,16 @@ from .render import page_count
 from .run import DocumentResult, PageOutcome
 
 ExecutionMode = Literal["deterministic", "det_vlm"]
+
+
+@dataclass(frozen=True, slots=True)
+class DetVlmOptions:
+    """det_vlm behaviour toggles -- all default ON (opt-out), double_pass only fires on scans."""
+    ground: bool = True        # R8.3 inject ODL + pypdfium2 deterministic grounding
+    spanning: bool = True      # R8.2 reconstruct page-spanning tables via multi-image VLM
+    double_pass: bool = True   # R8.6 dual-provider pass on oracle-less scan pages
+    arithmetic: bool = True    # R8.7 arithmetic-invariant guard on totals/subtotals
+    prompt: str | None = None  # R8.4 custom base prompt (overrides DEFAULT/SCAN)
 
 
 def _table_markdown(table: OdlTable) -> str:
@@ -76,6 +87,8 @@ def assemble_document(
     source_id: str = "default",
     external_id: str | None = None,
     ingested_from: str | None = None,
+    options: DetVlmOptions = DetVlmOptions(),
+    paddle_client: Any | None = None,
 ) -> DocumentResult:
     from .docmeta import build_meta
 
@@ -91,7 +104,8 @@ def assemble_document(
             outcomes.append(_assemble_deterministic(i, odl_page, pypdf_texts[i], recurring))
         elif mode == "det_vlm":
             outcomes.append(
-                _assemble_det_vlm(pdf_path, i, odl_page, pypdf_texts[i], recurring, vlm_client=vlm_client, api_key=api_key)
+                _assemble_det_vlm(pdf_path, i, odl_page, pypdf_texts[i], recurring, vlm_client=vlm_client,
+                                  api_key=api_key, options=options, paddle_client=paddle_client)
             )
         else:
             raise ValueError(f"unknown mode: {mode!r}")
@@ -109,7 +123,8 @@ def _assemble_deterministic(page_index: int, odl_page: OdlPage, pypdf_text: str,
 
 
 def _assemble_det_vlm(
-    pdf_path: str, page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str], *, vlm_client: Any, api_key: str
+    pdf_path: str, page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str], *, vlm_client: Any, api_key: str,
+    options: DetVlmOptions = DetVlmOptions(), paddle_client: Any | None = None,
 ) -> PageOutcome:
     """Accuracy mode: VLM is the visual-structure source; pypdfium2 is the value authority
     (value oracle gates VLM numbers -- R-M1); ODL structure is available for rich output (R2).
@@ -133,8 +148,14 @@ def _assemble_det_vlm(
         flags.append("low_quality_input")
     # No text layer == scan-like: use the legibility-gate prompt (F6) so a degraded scan
     # abstains (IMAGE_TOO_LOW_QUALITY) instead of fabricating. Prompt choice by deterministic
-    # signal is not routing -- the VLM still runs on every page.
-    prompt = SCAN_PROMPT if not pypdf_text.strip() else DEFAULT_PROMPT
+    # signal is not routing -- the VLM still runs on every page. A custom prompt (R8.4) overrides.
+    base_prompt = options.prompt or (SCAN_PROMPT if not pypdf_text.strip() else DEFAULT_PROMPT)
+    if options.ground:  # R8.3 ODL + pypdfium2 dual injection (no-op on scans with no text layer)
+        from .grounding import build_grounded_prompt
+
+        prompt = build_grounded_prompt(base_prompt, pypdf_text, odl_page)
+    else:
+        prompt = base_prompt
     try:
         markdown = transcribe_image(png, prompt, api_key=api_key, client=vlm_client)
     except VlmError as exc:

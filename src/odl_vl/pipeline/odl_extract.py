@@ -80,11 +80,20 @@ class OdlTable:
 
 
 @dataclass(frozen=True, slots=True)
+class OdlParagraph:
+    page_index: int
+    kind: str  # paragraph / heading / list item / text block
+    bbox: BBox
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class OdlPage:
     page_index: int
     text: str  # reading-ordered, header/footer-filtered
     tables: tuple[OdlTable, ...]
     images: tuple[OdlImage, ...]
+    paragraphs: tuple[OdlParagraph, ...] = ()  # reading-ordered blocks with kind + bbox (R8.1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +208,7 @@ def parse_document(data: dict) -> OdlDocument:
     tables_by_page: dict[int, list[OdlTable]] = defaultdict(list)
     images_by_page: dict[int, list[OdlImage]] = defaultdict(list)
     captions_by_page: dict[int, list[_Caption]] = defaultdict(list)
+    paragraphs_by_page: dict[int, list[OdlParagraph]] = defaultdict(list)
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
@@ -219,6 +229,7 @@ def parse_document(data: dict) -> OdlDocument:
                 content = node.get("content")
                 if isinstance(content, str) and content.strip() and page:
                     text_by_page[int(page) - 1].append(content)
+                    paragraphs_by_page[int(page) - 1].append(OdlParagraph(int(page) - 1, ntype, box, content))  # type: ignore[arg-type]
             elif ntype in _IMAGE_TYPES and page:
                 images_by_page[int(page) - 1].append(OdlImage(int(page) - 1, box, node.get("id")))  # type: ignore[arg-type]
             for v in node.values():
@@ -235,7 +246,10 @@ def parse_document(data: dict) -> OdlDocument:
         tables, images = _label_tables_figures(
             list(tables_by_page.get(i, [])), list(images_by_page.get(i, [])), captions_by_page.get(i, [])
         )
-        pages.append(OdlPage(page_index=i, text="\n".join(text_by_page.get(i, [])), tables=tables, images=images))
+        pages.append(OdlPage(
+            page_index=i, text="\n".join(text_by_page.get(i, [])), tables=tables, images=images,
+            paragraphs=tuple(paragraphs_by_page.get(i, [])),
+        ))
     return OdlDocument(n_pages=n_pages, pages=tuple(pages))
 
 

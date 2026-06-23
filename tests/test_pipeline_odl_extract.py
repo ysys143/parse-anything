@@ -68,6 +68,21 @@ def test_caption_labels_attach_to_nearest_table_and_figure():
     assert figure.label == "Figure 12" and figure.kind == "figure" and "Diagram" in (figure.caption or "")
 
 
+def test_paragraphs_preserved_with_kind_and_bbox():
+    data = {
+        "number of pages": 1,
+        "kids": [
+            {"type": "heading", "page number": 1, "bounding box": [10, 700, 400, 720], "content": "Title"},
+            {"type": "paragraph", "page number": 1, "bounding box": [10, 650, 400, 690], "content": "Body text."},
+        ],
+    }
+    page = parse_document(data).pages[0]
+    assert len(page.paragraphs) == 2
+    assert page.paragraphs[0].kind == "heading" and page.paragraphs[0].text == "Title"
+    assert page.paragraphs[0].bbox == (10.0, 700.0, 400.0, 720.0)
+    assert page.paragraphs[1].kind == "paragraph" and page.paragraphs[1].text == "Body text."
+
+
 def test_extract_caption_labels_from_vlm_markdown():
     md = "# Title\n\nSome prose.\n\nFigure 12: Diagram of the task\n\n표 5-2 모델 및 특징\n\nAs shown in Figure 3 the result holds."
     labels = extract_caption_labels(md)

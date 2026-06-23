@@ -206,12 +206,17 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
 def _write_document_json(out: Path, result: DocumentResult, tables: list[dict], figures: list[dict],
                          page_tables: dict[int, list[str]], page_figures: dict[int, list[str]]) -> None:
     doc = result.meta.to_dict()
+    paragraphs_by_page = {}
+    if result.structure is not None:
+        paragraphs_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
     doc["pages"] = [
         {
             "page_index": p.page_index, "page_number": p.page_index + 1, "page_label": None,
             "mode": p.route, "used_vlm": p.used_vlm, "flags": list(p.flags),
             "markdown_file": f"pages/page-{p.page_index:03d}.md",
             "tables": page_tables.get(p.page_index, []), "figures": page_figures.get(p.page_index, []),
+            "blocks": [{"kind": b.kind, "bbox": list(b.bbox), "text": b.text}
+                       for b in paragraphs_by_page.get(p.page_index, ())],
         }
         for p in result.pages if p.route != "folded"
     ]

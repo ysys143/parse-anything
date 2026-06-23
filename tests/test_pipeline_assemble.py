@@ -29,6 +29,36 @@ def _pdf(path, line: str) -> str:
     return str(path)
 
 
+class _CaptureClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.requests = []
+
+    def send(self, request):
+        self.requests.append(request)
+        return self.responses.pop(0)
+
+
+def test_det_vlm_grounding_default_injects_deterministic_text(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "authoritative value 1,234,567")
+    client = _CaptureClient([_gemini_ok("ok")])
+    odl = {"number of pages": 1, "kids": [{"type": "paragraph", "page number": 1, "content": "Title"}]}
+    assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", odl_runner=lambda _p: odl)
+    body = client.requests[0].body.decode("utf-8")
+    assert "1,234,567" in body and "NEVER alter a number" in body   # grounding on by default
+
+
+def test_det_vlm_no_ground_option_is_image_only(tmp_path):
+    from odl_vl.pipeline.assemble import DetVlmOptions
+
+    pdf = _pdf(tmp_path / "d.pdf", "authoritative value 1,234,567")
+    client = _CaptureClient([_gemini_ok("ok")])
+    assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", options=DetVlmOptions(ground=False),
+                      odl_runner=lambda _p: {"number of pages": 1, "kids": []})
+    body = client.requests[0].body.decode("utf-8")
+    assert "NEVER alter a number" not in body   # --no-ground -> no grounding block
+
+
 def test_recurring_numbers_excludes_header_like():
     texts = ["report 200 page one", "report 200 page two", "report 200 has 40 here"]
     rec = _recurring_numbers(texts)
