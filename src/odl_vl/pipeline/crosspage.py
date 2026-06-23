@@ -10,9 +10,12 @@ request (vlm.transcribe_images). Thresholds live in ``ContinuationPolicy`` (R-A7
 from __future__ import annotations
 
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pypdfium2 as pdfium
+
+from .triage import Route
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,3 +110,25 @@ def continues(pdf_path: str, page_a: int, page_b: int, *, policy: ContinuationPo
     )
     is_cont = tab_a >= policy.min_tabular_lines and tab_b >= policy.min_tabular_lines and match >= policy.min_column_match
     return ContinuationResult(is_continuation=is_cont, column_match=match, a_tabular_lines=tab_a, b_tabular_lines=tab_b)
+
+
+def continuation_groups(pdf_path: str, routes: Sequence[Route], *, policy: ContinuationPolicy = ContinuationPolicy()) -> list[list[int]]:
+    """Group consecutive page indices whose tables continue across the boundary. Only table
+    pages (Route.ORACLE_VLM) can join a group; singletons stay singletons. A multi-page group
+    is sent as one multi-image VLM request and merged into the start page (§4)."""
+    n = len(routes)
+    groups: list[list[int]] = []
+    i = 0
+    while i < n:
+        group = [i]
+        while (
+            i + 1 < n
+            and routes[i] == Route.ORACLE_VLM
+            and routes[i + 1] == Route.ORACLE_VLM
+            and continues(pdf_path, i, i + 1, policy=policy).is_continuation
+        ):
+            group.append(i + 1)
+            i += 1
+        groups.append(group)
+        i += 1
+    return groups

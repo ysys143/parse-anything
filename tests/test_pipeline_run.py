@@ -62,3 +62,41 @@ def test_vlm_route_without_client_flags_and_degrades_to_text(tmp_path):
     assert res.pages[0].used_vlm is False
     assert "vlm_unavailable" in res.pages[0].flags
     assert len(res.pages[0].markdown) > 0  # degraded to the deterministic text layer
+
+
+def _spanning_table_pdf(path) -> str:
+    c = canvas.Canvas(str(path), pagesize=letter)
+    cols = [72, 180, 300, 420]
+    rows_a = [[f"A{i}", f"B{i}", f"C{i}", f"D{i}"] for i in range(1, 5)]
+    rows_b = [[f"A{i}", f"B{i}", f"C{i}", f"D{i}"] for i in range(5, 9)]
+    y = 300  # bottom region of page 1
+    for row in rows_a:
+        for x, cell in zip(cols, row):
+            c.drawString(x, y, cell)
+        y -= 28
+    c.showPage()
+    y = 700  # top region of page 2, same columns -> continuation
+    for row in rows_b:
+        for x, cell in zip(cols, row):
+            c.drawString(x, y, cell)
+        y -= 28
+    c.showPage()
+    c.save()
+    return str(path)
+
+
+def test_continuation_pages_batched_into_one_multi_image_call(tmp_path):
+    pdf = _spanning_table_pdf(tmp_path / "span.pdf")
+    client = _FakeClient([_gemini_ok("MERGED SPANNING TABLE")])  # exactly ONE response available
+    res = run_document(
+        pdf,
+        vlm_client=client,
+        api_key="k",
+        signals=[PageSignals(text_chars=100, table_rows=29, image_count=0)] * 2,
+    )
+    assert len(res.pages) == 2
+    # single multi-image call merged into the start page (a second call would exhaust the fake)
+    assert res.pages[0].markdown == "MERGED SPANNING TABLE"
+    assert "spanning_table:0-1" in res.pages[0].flags
+    assert res.pages[1].route == "folded"
+    assert "folded_into:0" in res.pages[1].flags

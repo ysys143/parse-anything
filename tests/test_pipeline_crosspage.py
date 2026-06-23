@@ -3,7 +3,8 @@ from __future__ import annotations
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.crosspage import continues
+from odl_vl.pipeline.crosspage import continuation_groups, continues
+from odl_vl.pipeline.triage import Route
 
 
 def _draw_table(c, rows, cols_x, y_start, y_step=28):
@@ -41,3 +42,19 @@ def test_different_columns_not_continuation(tmp_path):
     res = continues(pdf, 0, 1)
     assert res.is_continuation is False
     assert res.column_match < 0.7
+
+
+def test_continuation_groups_merges_matching_table_pages(tmp_path):
+    pdf = _make_pdf(tmp_path / "cont.pdf", page2_cols=[72, 180, 300, 420])
+    assert continuation_groups(pdf, [Route.ORACLE_VLM, Route.ORACLE_VLM]) == [[0, 1]]
+
+
+def test_continuation_groups_keeps_separate_tables_apart(tmp_path):
+    pdf = _make_pdf(tmp_path / "sep.pdf", page2_cols=[110, 270])
+    assert continuation_groups(pdf, [Route.ORACLE_VLM, Route.ORACLE_VLM]) == [[0], [1]]
+
+
+def test_continuation_groups_does_not_merge_non_table_routes(tmp_path):
+    pdf = _make_pdf(tmp_path / "cont.pdf", page2_cols=[72, 180, 300, 420])
+    # matching columns, but non-table routes never join a spanning-table group
+    assert continuation_groups(pdf, [Route.DETERMINISTIC, Route.DETERMINISTIC]) == [[0], [1]]
