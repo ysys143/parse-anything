@@ -6,7 +6,7 @@ import pytest
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.diagnose import SourceDiagnosis, diagnose_source, sample_indices, token_divergence
+from odl_vl.pipeline.diagnose import SourceDiagnosis, diagnose_source, prepare_bundle, sample_indices, token_divergence
 from odl_vl.providers import HttpResponse
 
 
@@ -76,3 +76,21 @@ def test_diagnose_requires_vlm_client(tmp_path):
     pdf = _pdf(tmp_path / "d.pdf", "text")
     with pytest.raises(ValueError):
         diagnose_source(pdf, vlm_client=None)
+
+
+def test_prepare_bundle_writes_review_material(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "alpha beta gamma")
+    bundle = prepare_bundle(pdf, tmp_path / "bundle", sample_size=4, odl_runner=lambda _p: {"number of pages": 1, "kids": []})
+    assert bundle["n_sampled"] == 1
+    assert (tmp_path / "bundle" / "bundle.json").exists()
+    assert (tmp_path / "bundle" / "pages" / "page-000.png").exists()
+    sample = bundle["samples"][0]
+    assert sample["deterministic_text"].strip() and "vlm_text" not in sample  # no client -> no VLM material
+
+
+def test_prepare_bundle_includes_vlm_divergence_when_client_given(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "alpha beta gamma")
+    client = _FakeClient([_gemini_ok("alpha beta gamma delta")])
+    bundle = prepare_bundle(pdf, tmp_path / "b", vlm_client=client, api_key="k", odl_runner=lambda _p: {"number of pages": 1, "kids": []})
+    sample = bundle["samples"][0]
+    assert sample["vlm_text"] == "alpha beta gamma delta" and "token_divergence" in sample

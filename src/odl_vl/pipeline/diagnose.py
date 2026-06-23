@@ -8,8 +8,10 @@ whole source predictably (no runtime routing). The VLM client is injected (testa
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .deterministic import page_text
@@ -151,3 +153,66 @@ def _recommend(scan_fraction: float, mean_div: float, tables_pages: int, figures
     return "deterministic", 0.75, (
         f"born-digital, low divergence ({mean_div:.2f}), simple structure: deterministic suffices -- VLM adds little",
     )
+
+
+def prepare_bundle(
+    pdf_path: str,
+    out_dir: str | Path,
+    *,
+    sample_size: int = 4,
+    vlm_client: Any | None = None,
+    api_key: str = "",
+    odl_runner: Any | None = None,
+) -> dict[str, Any]:
+    """Write D-2 review material: sample page images + per-sample deterministic text, structure,
+    and (when a VLM client is given) the D-1 divergence -- the bundle a flagship agent reviews by
+    hand to write a SourceProfile (docs/diagnostic-d2.md). The agent IS the oracle position;
+    this only assembles what it looks at."""
+    out = Path(out_dir)
+    (out / "pages").mkdir(parents=True, exist_ok=True)
+    n = page_count(pdf_path)
+    odl_doc = odl_extract(pdf_path, runner=odl_runner)
+    base = sample_indices(n, sample_size)
+    structure_pages = [i for i, pg in enumerate(odl_doc.pages) if substantial_tables(pg) or pg.images]
+    indices = sorted(set(base) | set([i for i in structure_pages if i not in base][:2]))
+
+    samples: list[dict[str, Any]] = []
+    for i in indices:
+        png = render_page_png(pdf_path, i)
+        (out / "pages" / f"page-{i:03d}.png").write_bytes(png)
+        det = page_text(pdf_path, i)
+        odl_page = odl_doc.pages[i] if i < len(odl_doc.pages) else None
+        entry: dict[str, Any] = {
+            "page_index": i,
+            "image": f"pages/page-{i:03d}.png",
+            "deterministic_text": det,
+            "is_scan": len(det.strip()) < _SCAN_TEXT_CHARS,
+            "n_tables": len(substantial_tables(odl_page)) if odl_page else 0,
+            "n_figures": len(odl_page.images) if odl_page else 0,
+        }
+        if vlm_client is not None:
+            from .run import DEFAULT_PROMPT
+            from .vlm import VlmError, transcribe_image
+
+            try:
+                vlm_text = transcribe_image(png, DEFAULT_PROMPT, api_key=api_key, client=vlm_client)
+                entry["vlm_text"] = vlm_text
+                entry["token_divergence"] = round(token_divergence(det, vlm_text), 3)
+            except VlmError:
+                entry["vlm_text"] = None
+        samples.append(entry)
+
+    bundle = {
+        "pdf": str(pdf_path),
+        "n_pages": n,
+        "n_sampled": len(indices),
+        "samples": samples,
+        "instructions": (
+            "See docs/diagnostic-d2.md. Open each page image and compare it to deterministic_text "
+            "(and vlm_text if present); judge whether deterministic extraction is faithful or the "
+            "source needs det_vlm; write a SourceProfile (recommended_mode, confidence, calibrated "
+            "thresholds, reasons)."
+        ),
+    }
+    (out / "bundle.json").write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+    return bundle
