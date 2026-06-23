@@ -8,10 +8,15 @@ version = "0.1.0"
 description = "ODL VLM parsing experiments"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pypdfium2>=4",        # license-clean (BSD/Apache) PDF render + text/bbox -- requirements §3.1, §9
+    "pdf-inspector>=0.2",  # triage classify (text/scanned) + table detection -- §3.4, §9
+    "Pillow>=10",          # image ops: rotate/deskew/crop/encode
+]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "reportlab>=4"]   # reportlab: generate tiny PDFs for tests (no committed binaries)
+odl = ["opendataloader-pdf>=2.4"]     # ODL semantic table extraction for merged-cell tables (needs Java) -- §2.2
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/odl_vl"]
