@@ -42,7 +42,7 @@ load_document_input(path)        # DocumentInput (tuple[PageInput, ...])
         |
   normalize -> NormalizedPage    # markdown (+ image_description, confidence, ...)
         |
-  PageResult  ----------------->  results.jsonl, pages/<page>.md
+  PageResult  ----------------->  results.jsonl, pages/page-<ordinal>-<slug>.md
         |
   LedgerEvent -> append_ledger_event -> ledger.jsonl
 ```
@@ -85,8 +85,9 @@ is reported failed, not silently re-run elsewhere).
 Written under `--output-dir`:
 
 - `results.jsonl` — per page: route, provider, status, `markdown_chars`,
-  `image_description`, `confidence`.
-- `pages/<page>.md` — the normalized page markdown (the parsed document content).
+  `image_description`, `confidence`, and a `markdown_file` pointer.
+- `pages/page-<ordinal>-<slug>.md` — the normalized page markdown (the parsed
+  document content); `<slug>` is derived from `page_id`.
 - `ledger.jsonl` — per page: provider, model alias, route reason, latency,
   status, and non-secret metadata.
 
