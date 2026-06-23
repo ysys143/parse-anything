@@ -113,7 +113,7 @@ def _assemble_det_vlm(
     from .oracle import fabrication_flags
     from .quality import is_low_quality
     from .render import render_page_png
-    from .run import DEFAULT_PROMPT, LOW_QUALITY_SENTINEL
+    from .run import DEFAULT_PROMPT, LOW_QUALITY_SENTINEL, SCAN_PROMPT
     from .vlm import VlmError, transcribe_image
 
     if vlm_client is None:
@@ -124,8 +124,12 @@ def _assemble_det_vlm(
     png = render_page_png(pdf_path, page_index)
     if is_low_quality(png):
         flags.append("low_quality_input")
+    # No text layer == scan-like: use the legibility-gate prompt (F6) so a degraded scan
+    # abstains (IMAGE_TOO_LOW_QUALITY) instead of fabricating. Prompt choice by deterministic
+    # signal is not routing -- the VLM still runs on every page.
+    prompt = SCAN_PROMPT if not pypdf_text.strip() else DEFAULT_PROMPT
     try:
-        markdown = transcribe_image(png, DEFAULT_PROMPT, api_key=api_key, client=vlm_client)
+        markdown = transcribe_image(png, prompt, api_key=api_key, client=vlm_client)
     except VlmError as exc:
         det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
         return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, str(exc)))

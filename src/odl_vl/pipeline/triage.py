@@ -1,7 +1,13 @@
-"""Processing-depth triage: per-page route decision (graduated from prototype).
+"""Processing-depth signals: per-page route decision (DIAGNOSTIC use only).
 
-Evidence: docs/measurement-findings.md F10. Contract: pdf-pipeline-requirements §3.4,
-processing-tiers §3 (trigger-based escalation, not a fuzzy score; R-B4).
+DEMOTED (processing-tiers P7): this is no longer a runtime gate. Real corpora showed
+per-page auto-routing is a false-positive gamble (F16), so the runtime uses configured
+*modes* (assemble.py), not decide_route. ``decide_route`` survives as a **diagnostic signal**
+-- the source-level diagnosis (processing-tiers §2.5) may use it to characterize a source and
+recommend a profile. It must not be called from the runtime assembly path.
+
+Evidence: docs/measurement-findings.md F10/F16. Contract: pdf-pipeline-requirements §3.4,
+processing-tiers §2.5 / §3.
 
 This module is the *decision* only -- a pure function over already-computed signals.
 Signal computation (pypdfium2 text/images + pdf-inspector / ODL table detection) is I/O

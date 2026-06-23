@@ -7,7 +7,6 @@ from reportlab.pdfgen import canvas
 
 from odl_vl.pipeline.oracle import fabrication_flags
 from odl_vl.pipeline.run import run_document
-from odl_vl.pipeline.triage import PageSignals
 from odl_vl.providers import HttpResponse
 
 
@@ -44,14 +43,12 @@ def _text_pdf(path, line: str) -> str:
 
 
 def test_run_flags_vlm_number_absent_from_text_layer(tmp_path):
-    # The PDF text layer (oracle) holds 1,234,567; the VLM also emits a bogus 9,999,999.
+    # det_vlm mode: the PDF text layer (value oracle) holds 1,234,567; the VLM also emits a
+    # bogus 9,999,999 which the pypdfium2 value oracle flags.
     pdf = _text_pdf(tmp_path / "d.pdf", "authoritative value 1,234,567")
     client = _FakeClient([_gemini_ok("Value 1,234,567 and fabricated 9,999,999")])
     res = run_document(
-        pdf,
-        vlm_client=client,
-        api_key="k",
-        signals=[PageSignals(text_chars=100, table_rows=29, image_count=0)],
+        pdf, mode="det_vlm", vlm_client=client, api_key="k", odl_runner=lambda _p: {"number of pages": 1, "kids": []}
     )
     flags = res.pages[0].flags
     assert "unsourced_number:9999999" in flags
