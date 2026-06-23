@@ -20,7 +20,7 @@ from .odl_extract import substantial_tables
 from .render import page_count, render_page_png
 
 _SCAN_TEXT_CHARS = 20      # below this, the page has effectively no text layer (scan/image)
-_DIVERGE_TOKEN = 0.35      # mean token divergence above which the VLM materially disagrees
+_DIVERGE_TOKEN = 0.30      # mean token divergence above which the VLM materially disagrees (F18)
 _SCAN_FRACTION = 0.25      # sampled-scan fraction above which OCR (VLM) is mandatory
 _TOKEN_RE = re.compile(r"[0-9a-z가-힣]+")
 
@@ -141,17 +141,18 @@ def diagnose_source(
 
 
 def _recommend(scan_fraction: float, mean_div: float, tables_pages: int, figures_pages: int) -> tuple[str, float, tuple[str, ...]]:
+    # Calibrated on real corpora (F18): scan fraction + token divergence discriminate; structure
+    # PRESENCE does not (almost every born-digital doc has a figure/table, yet most are faithfully
+    # captured deterministically -- figures are placeholders either way, tables ODL handles). So
+    # structure is informational, not a mode driver.
     if scan_fraction >= _SCAN_FRACTION:
         return "det_vlm", 0.9, (f"scan_fraction={scan_fraction:.2f}: no text layer, OCR needs the VLM",)
     if mean_div >= _DIVERGE_TOKEN:
-        return "det_vlm", 0.7, (f"mean_token_divergence={mean_div:.2f}: VLM materially diverges from the text layer",)
-    if tables_pages or figures_pages:
-        return "det_vlm", 0.6, (
-            f"structure present (tables on {tables_pages}, figures on {figures_pages} sampled pages): "
-            "VLM helps structure where the deterministic source is weak",
-        )
-    return "deterministic", 0.75, (
-        f"born-digital, low divergence ({mean_div:.2f}), simple structure: deterministic suffices -- VLM adds little",
+        return "det_vlm", 0.75, (f"mean_token_divergence={mean_div:.2f}: VLM materially diverges from the text layer",)
+    note = f" (structure present: tables {tables_pages}, figures {figures_pages} sampled pages)" if (tables_pages or figures_pages) else ""
+    return "deterministic", 0.7, (
+        f"born-digital, low divergence ({mean_div:.2f}): deterministic suffices{note}; note token "
+        "divergence cannot see table-structure fidelity -- escalate to D-2 if that matters",
     )
 
 

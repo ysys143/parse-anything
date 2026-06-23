@@ -53,7 +53,9 @@ def test_diagnose_born_digital_recommends_deterministic(tmp_path):
     assert diag.mean_token_divergence == 0.0
 
 
-def test_diagnose_structure_recommends_det_vlm(tmp_path):
+def test_diagnose_structure_alone_stays_deterministic(tmp_path):
+    # F18 calibration: structure PRESENCE does not force det_vlm (a faithful born-digital page with
+    # a table stays deterministic); structure is recorded as evidence, not a mode driver.
     pdf = _pdf(tmp_path / "d.pdf", "alpha beta gamma delta epsilon")
     client = _FakeClient([_gemini_ok("alpha beta gamma delta epsilon")])  # low divergence
     odl = {"number of pages": 1, "kids": [{
@@ -61,7 +63,14 @@ def test_diagnose_structure_recommends_det_vlm(tmp_path):
         "rows": [{"type": "table row", "cells": [{"type": "table cell", "content": "H"}, {"type": "table cell", "content": "V"}]}],
     }]}
     diag = diagnose_source(pdf, vlm_client=client, api_key="k", odl_runner=lambda _p: odl)
-    assert diag.recommended_mode == "det_vlm" and diag.pages_with_tables == 1
+    assert diag.recommended_mode == "deterministic" and diag.pages_with_tables == 1
+
+
+def test_diagnose_high_divergence_recommends_det_vlm(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "alpha beta gamma")
+    client = _FakeClient([_gemini_ok("totally unrelated visual content here")])  # disjoint -> high divergence
+    diag = diagnose_source(pdf, vlm_client=client, api_key="k", odl_runner=lambda _p: {"number of pages": 1, "kids": []})
+    assert diag.recommended_mode == "det_vlm" and diag.mean_token_divergence >= 0.30
 
 
 def test_diagnose_scan_recommends_det_vlm(tmp_path):
