@@ -29,6 +29,22 @@ SPANNING_PROMPT = (
     "Markdown table."
 )
 
+LOW_QUALITY_SENTINEL = "IMAGE_TOO_LOW_QUALITY"
+
+# Scans have no text-layer oracle, so a degraded scan is where the VLM fabricates most (F4).
+# A whole-image legibility gate (F6) converts that catastrophic fabrication into a safe
+# abstention -- the model judges legibility first and abstains instead of guessing.
+SCAN_PROMPT = (
+    "First judge whether this scanned page is legible enough to transcribe reliably. If it "
+    "is too low-resolution or blurry to read the characters with certainty, reply with "
+    f"EXACTLY `{LOW_QUALITY_SENTINEL}` and nothing else. Otherwise transcribe the page into "
+    "clean GitHub-flavored Markdown. Output ONLY that."
+)
+
+
+def _prompt_for(route: Route, default_prompt: str) -> str:
+    return SCAN_PROMPT if route == Route.SCAN_VLM else default_prompt
+
 
 @dataclass(frozen=True, slots=True)
 class PageOutcome:
@@ -79,9 +95,13 @@ def _process_single(pdf_path, i, route, *, vlm_client, api_key, prompt, oracle_m
         from .vlm import VlmError, transcribe_image
 
         try:
-            markdown = transcribe_image(render_page_png(pdf_path, i), prompt, api_key=api_key, client=vlm_client)
+            markdown = transcribe_image(render_page_png(pdf_path, i), _prompt_for(route, prompt), api_key=api_key, client=vlm_client)
             used = True
-            if route == Route.ORACLE_VLM:
+            if markdown.strip() == LOW_QUALITY_SENTINEL:
+                # legibility gate fired: abstain rather than emit a fabricated transcription
+                markdown = ""
+                flags.append("illegible_low_quality")
+            elif route == Route.ORACLE_VLM:
                 flags.extend(_oracle_flags(pdf_path, [i], markdown, oracle_min_value))
         except VlmError as exc:
             markdown, used = page_text(pdf_path, i), False

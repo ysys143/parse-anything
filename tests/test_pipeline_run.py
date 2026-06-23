@@ -85,6 +85,32 @@ def _spanning_table_pdf(path) -> str:
     return str(path)
 
 
+def test_scan_legibility_gate_abstains_on_low_quality(tmp_path):
+    # F6: a scan the model judges illegible -> abstain (empty + flag), not a fabricated read.
+    client = _FakeClient([_gemini_ok("IMAGE_TOO_LOW_QUALITY")])
+    res = run_document(
+        _text_pdf(tmp_path / "d.pdf"),
+        vlm_client=client,
+        api_key="k",
+        signals=[PageSignals(text_chars=0, table_rows=0, image_count=1)],
+    )
+    assert res.pages[0].route == "scan_vlm"
+    assert res.pages[0].markdown == ""
+    assert "illegible_low_quality" in res.pages[0].flags
+
+
+def test_scan_legible_page_is_transcribed(tmp_path):
+    client = _FakeClient([_gemini_ok("# Scanned content")])
+    res = run_document(
+        _text_pdf(tmp_path / "d.pdf"),
+        vlm_client=client,
+        api_key="k",
+        signals=[PageSignals(text_chars=0, table_rows=0, image_count=1)],
+    )
+    assert res.pages[0].markdown == "# Scanned content"
+    assert "illegible_low_quality" not in res.pages[0].flags
+
+
 def test_continuation_pages_batched_into_one_multi_image_call(tmp_path):
     pdf = _spanning_table_pdf(tmp_path / "span.pdf")
     client = _FakeClient([_gemini_ok("MERGED SPANNING TABLE")])  # exactly ONE response available
