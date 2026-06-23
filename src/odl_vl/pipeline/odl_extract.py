@@ -15,16 +15,21 @@ Java; the real runner calls ``opendataloader_pdf.convert``.
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 BBox = tuple[float, float, float, float]
 
-_TEXT_TYPES = frozenset({"paragraph", "heading", "list item", "caption", "text block"})
+_TEXT_TYPES = frozenset({"paragraph", "heading", "list item", "text block"})
 _IMAGE_TYPES = frozenset({"image", "figure", "picture"})
+
+# Original printed table/figure numbers ("Table 5-2", "표 5-2", "Figure 12", "그림 3").
+_TABLE_LABEL_RE = re.compile(r"(?i)\b(?:table|표|tab\.?)\s*(\d+(?:[-.]\d+)*)")
+_FIGURE_LABEL_RE = re.compile(r"(?i)\b(?:figure|fig\.?|그림|figs?\.?)\s*(\d+(?:[-.]\d+)*)")
 
 
 class OdlError(RuntimeError):
@@ -32,10 +37,20 @@ class OdlError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class _Caption:
+    page_index: int
+    bbox: BBox
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class OdlImage:
     page_index: int
     bbox: BBox
     element_id: str | None = None
+    label: str | None = None     # original printed number, e.g. "Figure 12"
+    caption: str | None = None
+    kind: str = "image"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +60,8 @@ class OdlTable:
     n_cols: int
     bbox: BBox
     cells: tuple[tuple[str, ...], ...]  # row-major text grid
+    label: str | None = None     # original printed number, e.g. "표 5-2"
+    caption: str | None = None
 
     @property
     def width(self) -> float:
@@ -116,12 +133,41 @@ def _parse_table(node: dict) -> OdlTable | None:
     )
 
 
+def _center(b: BBox) -> tuple[float, float]:
+    return ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
+
+
+def _dist(a: BBox, b: BBox) -> float:
+    (ax, ay), (bx, by) = _center(a), _center(b)
+    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+
+
+def _label_tables_figures(
+    tables: list[OdlTable], images: list[OdlImage], captions: list[_Caption]
+) -> tuple[tuple[OdlTable, ...], tuple[OdlImage, ...]]:
+    """Attach the original printed number ("Table 5-2", "Figure 12") by matching each ODL caption
+    to the nearest table/figure on its page (bbox proximity) and parsing its leading label."""
+    for cap in captions:
+        tmatch = _TABLE_LABEL_RE.search(cap.text)
+        fmatch = _FIGURE_LABEL_RE.search(cap.text)
+        if tmatch and tables:
+            i = min(range(len(tables)), key=lambda k: _dist(cap.bbox, tables[k].bbox))
+            if tables[i].label is None:
+                tables[i] = replace(tables[i], label=tmatch.group(0).strip(), caption=cap.text)
+        elif fmatch and images:
+            i = min(range(len(images)), key=lambda k: _dist(cap.bbox, images[k].bbox))
+            if images[i].label is None:
+                images[i] = replace(images[i], label=fmatch.group(0).strip(), caption=cap.text, kind="figure")
+    return tuple(tables), tuple(images)
+
+
 def parse_document(data: dict) -> OdlDocument:
     """Parse an ODL JSON document dict into an OdlDocument. Pure (no I/O)."""
     n_pages = int(data.get("number of pages", 0))
     text_by_page: dict[int, list[str]] = defaultdict(list)
     tables_by_page: dict[int, list[OdlTable]] = defaultdict(list)
     images_by_page: dict[int, list[OdlImage]] = defaultdict(list)
+    captions_by_page: dict[int, list[_Caption]] = defaultdict(list)
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
@@ -132,15 +178,18 @@ def parse_document(data: dict) -> OdlDocument:
                 if table is not None:
                     tables_by_page[table.page_index].append(table)
                 return  # cells handled inside; don't descend (avoid double-counting as page text)
-            if ntype in _TEXT_TYPES:
+            bbox = node.get("bounding box") or [0.0, 0.0, 0.0, 0.0]
+            box = tuple(float(x) for x in bbox[:4])
+            if ntype == "caption" and page:
+                content = node.get("content")
+                if isinstance(content, str) and content.strip():
+                    captions_by_page[int(page) - 1].append(_Caption(int(page) - 1, box, content))  # type: ignore[arg-type]
+            elif ntype in _TEXT_TYPES:
                 content = node.get("content")
                 if isinstance(content, str) and content.strip() and page:
                     text_by_page[int(page) - 1].append(content)
             elif ntype in _IMAGE_TYPES and page:
-                bbox = node.get("bounding box") or [0.0, 0.0, 0.0, 0.0]
-                images_by_page[int(page) - 1].append(
-                    OdlImage(int(page) - 1, tuple(float(x) for x in bbox[:4]), node.get("id"))  # type: ignore[arg-type]
-                )
+                images_by_page[int(page) - 1].append(OdlImage(int(page) - 1, box, node.get("id")))  # type: ignore[arg-type]
             for v in node.values():
                 walk(v)
         elif isinstance(node, list):
@@ -149,17 +198,14 @@ def parse_document(data: dict) -> OdlDocument:
 
     walk(data)
     if n_pages <= 0:
-        n_pages = 1 + max([*text_by_page, *tables_by_page, *images_by_page, -1])
-    pages = tuple(
-        OdlPage(
-            page_index=i,
-            text="\n".join(text_by_page.get(i, [])),
-            tables=tuple(tables_by_page.get(i, [])),
-            images=tuple(images_by_page.get(i, [])),
+        n_pages = 1 + max([*text_by_page, *tables_by_page, *images_by_page, *captions_by_page, -1])
+    pages = []
+    for i in range(n_pages):
+        tables, images = _label_tables_figures(
+            list(tables_by_page.get(i, [])), list(images_by_page.get(i, [])), captions_by_page.get(i, [])
         )
-        for i in range(n_pages)
-    )
-    return OdlDocument(n_pages=n_pages, pages=pages)
+        pages.append(OdlPage(page_index=i, text="\n".join(text_by_page.get(i, [])), tables=tables, images=images))
+    return OdlDocument(n_pages=n_pages, pages=tuple(pages))
 
 
 def _run_odl(pdf_path: str) -> dict:

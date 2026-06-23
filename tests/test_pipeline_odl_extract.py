@@ -43,6 +43,24 @@ def test_parse_document_text_table_image():
     assert len(p1.images) == 1 and p1.images[0].element_id == "img1"
 
 
+def test_caption_labels_attach_to_nearest_table_and_figure():
+    data = {
+        "number of pages": 1,
+        "kids": [
+            {"type": "table", "page number": 1, "bounding box": [50, 500, 400, 600], "number of rows": 1, "number of columns": 2,
+             "rows": [{"type": "table row", "cells": [{"type": "table cell", "content": "H"}, {"type": "table cell", "content": "V"}]}]},
+            {"type": "caption", "page number": 1, "bounding box": [50, 610, 400, 625], "content": "표 5-2 모델 및 특징"},
+            {"type": "image", "page number": 1, "bounding box": [50, 100, 400, 300], "id": "i1"},
+            {"type": "caption", "page number": 1, "bounding box": [50, 90, 400, 98], "content": "Figure 12 Diagram of the task"},
+        ],
+    }
+    page = parse_document(data).pages[0]
+    table = page.tables[0]
+    assert table.label == "표 5-2" and table.caption is not None and "모델" in table.caption
+    figure = page.images[0]
+    assert figure.label == "Figure 12" and figure.kind == "figure" and "Diagram" in (figure.caption or "")
+
+
 def test_substantial_tables_drops_degenerate_slivers():
     real = OdlTable(0, 2, 2, (50, 50, 400, 200), (("A", "1"), ("B", "2")))
     sliver = OdlTable(0, 2, 2, (10.0, 10.0, 10.5, 10.2), (("", ""), ("", "")))  # 0x0pt, empty
