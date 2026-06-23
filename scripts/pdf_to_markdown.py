@@ -28,9 +28,14 @@ def run_cli(argv, runtime: Runtime) -> int:
     args = _parse_args(argv)
     settings = load_settings(env_file=_REPO / ".env", environ=runtime.environ)
     key = settings.gemini_api_key
-    mode = "deterministic" if args.no_vlm else args.mode  # configured mode, no runtime routing
-    use_vlm = (mode == "det_vlm") and key is not None
-    client = safe_client(runtime) if use_vlm else None
+    mode = "deterministic" if args.no_vlm else args.mode  # the mode IS the lever (no runtime routing)
+    client = None
+    if mode == "det_vlm":
+        if not key:
+            # Don't silently downgrade an explicit choice: a missing key is a misconfiguration.
+            print("error: --mode det_vlm requires GEMINI_API_KEY (use --mode deterministic for no-VLM)", file=runtime.stdout)
+            return 2
+        client = safe_client(runtime)
 
     result = run_document(
         args.pdf, mode=mode, vlm_client=client, api_key=key or "",
