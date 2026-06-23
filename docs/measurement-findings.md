@@ -221,6 +221,21 @@
 
 ---
 
+## F22. OmniDocBench 5조건 벤치 + Paddle-1차/reconcile (→ reconcile.py, assemble primary, R9/R10)
+
+- **방법:** OmniDocBench(이미지-only 골든, 1651쪽/10타입) 층화 ~40쪽에 5조건(paddle 단독·gemini flash-lite 단독·paddle det_vlm·gemini det_vlm·결합) → 표 TEDS(apted) + 텍스트 1-NED 채점. 별도로 born-digital(CSNL·하드케이스)에서 결정론 보강 측정.
+- **스코핑(중요):** OmniDocBench는 *이미지-only* → 텍스트레이어 0 → 우리 thesis(값 오라클·ODL 그라운딩·결정론모드)는 **발휘 불가**. det_vlm의 *VLM 전사 품질*만 잰다.
+- **결과:**
+  - **이미지에선 PaddleOCR-VL ≫ Gemini flash-lite:** text 0.82 vs 0.74, **표 TEDS 0.96 vs 0.85**(DEFAULT)/0.68(SCAN). 문서특화 OCR의 우위.
+  - **SCAN_PROMPT가 Gemini 표를 퇴화**(TEDS 0.85→0.68) — 가독성-기권 프롬프트가 표 재구성을 해침.
+  - **결합(reconcile)이 표 복구:** Gemini 0.68 → **0.91**(Paddle 표 채택). 다중 provider 결합 가치 정량 입증.
+  - **광폭/복잡 표 완전성(born-digital 하드케이스):** 16열 triage 폼에서 **Paddle 25KB(완전) vs Gemini flash-lite 2KB(표 포기)**. det_vlm은 ODL의 한글 띄어쓰기 붕괴도 복원.
+  - **결정론 보강의 실측 가치(born-digital):** Paddle 숫자의 **20.9%(99/473)가 텍스트레이어에 없음** = 값 오라클이 잡음. Paddle 단독이면 무검증 통과. *이미지-only 벤치가 못 재는 것.*
+- **반영(R10):** ① det_vlm `primary` 일반화 — Paddle을 1차 transcriber로(`--primary paddle`), 표-중심 소스에 적합. ② `reconcile.py` — Gemini 텍스트 spine + Paddle 표(더 완전하면 replace, Gemini가 포기했으면 **append**). **버그 수정:** 완전성 척도를 셀-수→*콘텐츠 크기*(포맷-무관)로 — 라이브 검증 시 combined가 Gemini 압축표(2KB)를 Paddle 완전표(25KB)보다 우선하던 오류를 잡음(2KB→26KB 복구).
+- **결론:** 우리 thesis는 born-digital(텍스트레이어)에서 산다(값 오라클 20.9% 캐치). 이미지/스캔 경로에선 **문서특화 VLM(Paddle)을 1차로** 쓰고 결합-reconcile로 보강하는 게 정답(벤치 정량). 골든급 정밀 검증은 여전히 §8 과제.
+
+---
+
 ## 측정 안 된 것 (코퍼스급 = #14)
 
 아래는 이 소표본으로 확인 못 했고, 30~50페이지 코퍼스+골든(파이프라인 §8)으로 측정해야 한다.
