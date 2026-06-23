@@ -88,7 +88,7 @@ def assemble_document(
     external_id: str | None = None,
     ingested_from: str | None = None,
     options: DetVlmOptions = DetVlmOptions(),
-    paddle_client: Any | None = None,
+    second_pass: Any | None = None,
 ) -> DocumentResult:
     from .docmeta import build_meta
 
@@ -105,7 +105,7 @@ def assemble_document(
         elif mode == "det_vlm":
             outcomes.append(
                 _assemble_det_vlm(pdf_path, i, odl_page, pypdf_texts[i], recurring, vlm_client=vlm_client,
-                                  api_key=api_key, options=options, paddle_client=paddle_client)
+                                  api_key=api_key, options=options, second_pass=second_pass)
             )
         else:
             raise ValueError(f"unknown mode: {mode!r}")
@@ -124,7 +124,7 @@ def _assemble_deterministic(page_index: int, odl_page: OdlPage, pypdf_text: str,
 
 def _assemble_det_vlm(
     pdf_path: str, page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str], *, vlm_client: Any, api_key: str,
-    options: DetVlmOptions = DetVlmOptions(), paddle_client: Any | None = None,
+    options: DetVlmOptions = DetVlmOptions(), second_pass: Any | None = None,
 ) -> PageOutcome:
     """Accuracy mode: VLM is the visual-structure source; pypdfium2 is the value authority
     (value oracle gates VLM numbers -- R-M1); ODL structure is available for rich output (R2).
@@ -165,5 +165,15 @@ def _assemble_det_vlm(
         return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
     source = [t.value for t in number_tokens(pdf_path, page_index, min_value=1000)]
     flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000))
+    # Scans have NO value oracle (no text layer), so a second independent provider pass is the
+    # only consistency check -- flag numbers the two passes disagree on (F4, R8.6). Provider-agnostic.
+    if options.double_pass and second_pass is not None and not pypdf_text.strip():
+        from .guards import dual_pass_disagreements, extract_numbers
+        try:
+            other = second_pass(png)
+            disagree = dual_pass_disagreements(extract_numbers(markdown), extract_numbers(other))
+            flags.extend(f"dual_pass_disagree:{v}" for v in sorted(disagree))
+        except Exception:  # second provider failed -- flag, never drop the page (R-B3)
+            flags.append("double_pass_unavailable")
     labels = extract_caption_labels(markdown)  # VLM reads captions ODL misses (R4.3)
     return PageOutcome(page_index, "det_vlm", True, markdown, 0.0, tuple(flags), labels)
