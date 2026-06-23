@@ -4,18 +4,25 @@
 
 ODL-VL is an early parsing experiment for a deterministic-first PDF parsing pipeline with VLM/OCR escalation. The page-level external-orchestrator scaffold (ODL-like page JSON input) has been **removed and superseded**. A working PDF pipeline now exists under `src/odl_vl/pipeline/` (render, deterministic extraction, per-page processing, value-oracle + scan/quality guards, page-spanning tables, Markdown + ledger output, review/scorecard tooling). It doesn't claim production readiness.
 
-Real-corpus measurement (F16/F17 in [measurement findings](measurement-findings.md)) redirected the architecture: **runtime per-page auto-routing is a false-positive gamble** (no deterministic structure detector is reliable across document types), so the target is **source-level diagnose-then-configure** with two configured modes (deterministic; deterministic-powered VLM) — see [Processing tiers and domain adaptation](processing-tiers-and-adaptation.md) §2.5–2.6/P7 and [PDF pipeline requirements](pdf-pipeline-requirements.md). The current pipeline still does runtime per-page routing (`decide_route`) and Markdown-only output; the target architecture (source diagnosis, two modes with ODL+pypdfium2, rich output) is documented but not yet implemented.
+Real-corpus measurement (F16/F17 in [measurement findings](measurement-findings.md)) redirected the architecture: **runtime per-page auto-routing is a false-positive gamble** (no deterministic structure detector is reliable across document types), so the target is **source-level diagnose-then-configure** with two configured modes (deterministic; deterministic-powered VLM) — see [Processing tiers and domain adaptation](processing-tiers-and-adaptation.md) §2.5–2.6/P7 and [PDF pipeline requirements](pdf-pipeline-requirements.md).
+
+This target architecture is now **implemented** (R1–R4):
+
+- **No runtime routing.** `decide_route` is demoted to a diagnostic-only signal; the run is mode-driven via `assemble.py`. `deterministic` = ODL structure/clean-text + pypdfium2 value-completeness backstop; `det_vlm` = + VLM reconciled, with the born-digital **value oracle** gating VLM numbers (R-M1). The mode is the lever — a missing key with `--mode det_vlm` is a loud error, never a silent downgrade.
+- **Source diagnosis.** D-1 built-in VLM (`diagnose.py`, `scripts/diagnose_source.py`) measures deterministic-vs-VLM token divergence + scan fraction + (structure-aware-sampled) table/figure presence → recommends a mode with evidence. D-2 (`scripts/diagnose_prepare.py` + `docs/diagnostic-d2.md`) assembles a review bundle for a flagship agent in the oracle position. Both emit a `SourceProfile`, which is persisted and reusable (`--use-profile`).
+- **Rich output.** `document.json` (loss-aware source of truth: content-hash id, provenance, pages, tables/figures with bbox + original labels), `tables/`, `assets/`, keyed `<out>/<source_id>/<document_id>/`. Original fig/table numbers come from ODL captions, backfilled from VLM-read captions in `det_vlm` (every entry `source`-tagged).
+- 144 tests pass in an isolated `uv` env. CLI: `--mode`, `--diagnose`, `--use-profile`, `--source-id/--external-id/--ingested-from`.
 
 ## Overall Roadmap
 
 1. Completed: provider scaffold (Gemini direct + PaddleOCR official API) + smoke CLI.
 2. Completed: PDF pipeline slice — render, deterministic extraction (pypdfium2), per-page processing, value-oracle source-gate + scan legibility + input-quality guards, page-spanning table batching, Markdown + ledger output, review/scorecard tooling. The old JSON-input orchestrator was removed.
 3. Measurement redirect (F16/F17): no deterministic structure detector is reliable across document types; `pypdfium2` vs `ODL` is role-based (pypdfium2 = value completeness + char bbox; ODL = structure + clean text). Runtime per-page auto-routing dropped in favor of source-level diagnose-then-configure.
-4. Next (documented, not implemented): demote `decide_route` to a diagnostic component; build source-level diagnosis — D-1 built-in VLM (routine) and D-2 flagship coding-agent skill (hard sources / calibration) — producing a **source profile**.
-5. Then: assemble the two configured modes — **deterministic** (ODL + pypdfium2) and **deterministic-powered VLM** (ODL + pypdfium2 + VLM reconciled, value oracle gating VLM numbers).
-6. Then: rich output contract — `document.json` (loss-aware), `tables/`, `assets/`, source-level metadata.
-7. Then: run the diagnose-then-configure flow on real labeled corpora; golden scoring via the scorecard tool; ODL integration for the deterministic structure layer.
-8. Later: deferred provider adapters and a service interface (e.g. FastAPI) only after the CLI/library path proves the contract.
+4. **Completed (R1):** demoted `decide_route` to a diagnostic signal; mode-driven run with the two configured modes — **deterministic** (ODL + pypdfium2) and **det_vlm** (ODL + pypdfium2 + VLM reconciled, value oracle gating VLM numbers). CLI `--mode`.
+5. **Completed (R2):** rich output contract — `document.json` (loss-aware), `tables/`, `assets/`, content-hash document ids + source/provenance metadata, original fig/table labels.
+6. **Completed (R3–R4):** source-level diagnosis — D-1 built-in VLM (measured, structure-aware sampling) and D-2 flagship-agent review bundle/skill — producing a **SourceProfile** that is persisted and reusable; CLI `--diagnose` / `--use-profile`; VLM caption-label extraction in `det_vlm`.
+7. **Next (not implemented):** run the diagnose-then-configure flow on real labeled corpora; calibrate per-domain thresholds; golden scoring via the scorecard tool; deeper ODL integration (page-spanning table merge wiring into `source_pages`; per-cell bbox).
+8. Later: a derived SQLite index for cross-document queries (filesystem stays source of truth); deferred provider adapters and a service interface (e.g. FastAPI) only after the CLI/library path proves the contract.
 
 ## Completed Foundation
 

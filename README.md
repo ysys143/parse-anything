@@ -76,44 +76,52 @@ The live smoke commands report pass/fail status without printing API keys, signe
 
 ## PDF Pipeline (`pdf_to_markdown`)
 
-The current CLI renders PDF pages, extracts deterministic text/values (pypdfium2),
-processes each page (deterministic or VLM), batches page-spanning tables into one
-multi-image VLM request, applies the born-digital value oracle gate and the scan
-legibility gate, and writes per-page Markdown, a `document.md` assembly,
-`ledger.jsonl`, and `results.jsonl`.
+The CLI is **diagnose-then-configure**, not runtime routing (per-page auto-routing was
+measured to be a false-positive gamble — [F16/F17](docs/measurement-findings.md)). It runs a
+source in a configured **mode**, both modes using ODL (structure / clean text) + pypdfium2
+(value completeness / bbox):
+
+- **`deterministic`** — ODL text + tables, with a pypdfium2 value-completeness backstop
+  (`odl_dropped_number:<v>` flags). No network, no keys.
+- **`det_vlm`** — adds the VLM for visual structure, reconciled; the born-digital **value
+  oracle** (pypdfium2) gates VLM numbers (`unsourced_number:<v>`), and the scan-legibility gate
+  lets a degraded scan abstain (`illegible_low_quality`). The **mode is the lever** — `det_vlm`
+  with no `GEMINI_API_KEY` is a loud error, never a silent downgrade.
 
 ```bash
 # deterministic only -- no network, no keys
-python3 scripts/pdf_to_markdown.py --pdf path/to/doc.pdf --out out/ --no-vlm
+python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --mode deterministic
 
-# with VLM -- uses GEMINI_API_KEY from .env when present
-python3 scripts/pdf_to_markdown.py --pdf path/to/doc.pdf --out out/
+# accuracy mode -- needs GEMINI_API_KEY
+python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --mode det_vlm
+
+# let D-1 diagnose the source and pick the mode (saves a reusable SourceProfile)
+python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --diagnose
+python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --use-profile
 ```
 
-Guards surface as flags in `ledger.jsonl` for review rather than silently trusting
-output: a VLM-needed page with no key is flagged `vlm_unavailable`; a scan the model
-judges unreadable abstains (`illegible_low_quality`); a VLM number absent from the
-born-digital text layer is flagged `unsourced_number:<v>`. Run artifacts (`pages/`,
-`document.md`, `ledger.jsonl`, `results.jsonl`) are git-ignored.
+**Output** lands under `<out>/<source_id>/<document_id>/` (`document_id` = content hash, so
+re-processing is idempotent): `document.md`, `document.json` (loss-aware source of truth —
+identity, provenance, pages, tables/figures with bbox + original labels), `tables/`, `assets/`,
+`pages/`, `ledger.jsonl`, `results.jsonl`. Run artifacts are git-ignored.
 
-### Target architecture (diagnose-then-configure)
+### Source diagnosis (D-1 / D-2)
 
-The CLI above does per-page routing at runtime; measurement showed that is a
-false-positive gamble (no deterministic structure detector is reliable across document
-types — see [F16/F17](docs/measurement-findings.md)). The target architecture instead:
+```bash
+# D-1: built-in VLM diagnostic -> recommended mode + evidence (JSON)
+python3 scripts/diagnose_source.py --pdf doc.pdf
 
-- **Diagnoses a *source*** (a stream of similar documents) once / periodically and produces
-  a **source profile** — built-in VLM diagnostic for routine ingestion, or a flagship
-  **coding-agent skill** (Claude Code / Codex) for hard sources and calibration.
-- **Runs a configured mode** (no runtime routing): **deterministic** (ODL for structure +
-  pypdfium2 for value completeness/bbox) or **deterministic-powered VLM** (ODL + pypdfium2 +
-  VLM all reconciled, value oracle gating VLM numbers).
-- **Emits a rich output contract** — `pages/`, `document.md`, `document.json` (loss-aware,
-  source-of-truth), `tables/`, `assets/`, plus source-level metadata — not Markdown alone
-  (current code is MD + ledger only).
+# D-2: assemble a review bundle for a flagship agent (oracle position) -> SourceProfile
+python3 scripts/diagnose_prepare.py --pdf doc.pdf --out bundle/   # see docs/diagnostic-d2.md
+```
 
-See [processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md) (§2.5–2.6, P7)
-and [PDF pipeline requirements](docs/pdf-pipeline-requirements.md) (§3.4, §4, §7).
+D-1 measures deterministic-vs-VLM token divergence + scan fraction + (structure-aware-sampled)
+table/figure presence and recommends `deterministic` vs `det_vlm` with evidence; D-2 is for
+hard sources / per-domain threshold calibration. Both emit a persisted `SourceProfile`.
+
+See [processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md) (§2.5–2.6, P7),
+[PDF pipeline requirements](docs/pdf-pipeline-requirements.md) (§3.4, §4, §7), and
+[D-2 diagnostic](docs/diagnostic-d2.md).
 
 > The earlier ODL-like-JSON external orchestrator scaffold has been **removed** and
 > superseded by this pipeline. The shared provider layer (`config`, `providers`,
