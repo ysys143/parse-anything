@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-import re
 
-from odl_vl.ledger import LedgerEvent, append_ledger_event, redacted_event
+from odl_vl.ledger import LedgerEvent, append_ledger_event, event_payload
 
 
-def test_redacted_event_preserves_required_ledger_fields_without_secret_values():
-    # Given
-    key_value = "a" * 32
-    signature_value = "b" * 32
+def test_event_payload_preserves_all_ledger_fields():
+    # Given an event whose route_reason and metadata are non-secret operational data.
     event = LedgerEvent(
         provider="paddle",
         model_alias="PaddleOCR-VL-1.6",
@@ -17,228 +14,86 @@ def test_redacted_event_preserves_required_ledger_fields_without_secret_values()
         latency_ms=125.5,
         status="ok",
         cost_estimate_usd=0.0025,
-        metadata={
-            "PADDLE_API_KEY": key_value,
-            "job_url": f"https://provider.example/jobs/1?X-Amz-Signature={signature_value}",
-            "safe_note": "queued",
-        },
+        metadata={"mode": "live", "family": "merged_table"},
     )
 
     # When
-    payload = redacted_event(event)
+    payload = event_payload(event)
 
-    # Then
+    # Then: every field is recorded faithfully (no scrubbing pass).
     assert payload["provider"] == "paddle"
     assert payload["model_alias"] == "PaddleOCR-VL-1.6"
     assert payload["route_reason"] == "hint:no_text_layer"
     assert payload["latency_ms"] == 125.5
     assert payload["status"] == "ok"
     assert payload["cost_estimate_usd"] == 0.0025
-    rendered = json.dumps(payload, sort_keys=True)
-    assert "PADDLE_API_KEY" not in rendered
-    assert key_value not in rendered
-    assert "X-Amz-Signature" not in rendered
-    assert "safe_note" in rendered
+    assert payload["metadata"] == {"mode": "live", "family": "merged_table"}
 
 
-def test_append_ledger_event_writes_jsonl_and_redacts_token_like_values(tmp_path):
-    # Given
-    path = tmp_path / "ledger.jsonl"
-    token_value = "c" * 32
-    result_token_value = "d" * 32
+def test_event_payload_omits_empty_metadata():
+    # Given an event with no metadata.
+    event = LedgerEvent(
+        provider="deterministic",
+        model_alias="deterministic",
+        route_reason="fixture:simple_text expected deterministic_only",
+        latency_ms=1.0,
+        status="ok",
+        cost_estimate_usd=None,
+        metadata={},
+    )
+
+    # When
+    payload = event_payload(event)
+
+    # Then: an empty metadata mapping is dropped rather than written as {}.
+    assert "metadata" not in payload
+    assert payload["cost_estimate_usd"] is None
+
+
+def test_event_payload_records_metadata_verbatim():
+    # Given metadata containing a long but non-secret identifier. The ledger no longer
+    # mangles long identifiers; keeping secrets out is a source + gitignore + scanner
+    # responsibility, not a runtime scrubbing pass.
+    document_id = "doc-" + "0123456789" * 4  # 44-char benign identifier
     event = LedgerEvent(
         provider="gemini",
-        model_alias="gemini-3.1-flash-lite",
+        model_alias="gemini-2.5-flash",
+        route_reason="fixture:chart_like_page expected gemini_vlm",
+        latency_ms=10.0,
+        status="ok",
+        cost_estimate_usd=None,
+        metadata={"document_id": document_id, "mode": "offline"},
+    )
+
+    # When
+    payload = event_payload(event)
+
+    # Then: the identifier survives intact (no [REDACTED]).
+    assert payload["metadata"]["document_id"] == document_id
+    assert "[REDACTED]" not in json.dumps(payload)
+
+
+def test_append_ledger_event_writes_one_json_line(tmp_path):
+    # Given
+    path = tmp_path / "ledger.jsonl"
+    event = LedgerEvent(
+        provider="gemini",
+        model_alias="gemini-2.5-flash",
         route_reason="hint:needs_image_description",
         latency_ms=10.0,
-        status="fallback_used",
+        status="ok",
         cost_estimate_usd=None,
-        metadata={
-            "TOKEN": token_value,
-            "result_url": f"https://provider.example/result?token={result_token_value}",
-            "family": "chart_like_page",
-        },
+        metadata={"mode": "live", "family": "chart_like_page"},
     )
 
     # When
     append_ledger_event(path, event)
+    append_ledger_event(path, event)
     contents = path.read_text(encoding="utf-8")
 
-    # Then
+    # Then: each call appends exactly one JSON object line.
     records = [json.loads(line) for line in contents.splitlines()]
-    assert len(records) == 1
+    assert len(records) == 2
     assert records[0]["provider"] == "gemini"
-    assert "API_KEY" not in contents
-    assert "TOKEN" not in contents
-    assert re.search(r"[0-9a-fA-F]{32,}", contents) is None
-    assert "result_url" not in contents
-    assert "chart_like_page" in contents
-
-
-def test_redacted_event_redacts_purely_alphabetic_long_secret():
-    # Given a 40-char secret with no digits/underscores/hyphens.
-    alpha_value = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
-    assert len(alpha_value) >= 32
-    event = LedgerEvent(
-        provider="gemini",
-        model_alias="gemini-3.1-flash-lite",
-        route_reason="fixture:chart_like_page expected gemini_vlm",
-        latency_ms=10.0,
-        status="ok",
-        cost_estimate_usd=None,
-        metadata={"opaque": alpha_value, "safe_note": "queued"},
-    )
-
-    # When
-    rendered = json.dumps(redacted_event(event), sort_keys=True)
-
-    # Then
-    assert alpha_value not in rendered
-    assert "[REDACTED]" in rendered
-    assert "queued" in rendered
-
-
-def test_redacted_event_keeps_legitimate_none_but_drops_signed_url():
-    # Given
-    signature_value = "e" * 40
-    event = LedgerEvent(
-        provider="paddle",
-        model_alias="PaddleOCR-VL-1.6",
-        route_reason="hint:no_text_layer",
-        latency_ms=5.0,
-        status="ok",
-        cost_estimate_usd=None,
-        metadata={
-            "optional_field": None,
-            "result_url": f"https://provider.example/r?X-Amz-Signature={signature_value}",
-        },
-    )
-
-    # When
-    payload = redacted_event(event)
-
-    # Then: a legitimate None survives as null; the signed URL key is dropped.
-    assert "metadata" in payload
-    assert payload["metadata"]["optional_field"] is None
-    assert "result_url" not in payload["metadata"]
-
-
-def test_redacted_event_blanket_redacts_route_reason():
-    # Given a route_reason embedding a signed URL and a long opaque token.
-    long_token = "t" * 40
-    route_reason = "route_error:fetch https://h/r?X-Goog-Signature=" + "abc123" + f" tok={long_token}"
-    event = LedgerEvent(
-        provider="unknown",
-        model_alias="unknown",
-        route_reason=route_reason,
-        latency_ms=1.0,
-        status="failed",
-        cost_estimate_usd=None,
-        metadata={},
-    )
-
-    # When
-    payload = redacted_event(event)
-
-    # Then: security-first — the signing token and any long opaque token are stripped.
-    assert "X-Goog-Signature=[REDACTED]" in payload["route_reason"]
-    assert "abc123" not in payload["route_reason"]
-    assert long_token not in payload["route_reason"]
-
-
-def test_redacted_event_redacts_jwt_with_short_segments():
-    # Given a JWT whose dot-separated segments are each individually shorter than the
-    # 32-char opaque-token threshold, so only the JWT-shape pattern can catch it.
-    jwt = "eyJhbGciOi" + "." + "eyJzdWIiQ" + "." + "SflKxwRJ"
-    event = LedgerEvent(
-        provider="gemini",
-        model_alias="gemini-2.5-flash",
-        route_reason="auth_error: bearer " + jwt,
-        latency_ms=1.0,
-        status="failed",
-        cost_estimate_usd=None,
-        metadata={},
-    )
-
-    # When
-    payload = redacted_event(event)
-
-    # Then: the JWT is stripped even though no single segment is 32+ chars.
-    assert jwt not in payload["route_reason"]
-    assert "[REDACTED]" in payload["route_reason"]
-
-
-def test_redacted_event_keeps_non_secret_expires_param():
-    # Given a URL carrying a signature plus a non-sensitive expires timestamp.
-    event = LedgerEvent(
-        provider="paddle",
-        model_alias="PaddleOCR-VL-1.6",
-        route_reason="fetched https://h/r?sig=" + "secretsigvalue" + "&expires=1700000000",
-        latency_ms=1.0,
-        status="ok",
-        cost_estimate_usd=None,
-        metadata={},
-    )
-
-    # When
-    payload = redacted_event(event)
-
-    # Then: the signature value is stripped but the expiry timestamp stays readable.
-    assert "sig=[REDACTED]" in payload["route_reason"]
-    assert "expires=1700000000" in payload["route_reason"]
-
-
-def test_redacted_event_drops_url_with_embedded_credentials_and_uncommon_signed_param():
-    # Given metadata URLs with basic-auth userinfo and a non-standard signing param.
-    event = LedgerEvent(
-        provider="paddle",
-        model_alias="PaddleOCR-VL-1.6",
-        route_reason="hint:no_text_layer",
-        latency_ms=5.0,
-        status="ok",
-        cost_estimate_usd=None,
-        metadata={
-            # Assembled at runtime so this source file is not itself flagged.
-            "userinfo_url": "https://user:" + "supersecretpw" + "@host.example/path",
-            "sas_url": "https://host.example/blob?sas=" + "abc123def456",
-            "safe": "kept",
-        },
-    )
-
-    # When
-    payload = redacted_event(event)
-    rendered = json.dumps(payload, sort_keys=True)
-
-    # Then
-    assert "supersecretpw" not in rendered
-    assert "userinfo_url" not in payload["metadata"]
-    assert "sas_url" not in payload["metadata"]
-    assert payload["metadata"]["safe"] == "kept"
-
-
-def test_redacted_event_removes_long_non_hex_value_like_values_but_keeps_safe_text():
-    # Given
-    non_hex_value = "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_"
-    event = LedgerEvent(
-        provider="gemini",
-        model_alias="gemini-3.1-flash-lite",
-        route_reason="fixture:chart_like_page expected gemini_vlm",
-        latency_ms=11.0,
-        status="ok",
-        cost_estimate_usd=0.001,
-        metadata={
-            "family": "chart_like_page",
-            "safe_note": "queued for fixture route",
-            "opaque_id": non_hex_value,
-        },
-    )
-
-    # When
-    payload = redacted_event(event)
-    rendered = json.dumps(payload, sort_keys=True)
-
-    # Then
-    assert non_hex_value not in rendered
-    assert "[REDACTED]" in rendered
-    assert "chart_like_page" in rendered
-    assert "queued for fixture route" in rendered
+    assert records[0]["route_reason"] == "hint:needs_image_description"
+    assert records[0]["metadata"]["family"] == "chart_like_page"

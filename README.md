@@ -71,7 +71,7 @@ The external orchestrator consumes ODL-like page JSON (document id, per-page
 `first_pass_md`, `page_image` reference, `fixture_family`, and optional routing
 hints), routes each page to the deterministic / PaddleOCR / Gemini path via the
 existing router, normalizes provider output into the internal IR, and writes a
-redacted per-page ledger. **This is not an ODL runner or a PDF renderer**: it
+per-page ledger. **This is not an ODL runner or a PDF renderer**: it
 does not execute ODL, render PDF pages, or generate fixture artifacts.
 
 Run the offline orchestration over the sample document. Offline mode uses
@@ -85,8 +85,13 @@ python3 scripts/odl_vl_orchestrate.py \
 
 Outputs land in the output directory: `results.jsonl` (per-page route, provider,
 status), `pages/` markdown files, and `ledger.jsonl`. The ledger records
-provider, model alias, route reason, latency, and status only; API keys, signed
-result URLs, and raw provider bodies are never written.
+provider, model alias, route reason, latency, and status only. Secrets stay out
+of these artifacts at the source -- error reasons are opaque codes (e.g.
+`gemini_http_429`), and only non-secret metadata is recorded -- so the ledger is
+written faithfully rather than scrubbed field-by-field. As a backstop, the run
+artifacts (`results.jsonl`, `ledger.jsonl`) are git-ignored and a pre-commit
+scanner (`scripts/check_no_secrets.py`) fails the commit if a secret ever slips
+into a tracked file.
 
 `--mode live` is opt-in and calls real providers using the same key contract as
 the smoke checks (`GEMINI_API_KEY`, `PADDLE_API_KEY`, `PADDLE_BASE_URL`). It

@@ -53,6 +53,24 @@ def test_scanner_reports_google_hf_hex_and_secret_assignments(tmp_path):
     assert "safe" * 8 not in rendered
 
 
+def test_scanner_flags_jwt_with_short_segments(tmp_path):
+    # Given a JWT whose dot-separated segments are each shorter than the hex/opaque-token
+    # length, so only the known-prefix (JWT-shape) check can catch it.
+    module = _load_secret_scan_module()
+    sample = tmp_path / "sample.txt"
+    jwt = "eyJhbGciOi" + "." + "eyJzdWIiQ" + "." + "SflKxwRJ"
+    sample.write_text("bearer " + jwt + "\n", encoding="utf-8")
+
+    # When
+    report = module.scan_paths([sample])
+
+    # Then
+    assert report.has_findings is True
+    assert any(finding.kind == "known_secret_prefix" for finding in report.findings)
+    rendered = "\n".join(finding.render() for finding in report.findings)
+    assert jwt not in rendered
+
+
 def test_scanner_flags_real_secret_that_merely_contains_a_placeholder_word(tmp_path):
     # Given real-looking secrets whose value embeds 'test'/'override' as a substring.
     module = _load_secret_scan_module()

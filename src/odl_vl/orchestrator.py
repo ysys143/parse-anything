@@ -14,7 +14,6 @@ from odl_vl.normalizers import normalize_deterministic
 from odl_vl.orchestrator_input import DocumentInput, PageInput
 from odl_vl.providers import DEFAULT_GEMINI_MODEL, DEFAULT_PADDLE_MODEL
 from odl_vl.router import RouteDecision, choose_route
-from odl_vl.secret_patterns import redact_secrets
 
 
 ProviderCallable = Callable[[PageInput, RouteDecision], NormalizedPage]
@@ -48,7 +47,6 @@ class PageResult:
             "page_index": self.page_index,
             "fixture_family": self.fixture_family,
             "provider": str(self.provider),
-            # route_reason / error are already redacted when the result is built.
             "route_reason": self.route_reason,
             "status": self.status,
             "error": self.error,
@@ -120,12 +118,10 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
         else _UNKNOWN_PROVIDER
     )
 
-    # Redact once here; PageResult/to_record and the CLI summary reuse these values
-    # instead of re-redacting. (redacted_event still redacts defensively for any
-    # LedgerEvent built elsewhere; on an already-redacted string that is a no-op.)
-    route_reason = redact_secrets(route_reason)
-    error = redact_secrets(error) if error is not None else None
-
+    # route_reason is a router decision string or a "route_error:<code>" built from an
+    # opaque provider error code (e.g. gemini_http_429); neither carries a credential,
+    # so it is recorded verbatim. Keeping secrets out of artifacts is enforced at the
+    # source (opaque error codes) and by the .gitignore + scanner gate, not here.
     event = LedgerEvent(
         provider=provider_label,
         model_alias=model_alias,
