@@ -76,11 +76,11 @@ The live smoke commands report pass/fail status without printing API keys, signe
 
 ## PDF Pipeline (`pdf_to_markdown`)
 
-The pipeline renders PDF pages, triages each page to a processing depth
-(deterministic text / table-with-VLM / scan-with-VLM / figure-with-VLM), runs the
-chosen path, batches page-spanning tables into one multi-image VLM request, applies
-the born-digital value oracle gate and the scan legibility gate, and writes per-page
-Markdown, a `document.md` assembly, `ledger.jsonl`, and `results.jsonl`.
+The current CLI renders PDF pages, extracts deterministic text/values (pypdfium2),
+processes each page (deterministic or VLM), batches page-spanning tables into one
+multi-image VLM request, applies the born-digital value oracle gate and the scan
+legibility gate, and writes per-page Markdown, a `document.md` assembly,
+`ledger.jsonl`, and `results.jsonl`.
 
 ```bash
 # deterministic only -- no network, no keys
@@ -93,9 +93,27 @@ python3 scripts/pdf_to_markdown.py --pdf path/to/doc.pdf --out out/
 Guards surface as flags in `ledger.jsonl` for review rather than silently trusting
 output: a VLM-needed page with no key is flagged `vlm_unavailable`; a scan the model
 judges unreadable abstains (`illegible_low_quality`); a VLM number absent from the
-born-digital text layer is flagged `unsourced_number:<v>`. The full target contract
-is in [PDF pipeline requirements](docs/pdf-pipeline-requirements.md); run artifacts
-(`pages/`, `document.md`, `ledger.jsonl`, `results.jsonl`) are git-ignored.
+born-digital text layer is flagged `unsourced_number:<v>`. Run artifacts (`pages/`,
+`document.md`, `ledger.jsonl`, `results.jsonl`) are git-ignored.
+
+### Target architecture (diagnose-then-configure)
+
+The CLI above does per-page routing at runtime; measurement showed that is a
+false-positive gamble (no deterministic structure detector is reliable across document
+types — see [F16/F17](docs/measurement-findings.md)). The target architecture instead:
+
+- **Diagnoses a *source*** (a stream of similar documents) once / periodically and produces
+  a **source profile** — built-in VLM diagnostic for routine ingestion, or a flagship
+  **coding-agent skill** (Claude Code / Codex) for hard sources and calibration.
+- **Runs a configured mode** (no runtime routing): **deterministic** (ODL for structure +
+  pypdfium2 for value completeness/bbox) or **deterministic-powered VLM** (ODL + pypdfium2 +
+  VLM all reconciled, value oracle gating VLM numbers).
+- **Emits a rich output contract** — `pages/`, `document.md`, `document.json` (loss-aware,
+  source-of-truth), `tables/`, `assets/`, plus source-level metadata — not Markdown alone
+  (current code is MD + ledger only).
+
+See [processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md) (§2.5–2.6, P7)
+and [PDF pipeline requirements](docs/pdf-pipeline-requirements.md) (§3.4, §4, §7).
 
 > The earlier ODL-like-JSON external orchestrator scaffold has been **removed** and
 > superseded by this pipeline. The shared provider layer (`config`, `providers`,

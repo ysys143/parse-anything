@@ -14,7 +14,7 @@ VLM은 숫자 진실성의 source of truth가 아니다. VLM은 구조, 레이�
 
 1. 페이지 방향 인식과 보정은 필수다. 회전, skew, 다단 문서의 읽기순서가 downstream markdown/json/table assembly에 반영되어야 한다.
 2. 복잡한 표, 병합셀, 중첩 헤더, 단위 row는 텍스트 휴리스틱만으로 처리하지 않는다. ODL의 의미 table 요소, 행/열/셀 bbox, 또는 동등한 구조 추출이 필요하다.
-3. OCR/VLM이 필요 없는 born-digital 페이지는 자동으로 결정론 처리한다. processing depth는 fuzzy score가 아니라 명시 트리거 집합으로 결정한다.
+3. 처리깊이(결정론 / VLM)는 **런타임 per-page 자동 판정이 아니라 소스 단위 진단으로 정한 프로파일**을 따른다(§3.4, 처리계층 P7/§2.5). 결정론 트리거 집합은 그 진단의 입력 신호다 — fuzzy score가 아니다.
 4. 페이지에 걸친 표는 하나의 logical table로 인식하고 재구성한다.
 5. VLM 입력은 결정론 파싱 데이터, 페이지 이미지, 방향 보정 정보, 커스텀 프롬프트를 함께 포함한다. 페이지에 걸친 표나 이미지는 자동으로 multi-image 입력이 되어야 한다.
 6. 출력은 페이지별 markdown/json과 문서 합본 markdown/json을 모두 제공한다. JSON은 표, 셀, bbox, page reference, confidence, guard flag를 보존해야 한다.
@@ -25,21 +25,21 @@ VLM은 숫자 진실성의 source of truth가 아니다. VLM은 구조, 레이�
 1. PDF 입력은 페이지 이미지로 렌더한다. 기본 렌더러는 라이선스가 clean한 pypdfium2 계열을 우선하며, 고DPI 렌더를 지원해야 한다.
 2. 결정론 추출은 텍스트, bbox, reading order 후보, 표 영역, 의미 table 요소를 만든다. born-digital 문서의 정확한 숫자와 구조는 이 단계가 보존한다.
 3. scan vs born-digital 판정은 pdf-inspector classify 결과와 텍스트 char 수를 함께 사용한다.
-4. 처리깊이 결정은 아래 트리거 집합으로 한다. 기본값은 결정론 처리이며, 트리거가 있으면 VLM/OCR로 escalation한다.
+4. **처리깊이는 런타임에 페이지마다 자동 판정하지 않는다** (결정론 구조검출기가 문서종류마다 다르게 오탐하므로 — `measurement-findings.md` F16). 대신 아래 신호는 **소스 진단**(`processing-tiers-and-adaptation.md` §2.5)의 입력으로 쓰여, 그 소스의 **실행 모드·위험 핫스팟·적용 가드**를 정한다.
    - 스캔 또는 text layer 부재
    - 그림, 차트, diagram 의미 설명 필요
    - 인코딩 깨짐, CID/ToUnicode 문제, 비정상 글리프
    - 산술 불변식 실패
    - 결정론 table/reading-order/bbox 불완전
    - 낮은 품질, 회전, skew, orientation 불확실
-5. Escalation 적극성은 비용/품질/위험 정책 knob로 둔다. 이 값은 실제 코퍼스와 골든셋에서 보정해야 하며, provider 호출을 임의로 늘리는 free-form score로 쓰지 않는다. DET/VLM/HUM 계층 경계와 도메인별 보정 도구는 `processing-tiers-and-adaptation.md`를 따른다.
+5. **실행은 소스 프로파일이 지정한 모드대로 한다** (예측가능, 런타임 라우팅 없음). 모드는 두 가지(처리계층 §2.6): **결정론 모드**(ODL+pypdfium2 병용) 또는 **결정론-powered VLM 모드**(ODL+pypdfium2+VLM을 *둘 다/셋 다* 돌려 정합 — 라우팅 누락 없음). 모드·임계·가드는 실제 코퍼스/골든셋에서 진단으로 보정한다. DET/VLM/HUM 계층 경계와 도메인 보정 도구는 `processing-tiers-and-adaptation.md`를 따른다.
 
 ## 4. Table Policy
 
 복잡한 표는 두 단계로 처리한다.
 
-1. 결정론 단계에서 table region, row, column, cell, bbox, text token을 수집한다.
-2. VLM 단계는 병합셀 구조, 헤더 계층, visual grouping, continuation 여부를 보강한다.
+1. 결정론 단계에서 table region, row, column, cell, bbox, text token을 수집한다. **역할 분리**(`measurement-findings.md` F16/F17): *구조*(격자/병합/헤더)는 **ODL**(또는 pdf-inspector)의 후보 — 단 *권위가 아님*(둘 다 문서종속 오탐). *값·셀 텍스트*는 **pypdfium2**가 권위(완전성: ODL은 실숫자를 누락할 수 있어 pypdfium2로 백스톱·플래그). 즉 ODL의 표 격자에 pypdfium2 텍스트/값을 채운다.
+2. VLM 단계(결정론-powered VLM 모드)는 병합셀 구조, 헤더 계층, visual grouping, continuation 여부를 보강하고, 결정론(ODL+pypdfium2)과 정합한다(처리계층 §2.6, R-M1: 구조=VLM/ODL, 값=pypdfium2+값오라클).
 
 페이지에 걸친 표는 다음 규칙으로 인식한다.
 
@@ -51,9 +51,9 @@ VLM은 숫자 진실성의 source of truth가 아니다. VLM은 구조, 레이�
 
 ## 5. VLM Call Recipe
 
-VLM 요청은 다음 입력을 포함한다.
+결정론-powered VLM 모드는 **ODL + pypdfium2 + VLM 세 소스를 모두 입력으로 정합**한다(라우팅 없음). VLM 요청은 다음 입력을 포함한다.
 
-- 결정론 markdown 후보
+- 결정론 텍스트/구조 후보: **ODL**(표 격자·읽기순서·청결 텍스트) + **pypdfium2**(값 완전성·char bbox)
 - 결정론 JSON 후보: 텍스트 token, bbox, table regions, cell candidates, source page ids
 - 방향 인식/보정 결과: rotation, skew, corrected image metadata
 - 페이지 이미지: 단일 페이지 또는 자동 multi-image
@@ -90,6 +90,10 @@ Born-digital 문서는 숫자 oracle을 주입한다. 텍스트 레이어에서 
 
 Markdown은 사람이 읽기 좋은 view다. JSON은 source of truth이며, element id, page id, bbox, table/cell hierarchy, source text, asset pointer, continuation relation을 보존해야 한다.
 
+- **소스 레벨 메타데이터(증보).** `document.json`은 페이지 메타에 더해 **소스 식별·프로파일·진단 출처**(source id, 적용된 소스 프로파일·실행 모드, 진단 등급 D-1/D-2와 시각)를 기록한다 (처리계층 §2.5). 같은 소스에서 나온 문서들이 동일 프로파일로 처리됐음을 추적할 수 있어야 한다.
+- **모드 매핑.** 두 실행 모드 모두 이 계약을 산출한다 — `tables/`·`assets/`의 구조는 ODL, 값/`cells[].source_text`는 pypdfium2, 결정론-powered VLM 모드는 VLM 보강분을 정합해 넣는다(provenance에 출처 표기).
+- **현 구현 갭.** `src/odl_vl/pipeline/output.py`는 현재 `pages/`·`document.md`·`ledger.jsonl`·`results.jsonl`만 쓰고, `document.json`(loss-aware)·`tables/`·`assets/`·소스 메타데이터는 미구현이다. 목표 계약과의 차이는 §10에 정리한다.
+
 ## 8. Verification Contract
 
 검증은 실제 코퍼스 30~50페이지와 골든셋으로 한다. 현재 소수 샘플만으로 품질을 주장하지 않는다.
@@ -122,23 +126,18 @@ Markdown은 사람이 읽기 좋은 view다. JSON은 source of truth이며, elem
 
 ## 10. Current Implementation Gap
 
-현재 구현은 아래만 충족한다.
+현재 구현(`src/odl_vl/pipeline/`)이 충족하는 것:
 
-- ODL-like page JSON 입력
-- per-page `first_pass_md`, `page_image`, `intent_prompt` 계약
-- deterministic/Paddle/Gemini route 선택
-- offline/live provider seam
-- per-page markdown 파일, `results.jsonl`, `ledger.jsonl`
+- PDF 입력 → pypdfium2 렌더(`render.py`) + 결정론 텍스트/숫자/위치 추출(`deterministic.py`)
+- 페이지 신호 + **런타임 per-page 자동 라우팅**(`triage.py decide_route`, `signals.py`) — *새 아키텍처에서 폐기 대상*
+- VLM 호출 단일/멀티이미지(`vlm.py`) + 값 오라클 source-gate(`oracle.py`)·가드(`guards.py`)·스캔 가독성·입력 품질(`quality.py`)
+- 페이지 걸친 표 연속판정·멀티이미지 배치(`crosspage.py`)
+- 출력 `pages/`·`document.md`·`ledger.jsonl`·`results.jsonl`(`output.py`), 리뷰 HTML(`review.py`), 스코어카드(`scorecard.py`)
 
-아직 없는 것:
+목표(이 문서 + 처리계층 P7/§2.5–2.6)와의 갭:
 
-- PDF 입력과 pypdfium2 렌더
-- ODL 실행/결정론 추출 통합
-- 방향 인식/보정
-- processing depth 자동화
-- 복잡 표 구조 JSON 정규화
-- 페이지 걸친 표 재구성
-- multi-image VLM 요청
-- 숫자 oracle/source gate/arithmetic invariant
-- asset manifest와 문서 합본 출력
-- 30~50페이지 코퍼스 기반 scorecard
+- **아키텍처:** 런타임 per-page 자동 라우팅(`decide_route`) → **소스 단위 진단-설정**으로 전환 필요(P7). `decide_route`는 진단 컴포넌트로 강등.
+- **결정론 베이스:** 현재 pypdfium2만; **ODL 통합**(구조·청결 텍스트) + ODL/pypdfium2 *병용*(결정론 모드)·*정합*(VLM 모드) 미구현.
+- **진단 도구:** D-1 내장 / D-2 에이전트 스킬 미구현.
+- **리치 출력:** `document.json`(loss-aware)·`tables/`·`assets/`·소스 메타데이터 미구현(현재 MD+ledger만).
+- **검증:** 30~50페이지 코퍼스 기반 scorecard는 도구는 있으나(`scorecard.py`) 실코퍼스 골든 미수행.

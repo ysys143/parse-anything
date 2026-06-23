@@ -1,5 +1,7 @@
 # 스파이크 계획: 파싱 엔진 두 트랙 비교 (ODL 튜닝 vs 외부 오케스트레이터)
 
+> **재정향(superseded) — 역사적 참고.** Track A/B 비교와 자동 라우팅 전제는 이후 실측(`measurement-findings.md` F16/F17)으로 **소스 단위 diagnose-then-configure** 아키텍처로 대체됨(`processing-tiers-and-adaptation.md` §2.5–2.6/P7). 외부 오케스트레이터 코드는 제거됨.
+
 > 상태: 실험 계획 (bake-off)
 > 작성일: 2026-06-16
 > 선행: `docs/odl-engine-rust-python-integration.md`, `docs/pdf-parsing-libraries-research.md`(부록 D)

@@ -2,23 +2,20 @@
 
 ## Current State
 
-ODL-VL is an early parsing experiment for a deterministic parsing front with VLM/OCR providers. The repository has a completed common scaffold (provider configuration, routing, ledger, smoke checks, fixture metadata) and the external orchestrator slice. It doesn't claim production readiness.
+ODL-VL is an early parsing experiment for a deterministic-first PDF parsing pipeline with VLM/OCR escalation. The page-level external-orchestrator scaffold (ODL-like page JSON input) has been **removed and superseded**. A working PDF pipeline now exists under `src/odl_vl/pipeline/` (render, deterministic extraction, per-page processing, value-oracle + scan/quality guards, page-spanning tables, Markdown + ledger output, review/scorecard tooling). It doesn't claim production readiness.
 
-The external orchestrator is implemented: it consumes ODL-like page JSON, routes each page through the deterministic, PaddleOCR official API, or Gemini direct path, normalizes outputs into the existing IR, and records a faithful per-page ledger. See [orchestrator architecture](orchestrator-architecture.md). It is not an ODL CLI execution stage.
-
-The mandatory full PDF pipeline contract is now documented in [PDF pipeline requirements](pdf-pipeline-requirements.md). Processing-tier boundaries and domain adaptation are documented in [Processing tiers and domain adaptation](processing-tiers-and-adaptation.md). Current implementation covers only the page-level routing scaffold; rendering, deterministic extraction, orientation correction, processing-depth automation, page-spanning table assembly, numeric guards, human-review targeting, domain calibration tooling, and document-level outputs remain future work.
+Real-corpus measurement (F16/F17 in [measurement findings](measurement-findings.md)) redirected the architecture: **runtime per-page auto-routing is a false-positive gamble** (no deterministic structure detector is reliable across document types), so the target is **source-level diagnose-then-configure** with two configured modes (deterministic; deterministic-powered VLM) — see [Processing tiers and domain adaptation](processing-tiers-and-adaptation.md) §2.5–2.6/P7 and [PDF pipeline requirements](pdf-pipeline-requirements.md). The current pipeline still does runtime per-page routing (`decide_route`) and Markdown-only output; the target architecture (source diagnosis, two modes with ODL+pypdfium2, rich output) is documented but not yet implemented.
 
 ## Overall Roadmap
 
-1. Completed foundation: PaddleOCR official API + Gemini direct common scaffold.
-2. Completed: external orchestrator over ODL-like page JSON (offline default + opt-in live), not ODL CLI execution. See [orchestrator architecture](orchestrator-architecture.md).
-3. Next: add PDF input rendering with a license-clean renderer and ODL/deterministic extraction so real text, bbox, table regions, and page images can feed the orchestrator.
-4. Then: add orientation correction, processing-depth routing, DET/VLM/HUM escalation boundaries, page-spanning table assembly, numeric source gates, arithmetic invariant checks, and document-level output assembly.
-5. Then: add domain adaptation tooling for measuring domain error rates, reviewing flagged cells/structures, capturing corrections, and comparing policy/provider changes.
-6. Then: generate real fixtures and add golden scoring over the documented fixture families, including page-spanning tables and numeric guard cases.
-7. Then: run a live provider bake-off across deterministic, PaddleOCR official API, Gemini direct, and privacy-safe alternatives where URL fetch is not acceptable.
-8. Later: add deferred provider adapters only after the provider interface, ledger fields, guard fields, adaptation metrics, and fixture bake-off are stable.
-9. Optional later layer: add FastAPI or another service interface only after the CLI/library path proves the contract.
+1. Completed: provider scaffold (Gemini direct + PaddleOCR official API) + smoke CLI.
+2. Completed: PDF pipeline slice — render, deterministic extraction (pypdfium2), per-page processing, value-oracle source-gate + scan legibility + input-quality guards, page-spanning table batching, Markdown + ledger output, review/scorecard tooling. The old JSON-input orchestrator was removed.
+3. Measurement redirect (F16/F17): no deterministic structure detector is reliable across document types; `pypdfium2` vs `ODL` is role-based (pypdfium2 = value completeness + char bbox; ODL = structure + clean text). Runtime per-page auto-routing dropped in favor of source-level diagnose-then-configure.
+4. Next (documented, not implemented): demote `decide_route` to a diagnostic component; build source-level diagnosis — D-1 built-in VLM (routine) and D-2 flagship coding-agent skill (hard sources / calibration) — producing a **source profile**.
+5. Then: assemble the two configured modes — **deterministic** (ODL + pypdfium2) and **deterministic-powered VLM** (ODL + pypdfium2 + VLM reconciled, value oracle gating VLM numbers).
+6. Then: rich output contract — `document.json` (loss-aware), `tables/`, `assets/`, source-level metadata.
+7. Then: run the diagnose-then-configure flow on real labeled corpora; golden scoring via the scorecard tool; ODL integration for the deterministic structure layer.
+8. Later: deferred provider adapters and a service interface (e.g. FastAPI) only after the CLI/library path proves the contract.
 
 ## Completed Foundation
 
