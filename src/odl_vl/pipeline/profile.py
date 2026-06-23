@@ -74,7 +74,7 @@ def load_profile(source_id: str, profiles_dir: str | Path) -> SourceProfile | No
 
 
 def from_d1_diagnosis(diagnosis: Any, *, source_id: str, created_at: str | None = None) -> SourceProfile:
-    """Adapt a D-1 SourceDiagnosis into a SourceProfile (tier D-1)."""
+    """Adapt a D-1 SourceDiagnosis into a SourceProfile (tier D-1), carrying the thresholds it used."""
     from .diagnose import _DIVERGE_TOKEN, _SCAN_FRACTION
 
     return SourceProfile(
@@ -83,7 +83,7 @@ def from_d1_diagnosis(diagnosis: Any, *, source_id: str, created_at: str | None 
         confidence=diagnosis.confidence,
         tier="D-1",
         reasons=diagnosis.reasons,
-        thresholds={"scan_fraction": _SCAN_FRACTION, "token_divergence": _DIVERGE_TOKEN},
+        thresholds=dict(diagnosis.thresholds) or {"scan_fraction": _SCAN_FRACTION, "token_divergence": _DIVERGE_TOKEN},
         evidence={
             "n_pages": diagnosis.n_pages,
             "n_sampled": diagnosis.n_sampled,

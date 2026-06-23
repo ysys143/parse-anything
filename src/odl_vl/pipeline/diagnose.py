@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,7 @@ class SourceDiagnosis:
     pages_with_figures: int
     reasons: tuple[str, ...]
     samples: tuple[dict[str, Any], ...]
+    thresholds: dict[str, float] = field(default_factory=dict)  # the thresholds actually used
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -49,6 +50,7 @@ class SourceDiagnosis:
             "pages_with_tables": self.pages_with_tables,
             "pages_with_figures": self.pages_with_figures,
             "reasons": list(self.reasons),
+            "thresholds": self.thresholds,
             "samples": list(self.samples),
         }
 
@@ -84,6 +86,7 @@ def diagnose_source(
     api_key: str = "",
     sample_size: int = 4,
     odl_runner: Any | None = None,
+    thresholds: dict[str, float] | None = None,
 ) -> SourceDiagnosis:
     if vlm_client is None:
         raise ValueError("D-1 diagnosis requires a VLM client (it measures deterministic-vs-VLM divergence)")
@@ -131,23 +134,31 @@ def diagnose_source(
     n_sampled = len(indices)
     scan_fraction = scans / n_sampled if n_sampled else 0.0
     mean_div = sum(divergences) / len(divergences) if divergences else 0.0
-    mode, confidence, reasons = _recommend(scan_fraction, mean_div, tables_pages, figures_pages)
+    # Per-source thresholds (from a calibrated SourceProfile) override the corpus defaults.
+    thr = thresholds or {}
+    scan_threshold = float(thr.get("scan_fraction", _SCAN_FRACTION))
+    div_threshold = float(thr.get("token_divergence", _DIVERGE_TOKEN))
+    mode, confidence, reasons = _recommend(
+        scan_fraction, mean_div, tables_pages, figures_pages, scan_threshold=scan_threshold, div_threshold=div_threshold
+    )
     return SourceDiagnosis(
         recommended_mode=mode, confidence=confidence, n_pages=n, n_sampled=n_sampled,
         scan_fraction=scan_fraction, mean_token_divergence=mean_div,
         pages_with_tables=tables_pages, pages_with_figures=figures_pages,
         reasons=reasons, samples=tuple(samples),
+        thresholds={"scan_fraction": scan_threshold, "token_divergence": div_threshold},
     )
 
 
-def _recommend(scan_fraction: float, mean_div: float, tables_pages: int, figures_pages: int) -> tuple[str, float, tuple[str, ...]]:
+def _recommend(scan_fraction: float, mean_div: float, tables_pages: int, figures_pages: int,
+               *, scan_threshold: float = _SCAN_FRACTION, div_threshold: float = _DIVERGE_TOKEN) -> tuple[str, float, tuple[str, ...]]:
     # Calibrated on real corpora (F18): scan fraction + token divergence discriminate; structure
     # PRESENCE does not (almost every born-digital doc has a figure/table, yet most are faithfully
     # captured deterministically -- figures are placeholders either way, tables ODL handles). So
-    # structure is informational, not a mode driver.
-    if scan_fraction >= _SCAN_FRACTION:
+    # structure is informational, not a mode driver. Thresholds are per-source (SourceProfile).
+    if scan_fraction >= scan_threshold:
         return "det_vlm", 0.9, (f"scan_fraction={scan_fraction:.2f}: no text layer, OCR needs the VLM",)
-    if mean_div >= _DIVERGE_TOKEN:
+    if mean_div >= div_threshold:
         return "det_vlm", 0.75, (f"mean_token_divergence={mean_div:.2f}: VLM materially diverges from the text layer",)
     note = f" (structure present: tables {tables_pages}, figures {figures_pages} sampled pages)" if (tables_pages or figures_pages) else ""
     return "deterministic", 0.7, (

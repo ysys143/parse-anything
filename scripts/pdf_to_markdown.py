@@ -69,9 +69,11 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
             print("error: --diagnose requires GEMINI_API_KEY (D-1 runs the VLM on sampled pages)", file=runtime.stdout)
             return 2
         from odl_vl.pipeline.diagnose import diagnose_source
-        from odl_vl.pipeline.profile import from_d1_diagnosis, save_profile
+        from odl_vl.pipeline.profile import from_d1_diagnosis, load_profile, save_profile
 
-        diag = diagnose_source(args.pdf, vlm_client=safe_client(runtime), api_key=key, sample_size=args.sample_size)
+        prior = load_profile(args.source_id, profiles_dir)  # reuse calibrated thresholds if a profile exists
+        diag = diagnose_source(args.pdf, vlm_client=safe_client(runtime), api_key=key, sample_size=args.sample_size,
+                               thresholds=prior.thresholds if prior else None)
         mode = diag.recommended_mode
         save_profile(from_d1_diagnosis(diag, source_id=args.source_id, created_at=_now()), profiles_dir)
         print(f"diagnosis: mode={mode} confidence={diag.confidence:.2f} reason={diag.reasons[0]} (profile saved)", file=runtime.stdout)

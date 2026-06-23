@@ -81,6 +81,20 @@ def test_diagnose_scan_recommends_det_vlm(tmp_path):
     assert "scan" in diag.reasons[0]
 
 
+def test_per_source_thresholds_override_defaults(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "aa bb cc dd ee ff gg hh ii jj")
+    odl = {"number of pages": 1, "kids": []}
+    vlm_text = "aa bb cc dd ee ff gg hh ii xx"  # one token differs -> divergence ~0.18 (between 0.10 and 0.30)
+
+    default = diagnose_source(pdf, vlm_client=_FakeClient([_gemini_ok(vlm_text)]), api_key="k", odl_runner=lambda _p: odl)
+    tuned = diagnose_source(pdf, vlm_client=_FakeClient([_gemini_ok(vlm_text)]), api_key="k", odl_runner=lambda _p: odl,
+                            thresholds={"token_divergence": 0.10, "scan_fraction": 0.25})
+
+    assert default.recommended_mode == "deterministic"   # 0.18 < default 0.30
+    assert tuned.recommended_mode == "det_vlm"            # 0.18 >= tuned 0.10
+    assert tuned.thresholds["token_divergence"] == 0.10
+
+
 def test_diagnose_requires_vlm_client(tmp_path):
     pdf = _pdf(tmp_path / "d.pdf", "text")
     with pytest.raises(ValueError):
