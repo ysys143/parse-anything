@@ -98,8 +98,18 @@ def assemble_document(
     pypdf_texts = [page_text(pdf_path, i) for i in range(n)]
     recurring = _recurring_numbers(pypdf_texts)
 
+    # det_vlm reconstructs page-spanning tables in ONE multi-image VLM request (R8.2, F9); other
+    # pages (and all of deterministic mode) are processed singly.
+    spanning = mode == "det_vlm" and options.spanning and vlm_client is not None
+    groups = _spanning_groups(odl_doc, n) if spanning else [[i] for i in range(n)]
+
     outcomes: list[PageOutcome] = []
-    for i in range(n):
+    for group in groups:
+        if len(group) > 1:
+            outcomes.extend(_assemble_spanning(pdf_path, group, pypdf_texts, recurring,
+                                               vlm_client=vlm_client, api_key=api_key, options=options))
+            continue
+        i = group[0]
         odl_page = odl_doc.pages[i] if i < len(odl_doc.pages) else OdlPage(i, "", (), ())
         if mode == "deterministic":
             outcomes.append(_assemble_deterministic(i, odl_page, pypdf_texts[i], recurring))
@@ -112,6 +122,68 @@ def assemble_document(
             raise ValueError(f"unknown mode: {mode!r}")
     meta = build_meta(pdf_path, source_id=source_id, external_id=external_id, ingested_from=ingested_from, mode=mode, n_pages=n)
     return DocumentResult(tuple(outcomes), structure=odl_doc, meta=meta)
+
+
+def _continues(odl_doc: OdlDocument, a: int, b: int) -> bool:
+    """Page b continues page a if a table on b links back (ODL previous_table_id) to one on a."""
+    if a >= len(odl_doc.pages) or b >= len(odl_doc.pages):
+        return False
+    ids_a = {t.table_id for t in odl_doc.pages[a].tables if t.table_id}
+    return any(t.previous_table_id in ids_a for t in odl_doc.pages[b].tables if t.previous_table_id)
+
+
+def _spanning_groups(odl_doc: OdlDocument, n: int) -> list[list[int]]:
+    """Group consecutive pages joined by a page-spanning table; standalone pages are singletons."""
+    groups: list[list[int]] = []
+    i = 0
+    while i < n:
+        group = [i]
+        while i + 1 < n and _continues(odl_doc, i, i + 1):
+            i += 1
+            group.append(i)
+        groups.append(group)
+        i += 1
+    return groups
+
+
+def _assemble_spanning(
+    pdf_path: str, group: list[int], pypdf_texts: list[str], recurring: set[str], *,
+    vlm_client: Any, api_key: str, options: DetVlmOptions,
+) -> list[PageOutcome]:
+    """Reconstruct a page-spanning table from ALL its pages in one multi-image VLM request (F9).
+    The merged table is attributed to the start page; continuation pages are folded."""
+    from .deterministic import number_tokens
+    from .odl_extract import extract_caption_labels
+    from .oracle import fabrication_flags
+    from .render import render_page_png
+    from .run import SPANNING_PROMPT
+    from .vlm import VlmError, transcribe_images
+
+    start = group[0]
+    pngs = [render_page_png(pdf_path, j) for j in group]
+    prompt = SPANNING_PROMPT
+    if options.ground:  # ground the spanning prompt with the group's combined text layer
+        from .grounding import build_grounded_prompt
+
+        prompt = build_grounded_prompt(SPANNING_PROMPT, "\n".join(pypdf_texts[j] for j in group), None)
+    try:
+        markdown = transcribe_images(pngs, prompt, api_key=api_key, client=vlm_client)
+    except VlmError:  # degrade: per-page deterministic for the whole group, never drop
+        from .odl_extract import substantial_tables
+
+        out = []
+        for j in group:
+            page = OdlPage(j, pypdf_texts[j], (), ())
+            out.append(PageOutcome(j, "det_vlm", False, _page_markdown(page, list(substantial_tables(page))), 0.0,
+                                   ("spanning_vlm_failed",)))
+        return out
+
+    source = [t.value for j in group for t in number_tokens(pdf_path, j, min_value=1000)]
+    flags = [f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000)]
+    flags.append("spanning_pages:" + "-".join(str(j) for j in group))
+    outcomes = [PageOutcome(start, "det_vlm", True, markdown, 0.0, tuple(flags), extract_caption_labels(markdown))]
+    outcomes += [PageOutcome(j, "folded", False, "", 0.0, (f"folded_into:{start}",)) for j in group[1:]]
+    return outcomes
 
 
 def _assemble_deterministic(page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str]) -> PageOutcome:

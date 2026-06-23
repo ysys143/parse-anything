@@ -29,6 +29,51 @@ def _pdf(path, line: str) -> str:
     return str(path)
 
 
+def _two_page_pdf(path) -> str:
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.drawString(72, 720, "page one with a table at the bottom")
+    c.showPage()
+    c.drawString(72, 720, "page two where the table continues")
+    c.showPage()
+    c.save()
+    return str(path)
+
+
+_SPANNING_ODL = {
+    "number of pages": 2,
+    "kids": [
+        {"type": "table", "page number": 1, "id": "t1", "bounding box": [50, 400, 400, 600],
+         "number of rows": 2, "number of columns": 2,
+         "rows": [{"type": "table row", "cells": [{"type": "table cell", "content": "H1"}, {"type": "table cell", "content": "H2"}]},
+                  {"type": "table row", "cells": [{"type": "table cell", "content": "a"}, {"type": "table cell", "content": "1"}]}]},
+        {"type": "table", "page number": 2, "id": "t2", "previous table id": "t1", "bounding box": [50, 600, 400, 700],
+         "number of rows": 1, "number of columns": 2,
+         "rows": [{"type": "table row", "cells": [{"type": "table cell", "content": "b"}, {"type": "table cell", "content": "2"}]}]},
+    ],
+}
+
+
+def test_det_vlm_spanning_merges_pages_via_multi_image(tmp_path):
+    pdf = _two_page_pdf(tmp_path / "s.pdf")
+    client = _FakeClient([_gemini_ok("| H1 | H2 |\n| a | 1 |\n| b | 2 |")])   # ONE multi-image request
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", odl_runner=lambda _p: _SPANNING_ODL)
+    assert len(res.pages) == 2
+    assert res.pages[0].route == "det_vlm" and "| b | 2 |" in res.pages[0].markdown   # merged across pages
+    assert any(f.startswith("spanning_pages:") for f in res.pages[0].flags)
+    assert res.pages[1].route == "folded" and "folded_into:0" in res.pages[1].flags
+    assert len(client.responses) == 0   # exactly one batched request consumed
+
+
+def test_det_vlm_no_spanning_processes_pages_separately(tmp_path):
+    from odl_vl.pipeline.assemble import DetVlmOptions
+
+    pdf = _two_page_pdf(tmp_path / "s.pdf")
+    client = _FakeClient([_gemini_ok("p1"), _gemini_ok("p2")])   # two per-page requests
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k",
+                            options=DetVlmOptions(spanning=False), odl_runner=lambda _p: _SPANNING_ODL)
+    assert len(res.pages) == 2 and all(p.route == "det_vlm" for p in res.pages)   # no folding
+
+
 def _blank_pdf(path) -> str:
     c = canvas.Canvas(str(path), pagesize=letter)  # no text -> empty text layer (scan-like)
     c.showPage()
