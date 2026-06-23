@@ -25,28 +25,35 @@ def test_scan_takes_precedence_over_table_signal():
 
 
 def test_vector_figure_routes_to_figure_vlm_over_table():
-    # real-corpus case: a multi-panel plot page has a figure caption and hundreds of path
-    # objects, and its plot grid spuriously trips the table detector. It must go to FIGURE_VLM
-    # (not TABLE_VLM) so the numeric oracle is not applied to axis ticks.
-    s = PageSignals(text_chars=3000, table_rows=4, image_count=0, vector_paths=585, figure_caption=True)
+    # real-corpus case (F14): a multi-panel plot page has hundreds of path objects and its plot
+    # grid spuriously trips the table detector. The heavy vector-path signal must win over the
+    # table signal -> FIGURE_VLM, so the numeric oracle is not applied to axis ticks.
+    s = PageSignals(text_chars=3000, table_rows=4, image_count=0, vector_paths=585)
     assert decide_route(s) == Route.FIGURE_VLM
 
 
-def test_heavy_vector_without_caption_still_routes_to_figure_vlm():
+def test_heavy_vector_routes_to_figure_vlm():
     s = PageSignals(text_chars=500, table_rows=0, image_count=0, vector_paths=300)
     assert decide_route(s) == Route.FIGURE_VLM
 
 
-def test_real_table_without_figure_caption_stays_table_vlm():
-    # a bordered data table has paths from cell borders but no figure caption -> keep the oracle
-    s = PageSignals(text_chars=3000, table_rows=29, image_count=0, vector_paths=120, figure_caption=False)
+def test_real_table_below_vector_threshold_stays_table_vlm():
+    # a born-digital table's cell-border paths stay below the figure threshold -> keep the
+    # value oracle (F14: real table ~87 paths vs figures 365+).
+    s = PageSignals(text_chars=3000, table_rows=29, image_count=0, vector_paths=120)
     assert decide_route(s) == Route.TABLE_VLM
 
 
-def test_prose_page_merely_citing_a_figure_is_not_figure_vlm():
-    # "see Fig. 12" on a text page (low path count) must not route to FIGURE_VLM
-    s = PageSignals(text_chars=3000, table_rows=0, image_count=0, vector_paths=5, figure_caption=True)
+def test_light_vector_prose_is_deterministic():
+    # a prose page with only a few path objects (rules, inline marks) must not route to FIGURE_VLM
+    s = PageSignals(text_chars=3000, table_rows=0, image_count=0, vector_paths=5)
     assert decide_route(s) == Route.DETERMINISTIC
+
+
+def test_vector_threshold_is_tunable():
+    s = PageSignals(text_chars=3000, table_rows=0, image_count=0, vector_paths=120)
+    assert decide_route(s) == Route.DETERMINISTIC                       # default 200 -> not a figure
+    assert decide_route(s, TriagePolicy(min_vector_paths=100)) == Route.FIGURE_VLM  # stricter domain
 
 
 def test_policy_thresholds_are_tunable_not_hardcoded():

@@ -4,15 +4,13 @@ Evidence: docs/measurement-findings.md F10 (scan/born-digital split reliable; ta
 detection from pdf-inspector for grids, ODL for merged-cell; image detection works) and the
 real-corpus finding that complex VECTOR figures (matplotlib-style scientific plots) carry no
 raster image object and their plot grid trips the table detector -- so we also count path
-objects and detect a figure caption. Contract: pdf-pipeline-requirements §3.3-§3.4.
+objects (F13/F14). Contract: pdf-pipeline-requirements §3.3-§3.4.
 
-Signal sources: text char count (pypdfium2), image + path object counts (pypdfium2), figure
-caption (regex over page text), table-row count (pdf-inspector). pdf-inspector misses
-merged-cell tables (F2/F10) -- callers that need those should supply an ODL-derived override.
+Signal sources: text char count (pypdfium2), image + path object counts (pypdfium2),
+table-row count (pdf-inspector). pdf-inspector misses merged-cell tables (F2/F10) -- callers
+that need those should supply an ODL-derived override.
 """
 from __future__ import annotations
-
-import re
 
 import pypdfium2 as pdfium
 
@@ -20,7 +18,6 @@ from .triage import PageSignals
 
 _FPDF_PAGEOBJ_PATH = 2   # pdfium page-object type for vector paths
 _FPDF_PAGEOBJ_IMAGE = 3  # pdfium page-object type for images
-_FIGURE_RE = re.compile(r"(?i)\b(?:figure|fig\.)\s*\d{1,3}\b|그림\s*\d{1,3}")
 
 
 def _table_rows_per_page(pdf_path: str, n_pages: int) -> list[int]:
@@ -44,12 +41,9 @@ def document_signals(pdf_path: str) -> list[PageSignals]:
         text_chars: list[int] = []
         images: list[int] = []
         paths: list[int] = []
-        captions: list[bool] = []
         for i in range(n):
             page = doc[i]
-            text = page.get_textpage().get_text_bounded()
-            text_chars.append(len(text.strip()))
-            captions.append(_FIGURE_RE.search(text) is not None)
+            text_chars.append(len(page.get_textpage().get_text_bounded().strip()))
             img = path = 0
             for obj in page.get_objects():
                 if obj.type == _FPDF_PAGEOBJ_IMAGE:
@@ -62,12 +56,6 @@ def document_signals(pdf_path: str) -> list[PageSignals]:
         doc.close()
     table_rows = _table_rows_per_page(pdf_path, n)
     return [
-        PageSignals(
-            text_chars=text_chars[i],
-            table_rows=table_rows[i],
-            image_count=images[i],
-            vector_paths=paths[i],
-            figure_caption=captions[i],
-        )
+        PageSignals(text_chars=text_chars[i], table_rows=table_rows[i], image_count=images[i], vector_paths=paths[i])
         for i in range(n)
     ]

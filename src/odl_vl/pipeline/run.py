@@ -17,10 +17,15 @@ from .signals import document_signals
 from .triage import PageSignals, Route, TriagePolicy, decide_route
 
 DEFAULT_PROMPT = (
-    "Transcribe this document page into clean GitHub-flavored Markdown. Preserve reading "
-    "order, headings, lists, and tables. Render math as LaTeX. Briefly describe non-text "
-    "figures in italics. Output ONLY the Markdown."
+    "Transcribe this page into clean GitHub-flavored Markdown. Transcribe ONLY text that is "
+    "actually printed on the page, verbatim -- never invent, paraphrase, or summarize. Preserve "
+    "reading order, headings, lists, tables, and any printed figure/table captions. Render math "
+    "as LaTeX. For a figure or chart, emit a single placeholder line `[figure]` and do NOT "
+    "describe or interpret its contents. Output ONLY the Markdown."
 )
+# F14: the previous prompt asked the model to "describe non-text figures in italics", which
+# made it fabricate an italic figure description (a paraphrased duplicate caption) on every
+# figure page. Transcription must stay verbatim; figure interpretation is the oracle's/human's job.
 
 SPANNING_PROMPT = (
     "These are consecutive pages of one document; a single table spans them (continuation "
