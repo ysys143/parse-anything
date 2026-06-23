@@ -42,16 +42,16 @@ python3 -m pytest
 python3 -m compileall src tests scripts
 ```
 
-Run focused checks for this parser slice:
+Run focused checks for the provider layer:
 
 ```bash
-python3 -m pytest tests/test_config.py tests/test_providers.py tests/test_router.py tests/test_ledger.py tests/test_smoke_cli.py tests/test_fixture_manifest.py
+python3 -m pytest tests/test_config.py tests/test_providers.py tests/test_normalizers.py tests/test_paddle_jobs.py tests/test_smoke_cli.py tests/test_fixture_manifest.py
 ```
 
-Run focused checks for the external orchestration slice:
+Run focused checks for the PDF pipeline:
 
 ```bash
-python3 -m pytest tests/test_orchestrator_input.py tests/test_normalizers.py tests/test_orchestrator.py tests/test_orchestrate_cli.py tests/test_orchestrator_fixture.py
+python3 -m pytest tests/test_pipeline_*.py tests/test_pdf_to_markdown_cli.py
 ```
 
 ## Dry Configuration Checks
@@ -74,58 +74,32 @@ python3 scripts/odl_vl_smoke.py --provider paddle --live --demo-url https://padd
 
 The live smoke commands report pass/fail status without printing API keys, signed result URLs, full response bodies, or local `.env` contents.
 
-## External Orchestration (offline)
+## PDF Pipeline (`pdf_to_markdown`)
 
-The external orchestrator consumes ODL-like page JSON (document id, per-page
-`first_pass_md`, `page_image` reference, `fixture_family`, and optional routing
-hints), routes each page to the deterministic / PaddleOCR / Gemini path via the
-existing router, normalizes provider output into the internal IR, and writes a
-per-page ledger. **This is not an ODL runner or a PDF renderer**: it
-does not execute ODL, render PDF pages, generate fixture artifacts, reconstruct
-page-spanning tables, or enforce numeric source guards. Those are target
-requirements, not completed behavior in this slice.
-
-Run the offline orchestration over the sample document. Offline mode uses
-synthetic placeholder provider output, so it makes no network call:
+The pipeline renders PDF pages, triages each page to a processing depth
+(deterministic text / table-with-VLM / scan-with-VLM / figure-with-VLM), runs the
+chosen path, batches page-spanning tables into one multi-image VLM request, applies
+the born-digital value oracle gate and the scan legibility gate, and writes per-page
+Markdown, a `document.md` assembly, `ledger.jsonl`, and `results.jsonl`.
 
 ```bash
-python3 scripts/odl_vl_orchestrate.py \
-  --input tests/fixtures/orchestrator/sample_document.json \
-  --output-dir /tmp/odl-vl-orchestrator-qa --mode offline
+# deterministic only -- no network, no keys
+python3 scripts/pdf_to_markdown.py --pdf path/to/doc.pdf --out out/ --no-vlm
+
+# with VLM -- uses GEMINI_API_KEY from .env when present
+python3 scripts/pdf_to_markdown.py --pdf path/to/doc.pdf --out out/
 ```
 
-Outputs land in the output directory: `results.jsonl` (per-page route, provider,
-status), `pages/` markdown files, and `ledger.jsonl`. The ledger records
-provider, model alias, route reason, latency, and status only. Secrets stay out
-of these artifacts at the source -- error reasons are opaque codes (e.g.
-`gemini_http_429`), and only non-secret metadata is recorded -- so the ledger is
-written faithfully rather than scrubbed field-by-field. The run artifacts
-(`results.jsonl`, `ledger.jsonl`) are git-ignored so a run is never committed.
+Guards surface as flags in `ledger.jsonl` for review rather than silently trusting
+output: a VLM-needed page with no key is flagged `vlm_unavailable`; a scan the model
+judges unreadable abstains (`illegible_low_quality`); a VLM number absent from the
+born-digital text layer is flagged `unsourced_number:<v>`. The full target contract
+is in [PDF pipeline requirements](docs/pdf-pipeline-requirements.md); run artifacts
+(`pages/`, `document.md`, `ledger.jsonl`, `results.jsonl`) are git-ignored.
 
-`--mode live` is opt-in and calls real providers using the same key contract as
-the smoke checks (`GEMINI_API_KEY`, `PADDLE_API_KEY`, `PADDLE_BASE_URL`). It
-requires locally configured environment variables; pages whose provider keys are
-missing are recorded as failed without leaking any secret value. Gemini direct
-authenticates via the `x-goog-api-key` header; PaddleOCR jobs are submitted and
-polled, and the completed layout result is fetched from the job's signed result
-URL. The signed URL and raw provider bodies are never printed or written to the
-ledger.
-
-Pages are processed sequentially by default. `--max-workers N` (N > 1) is an
-opt-in, experimental concurrency knob for live mode; it preserves output order
-and serializes ledger writes, but live providers may rate-limit concurrent jobs,
-so keep the default of 1 unless you have verified your provider tolerates it.
-
-In live mode the Gemini path fetches the page image from `page_image` and sends
-it to the model as base64 `inlineData` alongside the prompt, so the VLM actually
-sees the page (not just `first_pass_md`). Cross-provider fallback is not performed
-this slice: each page runs only its routed provider, and a failed page is reported
-as failed rather than silently re-run through another provider.
-
-The full pipeline output contract is broader: page-level Markdown/JSON, a
-document-level Markdown/JSON assembly, logical table outputs, image/table asset
-metadata, guard flags, and provider-cost ledger fields. See the requirements
-document before treating this CLI output as the final parser artifact format.
+> The earlier ODL-like-JSON external orchestrator scaffold has been **removed** and
+> superseded by this pipeline. The shared provider layer (`config`, `providers`,
+> `paddle_jobs`, `normalizers`, `cli_support`) and the smoke CLI are retained.
 
 ## Fixture Plan
 
@@ -133,7 +107,8 @@ The fixture work is metadata-only in this slice. The initial eight fixture famil
 
 ## Design Notes
 
-- [External orchestrator architecture](docs/orchestrator-architecture.md): module map, data flow, input contract, provider modes, contract verification, and security posture.
+- [Measurement findings](docs/measurement-findings.md): prototype evidence (renderer, layer choice, hallucination, oracle, cross-page, triage, orientation, table structure) behind the pipeline design.
+- [External orchestrator architecture](docs/orchestrator-architecture.md): historical -- the design of the removed page-level scaffold, superseded by the PDF pipeline.
 - [PDF pipeline requirements](docs/pdf-pipeline-requirements.md): mandatory full-pipeline behavior for rendering, processing-depth routing, complex/page-spanning tables, VLM inputs, numeric guards, outputs, validation, and provider/privacy constraints.
 - [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md): deterministic/VLM/human boundaries, escalation policy, and domain calibration tooling.
 - [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md): PaddleOCR official API + Gemini direct 개발 결정, provider key 계약, fixture/golden-set 전략.

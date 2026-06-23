@@ -36,7 +36,9 @@ Completed pieces include:
 - Full target PDF pipeline requirements covering rendering, processing depth, complex/page-spanning tables, VLM input recipe, numeric guards, outputs, verification, licensing, and privacy constraints.
 - Processing-tier and domain-adaptation requirements covering deterministic/VLM/human boundaries, escalation policy, residual human review, and calibration tooling.
 
-## Implemented: External Orchestrator
+## Implemented: External Orchestrator (REMOVED, superseded by the PDF pipeline)
+
+> The JSON-input orchestrator (`orchestrator.py`, `orchestrator_input.py`, `router.py`, `ledger.py`, `scripts/odl_vl_orchestrate.py`) was a scaffold and has been **removed**. It is superseded by the PDF pipeline (`src/odl_vl/pipeline/`, `scripts/pdf_to_markdown.py`); see `pdf-pipeline-requirements.md` and `measurement-findings.md`. The shared provider layer and smoke CLI are retained. The description below is historical.
 
 Built as a library + CLI slice that takes ODL-like page JSON as input. The input contract represents document id, page id/index, `first_pass_md`, `page_image`, fixture family, routing hints, and optional `intent_prompt`.
 

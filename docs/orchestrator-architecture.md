@@ -1,5 +1,13 @@
 # External Orchestrator — Architecture
 
+> **REMOVED / HISTORICAL.** The page-level JSON-input orchestrator described below
+> (`orchestrator.py`, `orchestrator_input.py`, `router.py`, `ledger.py`,
+> `scripts/odl_vl_orchestrate.py`) has been **removed** and superseded by the PDF
+> pipeline (`src/odl_vl/pipeline/`, `scripts/pdf_to_markdown.py`). Kept for history.
+> The shared provider layer (`config`, `providers`, `paddle_jobs`, `normalizers`,
+> `cli_support`) is retained. See `pdf-pipeline-requirements.md` and
+> `measurement-findings.md` for current behavior.
+
 Reference for the ODL-VL external orchestrator: the library + CLI that takes
 ODL-like page JSON, routes each page to one provider, normalizes the output into
 the internal IR, and records a per-page ledger.
