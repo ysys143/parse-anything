@@ -33,6 +33,10 @@ def run_cli(argv, runtime: Runtime) -> int:
 
     result = run_document(args.pdf, vlm_client=client, api_key=key or "")
     write_outputs(result, args.out)
+    if args.review:
+        from odl_vl.pipeline.review import write_review
+
+        write_review(args.pdf, result, Path(args.out) / "review.html")
 
     n = len(result.pages)
     vlm_pages = sum(1 for p in result.pages if p.used_vlm)
@@ -49,6 +53,7 @@ def _parse_args(argv):
     parser.add_argument("--pdf", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--no-vlm", action="store_true", help="deterministic only (skip VLM/OCR)")
+    parser.add_argument("--review", action="store_true", help="also write review.html (source vs extraction + flags)")
     return parser.parse_args(argv)
 
 
