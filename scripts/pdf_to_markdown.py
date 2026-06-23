@@ -95,10 +95,20 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
         double_pass=not args.no_double_pass, arithmetic=not args.no_arithmetic, prompt=custom_prompt,
     )
 
+    # R8.6 scan double-pass: PaddleOCR as the second provider (local-file upload) when configured.
+    second_pass = None
+    if mode == "det_vlm" and options.double_pass and settings.paddle_api_key and settings.paddle_base_url:
+        from odl_vl.pipeline.paddle_vlm import make_transcriber
+
+        second_pass = make_transcriber(
+            safe_client(runtime), base_url=settings.paddle_base_url, token=settings.paddle_api_key,
+            model=settings.paddle_model or "PaddleOCR-VL-1.6",
+        )
+
     result = run_document(
         args.pdf, mode=mode, vlm_client=client, api_key=key or "",
         source_id=args.source_id, external_id=args.external_id, ingested_from=args.ingested_from,
-        options=options,  # paddle_client (R8.6 double-pass) wired separately
+        options=options, second_pass=second_pass,
     )
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
