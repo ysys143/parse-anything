@@ -85,7 +85,9 @@ def assemble_document(
         if mode == "deterministic":
             outcomes.append(_assemble_deterministic(i, odl_page, pypdf_texts[i], recurring))
         elif mode == "det_vlm":
-            raise NotImplementedError("det_vlm mode is implemented in R1.3")
+            outcomes.append(
+                _assemble_det_vlm(pdf_path, i, odl_page, pypdf_texts[i], recurring, vlm_client=vlm_client, api_key=api_key)
+            )
         else:
             raise ValueError(f"unknown mode: {mode!r}")
     return DocumentResult(tuple(outcomes))
@@ -98,3 +100,37 @@ def _assemble_deterministic(page_index: int, odl_page: OdlPage, pypdf_text: str,
     markdown = _page_markdown(odl_page, tables)
     flags = _completeness_flags(pypdf_text, odl_page.text, recurring)
     return PageOutcome(page_index, "deterministic", False, markdown, 0.0, tuple(flags))
+
+
+def _assemble_det_vlm(
+    pdf_path: str, page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str], *, vlm_client: Any, api_key: str
+) -> PageOutcome:
+    """Accuracy mode: VLM is the visual-structure source; pypdfium2 is the value authority
+    (value oracle gates VLM numbers -- R-M1); ODL structure is available for rich output (R2).
+    A page is never dropped -- when VLM is unavailable or fails it degrades to the deterministic
+    assembly with a flag (R-B3 escalation signal)."""
+    from .deterministic import number_tokens
+    from .oracle import fabrication_flags
+    from .quality import is_low_quality
+    from .render import render_page_png
+    from .run import DEFAULT_PROMPT, LOW_QUALITY_SENTINEL
+    from .vlm import VlmError, transcribe_image
+
+    if vlm_client is None:
+        det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
+        return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*det.flags, "vlm_unavailable"))
+
+    flags: list[str] = []
+    png = render_page_png(pdf_path, page_index)
+    if is_low_quality(png):
+        flags.append("low_quality_input")
+    try:
+        markdown = transcribe_image(png, DEFAULT_PROMPT, api_key=api_key, client=vlm_client)
+    except VlmError as exc:
+        det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
+        return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, str(exc)))
+    if markdown.strip() == LOW_QUALITY_SENTINEL:
+        return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
+    source = [t.value for t in number_tokens(pdf_path, page_index, min_value=1000)]
+    flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000))
+    return PageOutcome(page_index, "det_vlm", True, markdown, 0.0, tuple(flags))

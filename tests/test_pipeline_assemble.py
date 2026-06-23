@@ -1,10 +1,24 @@
 from __future__ import annotations
 
-import pytest
+import json
+
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from odl_vl.pipeline.assemble import _recurring_numbers, assemble_document
+from odl_vl.providers import HttpResponse
+
+
+class _FakeClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+
+    def send(self, request):
+        return self.responses.pop(0)
+
+
+def _gemini_ok(text: str) -> HttpResponse:
+    return HttpResponse(status_code=200, body=json.dumps({"candidates": [{"content": {"parts": [{"text": text}]}}]}).encode("utf-8"))
 
 
 def _pdf(path, line: str) -> str:
@@ -53,7 +67,30 @@ def test_deterministic_mode_renders_odl_tables(tmp_path):
     assert "| H | V |" in md and "| a | 1 |" in md
 
 
-def test_det_vlm_mode_not_yet_implemented(tmp_path):
+def test_det_vlm_mode_uses_vlm_and_gates_numbers(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "authoritative value 1,234,567")  # pypdfium2 source
+    odl_json = {"number of pages": 1, "kids": [{"type": "paragraph", "page number": 1, "content": "text"}]}
+    client = _FakeClient([_gemini_ok("Value 1,234,567 and fabricated 9,999,999")])
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", odl_runner=lambda _p: odl_json)
+    page = res.pages[0]
+    assert page.route == "det_vlm" and page.used_vlm is True
+    assert page.markdown == "Value 1,234,567 and fabricated 9,999,999"   # VLM is the output
+    assert "unsourced_number:9999999" in page.flags                       # value oracle (pypdfium2) gates VLM
+    assert "unsourced_number:1234567" not in page.flags
+
+
+def test_det_vlm_without_client_degrades_to_deterministic(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "page text")
+    odl_json = {"number of pages": 1, "kids": [{"type": "paragraph", "page number": 1, "content": "odl clean text"}]}
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=None, odl_runner=lambda _p: odl_json)
+    page = res.pages[0]
+    assert page.used_vlm is False and "vlm_unavailable" in page.flags
+    assert "odl clean text" in page.markdown   # degrades to deterministic (ODL text), never dropped
+
+
+def test_det_vlm_illegible_scan_abstains(tmp_path):
     pdf = _pdf(tmp_path / "d.pdf", "page")
-    with pytest.raises(NotImplementedError):
-        assemble_document(pdf, mode="det_vlm", odl_runner=lambda _p: {"number of pages": 1, "kids": []})
+    client = _FakeClient([_gemini_ok("IMAGE_TOO_LOW_QUALITY")])
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", odl_runner=lambda _p: {"number of pages": 1, "kids": []})
+    page = res.pages[0]
+    assert page.markdown == "" and "illegible_low_quality" in page.flags
