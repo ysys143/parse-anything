@@ -4,7 +4,14 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 
-from odl_vl.pipeline.odl_extract import OdlPage, OdlTable, extract, parse_document, substantial_tables
+from odl_vl.pipeline.odl_extract import (
+    OdlPage,
+    OdlTable,
+    extract,
+    extract_caption_labels,
+    parse_document,
+    substantial_tables,
+)
 
 _SYNTH = {
     "number of pages": 2,
@@ -59,6 +66,15 @@ def test_caption_labels_attach_to_nearest_table_and_figure():
     assert table.label == "표 5-2" and table.caption is not None and "모델" in table.caption
     figure = page.images[0]
     assert figure.label == "Figure 12" and figure.kind == "figure" and "Diagram" in (figure.caption or "")
+
+
+def test_extract_caption_labels_from_vlm_markdown():
+    md = "# Title\n\nSome prose.\n\nFigure 12: Diagram of the task\n\n표 5-2 모델 및 특징\n\nAs shown in Figure 3 the result holds."
+    labels = extract_caption_labels(md)
+    pairs = {(lbl["kind"], lbl["label"]) for lbl in labels}
+    assert ("figure", "Figure 12") in pairs       # caption line leading with the label
+    assert ("table", "표 5-2") in pairs
+    assert all(lbl["label"] != "Figure 3" for lbl in labels)  # inline mention is not a caption
 
 
 def test_substantial_tables_drops_degenerate_slivers():

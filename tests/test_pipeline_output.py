@@ -57,6 +57,23 @@ def test_rich_output_document_json_and_tables(tmp_path):
     assert "| H | V |" in (out / "tables" / "t001.md").read_text(encoding="utf-8")
 
 
+def test_vlm_labels_fill_table_label_and_add_missing_figures(tmp_path):
+    # ODL has an unlabeled table and NO figures (Latimer-like); the VLM read a table + figure caption.
+    table = OdlTable(0, 1, 2, (50, 50, 400, 200), (("H", "V"),), label=None, caption=None)
+    structure = OdlDocument(1, (OdlPage(0, "text", (table,), ()),))
+    meta = DocumentMeta("idabc1234567890a", "idabc1234567890aff", "d.pdf", n_pages=1, mode="det_vlm")
+    labels = ({"kind": "table", "label": "Table 2", "caption": "Table 2: data"},
+              {"kind": "figure", "label": "Figure 1", "caption": "Figure 1: a plot"})
+    result = DocumentResult((PageOutcome(0, "det_vlm", True, "md", 0.0, (), labels),), structure=structure, meta=meta)
+
+    out = document_dir(tmp_path, result)
+    write_outputs(result, out)
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert doc["tables"][0]["label"] == "Table 2" and doc["tables"][0]["source"] == "odl"  # backfilled
+    figs = doc["figures"]
+    assert len(figs) == 1 and figs[0]["label"] == "Figure 1" and figs[0]["source"] == "vlm" and figs[0]["bbox"] is None
+
+
 def _result() -> DocumentResult:
     return DocumentResult(
         (

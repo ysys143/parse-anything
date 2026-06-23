@@ -133,6 +133,21 @@ def _parse_table(node: dict) -> OdlTable | None:
     )
 
 
+def extract_caption_labels(markdown: str) -> tuple[dict[str, str], ...]:
+    """Parse VLM-transcribed Markdown for caption lines that LEAD with a figure/table number
+    ("Figure 12: ...", "표 5-2 ...") -- the original labels ODL often misses on academic PDFs
+    (R2 finding). Anchored at line start to avoid inline mentions. Returns {kind, label, caption}."""
+    out: list[dict[str, str]] = []
+    for line in markdown.splitlines():
+        stripped = line.strip().lstrip("*#>-| ").strip()
+        for kind, regex in (("table", _TABLE_LABEL_RE), ("figure", _FIGURE_LABEL_RE)):
+            match = regex.match(stripped)
+            if match:
+                out.append({"kind": kind, "label": match.group(0).strip(), "caption": stripped})
+                break
+    return tuple(out)
+
+
 def _center(b: BBox) -> tuple[float, float]:
     return ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
 

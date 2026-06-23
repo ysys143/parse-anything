@@ -48,6 +48,7 @@ class PageOutcome:
     markdown: str
     latency_ms: float
     flags: tuple[str, ...] = ()
+    labels: tuple[dict[str, str], ...] = ()  # VLM-detected fig/table captions (det_vlm, R4.3)
 
 
 @dataclass(frozen=True, slots=True)

@@ -53,8 +53,9 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     _write_jsonl(out / "results.jsonl", results)
 
     if result.meta is not None:
+        labels_by_page = {p.page_index: p.labels for p in result.pages}
         tables, figures, page_tables, page_figures = (
-            _serialize_structure(result.structure) if result.structure is not None else ([], [], {}, {})
+            _serialize_structure(result.structure, labels_by_page) if result.structure is not None else ([], [], {}, {})
         )
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
         _write_document_json(out, result, tables, figures, page_tables, page_figures)
@@ -72,32 +73,54 @@ def _table_md(cells: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-def _serialize_structure(structure) -> tuple[list[dict], list[dict], dict[int, list[str]], dict[int, list[str]]]:
+def _serialize_structure(
+    structure, labels_by_page: dict[int, tuple[dict, ...]]
+) -> tuple[list[dict], list[dict], dict[int, list[str]], dict[int, list[str]]]:
+    """Serialize ODL structure (bbox-grounded), backfilling missing labels from VLM-detected
+    captions (R4.3) and adding VLM-detected figures ODL missed. Every entry is `source`-tagged
+    (odl = bbox-grounded; vlm = detected from the transcription, no bbox)."""
     tables: list[dict] = []
     figures: list[dict] = []
     page_tables: dict[int, list[str]] = defaultdict(list)
     page_figures: dict[int, list[str]] = defaultdict(list)
     for page in structure.pages:
+        pi = page.page_index
+        vlm_tables = [lbl for lbl in labels_by_page.get(pi, ()) if lbl["kind"] == "table"]
+        vlm_figures = [lbl for lbl in labels_by_page.get(pi, ()) if lbl["kind"] == "figure"]
         for table in substantial_tables(page):
             tid = f"t{len(tables) + 1:03d}"
-            p1 = table.page_index + 1  # 1-based source page; R2 v1 tables are single-page
+            p1 = pi + 1  # 1-based source page; R2 v1 tables are single-page
+            label, caption = table.label, table.caption
+            if label is None and vlm_tables:  # ODL missed the caption; use the VLM's
+                vlm = vlm_tables.pop(0)
+                label, caption = vlm["label"], vlm["caption"]
             tables.append({
-                "table_id": tid, "label": table.label, "caption": table.caption,
+                "table_id": tid, "label": label, "caption": caption, "source": "odl",
                 "source_pages": [p1],  # canonical page linkage; start/end = source_pages[0]/[-1]
                 "regions": [{"page": p1, "bbox": list(table.bbox)}],
                 "n_rows": table.n_rows, "n_cols": table.n_cols,
                 "cells": [list(r) for r in table.cells], "continued": False,
                 "views": {"md": f"tables/{tid}.md", "json": f"tables/{tid}.json"},
             })
-            page_tables[table.page_index].append(tid)
+            page_tables[pi].append(tid)
         for image in page.images:
             fid = f"f{len(figures) + 1:03d}"
+            label, caption = image.label, image.caption
+            if label is None and vlm_figures:
+                vlm = vlm_figures.pop(0)
+                label, caption = vlm["label"], vlm["caption"]
             figures.append({
-                "figure_id": fid, "label": image.label, "caption": image.caption,
-                "page": image.page_index + 1, "bbox": list(image.bbox),
-                "file": None, "kind": image.kind,  # file filled by assets/ (R2.5)
+                "figure_id": fid, "label": label, "caption": caption, "source": "odl",
+                "page": pi + 1, "bbox": list(image.bbox), "file": None, "kind": image.kind,
             })
-            page_figures[image.page_index].append(fid)
+            page_figures[pi].append(fid)
+        for vlm in vlm_figures:  # VLM-detected figures ODL missed entirely (no bbox/asset)
+            fid = f"f{len(figures) + 1:03d}"
+            figures.append({
+                "figure_id": fid, "label": vlm["label"], "caption": vlm["caption"], "source": "vlm",
+                "page": pi + 1, "bbox": None, "file": None, "kind": "figure",
+            })
+            page_figures[pi].append(fid)
     return tables, figures, page_tables, page_figures
 
 
@@ -120,6 +143,8 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
         rendered: dict[int, Image.Image] = {}
         heights: dict[int, float] = {}
         for fig in figures:
+            if not fig.get("bbox"):  # VLM-detected figure has no bbox to crop
+                continue
             pi = fig["page"] - 1
             if pi not in rendered:
                 rendered[pi] = Image.open(io.BytesIO(render_page_png(pdf_path, pi, scale=scale))).convert("RGB")

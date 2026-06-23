@@ -116,6 +116,7 @@ def _assemble_det_vlm(
     A page is never dropped -- when VLM is unavailable or fails it degrades to the deterministic
     assembly with a flag (R-B3 escalation signal)."""
     from .deterministic import number_tokens
+    from .odl_extract import extract_caption_labels
     from .oracle import fabrication_flags
     from .quality import is_low_quality
     from .render import render_page_png
@@ -143,4 +144,5 @@ def _assemble_det_vlm(
         return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
     source = [t.value for t in number_tokens(pdf_path, page_index, min_value=1000)]
     flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000))
-    return PageOutcome(page_index, "det_vlm", True, markdown, 0.0, tuple(flags))
+    labels = extract_caption_labels(markdown)  # VLM reads captions ODL misses (R4.3)
+    return PageOutcome(page_index, "det_vlm", True, markdown, 0.0, tuple(flags), labels)
