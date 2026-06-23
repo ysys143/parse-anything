@@ -146,6 +146,28 @@ def test_redacted_event_blanket_redacts_route_reason():
     assert long_token not in payload["route_reason"]
 
 
+def test_redacted_event_redacts_jwt_with_short_segments():
+    # Given a JWT whose dot-separated segments are each individually shorter than the
+    # 32-char opaque-token threshold, so only the JWT-shape pattern can catch it.
+    jwt = "eyJhbGciOi" + "." + "eyJzdWIiQ" + "." + "SflKxwRJ"
+    event = LedgerEvent(
+        provider="gemini",
+        model_alias="gemini-2.5-flash",
+        route_reason="auth_error: bearer " + jwt,
+        latency_ms=1.0,
+        status="failed",
+        cost_estimate_usd=None,
+        metadata={},
+    )
+
+    # When
+    payload = redacted_event(event)
+
+    # Then: the JWT is stripped even though no single segment is 32+ chars.
+    assert jwt not in payload["route_reason"]
+    assert "[REDACTED]" in payload["route_reason"]
+
+
 def test_redacted_event_keeps_non_secret_expires_param():
     # Given a URL carrying a signature plus a non-sensitive expires timestamp.
     event = LedgerEvent(

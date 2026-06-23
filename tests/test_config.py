@@ -153,6 +153,18 @@ def test_empty_process_env_does_not_mask_valid_env_file_value(tmp_path):
     assert settings.gemini_api_key == "valid-gemini-placeholder"
 
 
+def test_load_settings_strips_unbalanced_leading_quote(tmp_path):
+    # Given a value with an opening quote but no closing quote (a common typo).
+    env_file = tmp_path / ".env"
+    env_file.write_text('GEMINI_API_KEY="abc123placeholder\n', encoding="utf-8")
+
+    # When
+    settings = load_settings(env_file=env_file, environ={})
+
+    # Then: the stray leading quote is dropped, not folded into the value.
+    assert settings.gemini_api_key == "abc123placeholder"
+
+
 def test_load_settings_keeps_unquoted_value_starting_with_hash(tmp_path):
     # Given an unquoted value that legitimately starts with '#' (not a comment).
     env_file = tmp_path / ".env"

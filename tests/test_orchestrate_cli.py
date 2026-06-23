@@ -40,6 +40,46 @@ def _json_response(payload: dict) -> HttpResponse:
     return HttpResponse(status_code=200, body=json.dumps(payload).encode("utf-8"))
 
 
+def _write_live_input(tmp_path: Path) -> Path:
+    # Live mode fetches/hands off the page image over HTTP, so a live input needs
+    # http(s) page_image URLs. These are inert, non-resolvable hosts (the FakeTransport
+    # returns canned responses); they live in tmp_path, never in committed fixtures.
+    doc = tmp_path / "live_input.json"
+    doc.write_text(
+        json.dumps(
+            {
+                "document_id": "live-orchestrator-doc",
+                "pages": [
+                    {
+                        "page_id": "p1-simple",
+                        "page_index": 0,
+                        "fixture_family": "simple_text",
+                        "page_image": "https://images.invalid/simple_text/page-0.png",
+                        "first_pass_md": "# Quarterly Notes\n\nBorn-digital body text.",
+                    },
+                    {
+                        "page_id": "p2-table",
+                        "page_index": 1,
+                        "fixture_family": "merged_table",
+                        "page_image": "https://images.invalid/merged_table/page-0.png",
+                        "first_pass_md": "## Measurements\n\n| Group | Value |\n| --- | --- |\n| A | 1 |",
+                    },
+                    {
+                        "page_id": "p3-chart",
+                        "page_index": 2,
+                        "fixture_family": "chart_like_page",
+                        "page_image": "https://images.invalid/chart_like_page/page-0.png",
+                        "first_pass_md": "Figure 1. Revenue trend.",
+                        "intent_prompt": "Summarize the chart trend and legend.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return doc
+
+
 def _read_results(output_dir: Path) -> list[dict]:
     lines = (output_dir / "results.jsonl").read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines]
@@ -96,6 +136,7 @@ def test_live_cli_calls_providers_through_transport(tmp_path):
     # Given
     module = _load_module()
     output_dir = tmp_path / "out"
+    live_input = _write_live_input(tmp_path)
     signed_url = "https://signed.example/result.json?X-Amz-Signature=must-not-leak"
     transport = FakeTransport(
         responses=[
@@ -123,7 +164,7 @@ def test_live_cli_calls_providers_through_transport(tmp_path):
 
     # When
     code = module.run_cli(
-        ["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"],
+        ["--input", str(live_input), "--output-dir", str(output_dir), "--mode", "live"],
         runtime,
     )
 
@@ -257,6 +298,7 @@ def test_live_cli_paddle_200_without_job_id_reports_distinct_error(tmp_path):
     # Given a Paddle submit that returns HTTP 200 but no recognizable job id.
     module = _load_module()
     output_dir = tmp_path / "out"
+    live_input = _write_live_input(tmp_path)
     transport = FakeTransport(
         responses=[
             _json_response({"code": 0, "msg": "Success", "data": {}}),  # p2 paddle 200, no jobId -> fail
@@ -275,7 +317,7 @@ def test_live_cli_paddle_200_without_job_id_reports_distinct_error(tmp_path):
     )
 
     # When
-    module.run_cli(["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"], runtime)
+    module.run_cli(["--input", str(live_input), "--output-dir", str(output_dir), "--mode", "live"], runtime)
 
     # Then: a 200 submit with no job id is reported distinctly (not paddle_submit_200).
     results = {record["page_id"]: record for record in _read_results(output_dir)}
@@ -287,6 +329,7 @@ def test_live_cli_empty_paddle_result_marks_page_failed(tmp_path):
     # Given a Paddle result that is valid JSON but has no recognizable layout (empty markdown).
     module = _load_module()
     output_dir = tmp_path / "out"
+    live_input = _write_live_input(tmp_path)
     transport = FakeTransport(
         responses=[
             _json_response({"code": 0, "msg": "Success", "data": {"jobId": "job-1"}}),
@@ -307,7 +350,7 @@ def test_live_cli_empty_paddle_result_marks_page_failed(tmp_path):
     )
 
     # When
-    module.run_cli(["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"], runtime)
+    module.run_cli(["--input", str(live_input), "--output-dir", str(output_dir), "--mode", "live"], runtime)
 
     # Then: an empty result is a failure, not a silently blank "ok" page.
     results = {record["page_id"]: record for record in _read_results(output_dir)}
@@ -319,6 +362,7 @@ def test_live_cli_non_json_paddle_result_marks_page_failed(tmp_path):
     # Given a Paddle job whose signed result URL returns a non-JSON (HTML) 200 body.
     module = _load_module()
     output_dir = tmp_path / "out"
+    live_input = _write_live_input(tmp_path)
     transport = FakeTransport(
         responses=[
             _json_response({"code": 0, "msg": "Success", "data": {"jobId": "job-1"}}),
@@ -339,7 +383,7 @@ def test_live_cli_non_json_paddle_result_marks_page_failed(tmp_path):
     )
 
     # When
-    module.run_cli(["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"], runtime)
+    module.run_cli(["--input", str(live_input), "--output-dir", str(output_dir), "--mode", "live"], runtime)
 
     # Then: an empty/non-JSON result is a failure, not a silent empty "ok" page.
     results = {record["page_id"]: record for record in _read_results(output_dir)}
@@ -351,6 +395,7 @@ def test_live_cli_gemini_empty_text_marks_page_failed(tmp_path):
     # Given a Paddle path that succeeds and a Gemini 200 with no candidate text.
     module = _load_module()
     output_dir = tmp_path / "out"
+    live_input = _write_live_input(tmp_path)
     transport = FakeTransport(
         responses=[
             _json_response({"code": 0, "msg": "Success", "data": {"jobId": "job-1"}}),
@@ -373,7 +418,7 @@ def test_live_cli_gemini_empty_text_marks_page_failed(tmp_path):
 
     # When
     code = module.run_cli(
-        ["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"],
+        ["--input", str(live_input), "--output-dir", str(output_dir), "--mode", "live"],
         runtime,
     )
 
@@ -389,11 +434,12 @@ def test_live_cli_missing_keys_marks_pages_failed(tmp_path):
     # Given
     module = _load_module()
     output_dir = tmp_path / "out"
+    live_input = _write_live_input(tmp_path)
     runtime = module.Runtime(environ={}, transport=FakeTransport(responses=[]), stdout=io.StringIO())
 
     # When
     code = module.run_cli(
-        ["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"],
+        ["--input", str(live_input), "--output-dir", str(output_dir), "--mode", "live"],
         runtime,
     )
 
@@ -404,3 +450,74 @@ def test_live_cli_missing_keys_marks_pages_failed(tmp_path):
     assert results["p1-simple"]["status"] == "ok"
     assert results["p2-table"]["status"] == "failed"
     assert results["p3-chart"]["status"] == "failed"
+
+
+def test_live_cli_non_http_page_image_reports_clear_error(tmp_path):
+    # Given a live run over the offline sample, whose page_image values are non-http
+    # fixtures:// references (live mode must fetch/hand off the image over HTTP).
+    module = _load_module()
+    output_dir = tmp_path / "out"
+    runtime = module.Runtime(
+        environ={
+            "GEMINI_API_KEY": "fake-gemini-secret-value",
+            "PADDLE_API_KEY": "fake-paddle-secret-value",
+            "PADDLE_BASE_URL": "https://paddle.example/api/v2/ocr/jobs",
+        },
+        transport=FakeTransport(responses=[]),
+        stdout=io.StringIO(),
+        sleep=lambda _seconds: None,
+    )
+
+    # When
+    code = module.run_cli(
+        ["--input", str(_SAMPLE), "--output-dir", str(output_dir), "--mode", "live"],
+        runtime,
+    )
+
+    # Then: a clear, secret-free reason instead of an opaque fetch_0 status.
+    assert code == 1
+    results = {record["page_id"]: record for record in _read_results(output_dir)}
+    assert results["p2-table"]["error"] == "paddle_image_non_http_url"
+    assert results["p3-chart"]["error"] == "gemini_image_non_http_url"
+
+
+def test_live_cli_gemini_accepts_lowercase_content_type_header(tmp_path):
+    # Given a Gemini page whose image fetch returns a lowercased 'content-type' header
+    # (HTTP header names are case-insensitive; the server may use any casing).
+    module = _load_module()
+    output_dir = tmp_path / "out"
+    live_input = _write_live_input(tmp_path)
+    transport = FakeTransport(
+        responses=[
+            _json_response({"code": 0, "msg": "Success", "data": {"jobId": "job-1"}}),
+            _json_response({"data": {"state": "done", "resultUrl": {"jsonUrl": "https://signed.example/r"}}}),
+            _json_response({"result": {"layoutParsingResults": [{"markdown": {"text": "paddle ok"}}]}}),
+            HttpResponse(
+                status_code=200,
+                body=b"\x89PNG\r\n\x1a\nfake-image-bytes",
+                headers={"content-type": "image/jpeg"},
+            ),
+            _json_response({"candidates": [{"content": {"parts": [{"text": "g"}]}}]}),
+        ]
+    )
+    runtime = module.Runtime(
+        environ={
+            "GEMINI_API_KEY": "fake-gemini-secret-value",
+            "PADDLE_API_KEY": "fake-paddle-secret-value",
+            "PADDLE_BASE_URL": "https://paddle.example/api/v2/ocr/jobs",
+        },
+        transport=transport,
+        stdout=io.StringIO(),
+        sleep=lambda _seconds: None,
+    )
+
+    # When
+    code = module.run_cli(
+        ["--input", str(live_input), "--output-dir", str(output_dir), "--mode", "live"],
+        runtime,
+    )
+
+    # Then: the lowercase header is honored, so the Gemini request carries image/jpeg.
+    assert code == 0
+    gemini_post = transport.requests[-1]
+    assert b"image/jpeg" in gemini_post.body

@@ -200,12 +200,14 @@ class LiveProviders:
         return normalize_gemini(text, ledger_fields={"mode": "live"})
 
     def _fetch_page_image(self, page_image: str) -> GeminiInlineImage:
+        _require_http_url(page_image, "gemini_image")
         response = self.client.send(HttpRequest(method="GET", url=page_image, headers={}))
         if not is_success_status(response.status_code) or not response.body:
             raise RuntimeError(f"gemini_image_fetch_{response.status_code}")
         # Use the Content-Type only if it is a real image/* type; many object stores
-        # serve images as application/octet-stream, which the VLM rejects.
-        header_mime = (response.headers.get("Content-Type") or "").split(";")[0].strip()
+        # serve images as application/octet-stream, which the VLM rejects. HTTP header
+        # names are case-insensitive, so look it up without assuming the casing.
+        header_mime = (_header_value(response.headers, "Content-Type") or "").split(";")[0].strip()
         mime = header_mime if header_mime.startswith("image/") else _guess_image_mime(page_image)
         return GeminiInlineImage(mime_type=mime, data=response.body)
 
@@ -215,6 +217,8 @@ class LiveProviders:
         api_key = self.settings.paddle_api_key
         base_url = self.settings.paddle_base_url
         model = self.settings.paddle_model or DEFAULT_PADDLE_MODEL
+        # Paddle fetches the document server-side from this URL, so it must be http(s).
+        _require_http_url(page.page_image, "paddle_image")
         submit, job_id = submit_job(
             self.client,
             build_paddle_submit_request(
@@ -276,6 +280,26 @@ class LiveProviders:
                 raise RuntimeError(f"paddle_poll_{outcome.status_code}")
             case "timeout":
                 raise RuntimeError("paddle_poll_timeout")
+
+
+def _require_http_url(url: str, context: str) -> str:
+    # Live providers fetch (Gemini) or hand off (Paddle) the page image over HTTP, so a
+    # non-http(s) reference (e.g. a fixtures:// or file path used in offline data) must
+    # fail with a clear, secret-free reason instead of an opaque fetch_0 status. The
+    # reason is kept under the 32-char redaction threshold so it stays readable in the
+    # ledger rather than being blanket-redacted as an opaque token.
+    if not url.startswith(("http://", "https://")):
+        raise RuntimeError(f"{context}_non_http_url")
+    return url
+
+
+def _header_value(headers: Mapping[str, str], name: str) -> str | None:
+    # HTTP header names are case-insensitive; match without assuming the server's casing.
+    target = name.lower()
+    for key, value in headers.items():
+        if key.lower() == target:
+            return value
+    return None
 
 
 def _guess_image_mime(url: str) -> str:

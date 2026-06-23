@@ -84,9 +84,15 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
         return None
 
     value = value.strip()
-    if value[:1] in {"'", '"'}:
-        # Quoted value: keep as-is so a '#' inside the quotes is preserved.
-        return key.strip(), _strip_quotes(value)
+    quote = value[:1]
+    if quote in {"'", '"'}:
+        if len(value) >= 2 and value[-1] == quote:
+            # Properly closed quote: keep inner content verbatim so a '#' inside
+            # the quotes is preserved.
+            return key.strip(), value[1:-1]
+        # Unbalanced opening quote: drop the stray leading quote and treat the
+        # remainder as an unquoted value (so it cannot leak a leading '"').
+        return key.strip(), _strip_inline_comment(value[1:].strip())
     return key.strip(), _strip_inline_comment(value)
 
 
@@ -96,12 +102,6 @@ def _strip_inline_comment(value: str) -> str:
     for index, char in enumerate(value):
         if char == "#" and index > 0 and value[index - 1].isspace():
             return value[:index].rstrip()
-    return value
-
-
-def _strip_quotes(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-        return value[1:-1]
     return value
 
 

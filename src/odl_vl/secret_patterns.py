@@ -11,9 +11,12 @@ from typing import Final
 # Any opaque 32+ char token (including purely-alphabetic ones).
 LONG_TOKEN_RE: Final = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])")
 
-# Known provider credential prefixes, caught regardless of length.
+# Known provider credential prefixes / shapes, caught regardless of length. The
+# JWT form is included because its '.'-separated segments are each under the
+# LONG_TOKEN length and would otherwise slip through.
 KNOWN_SECRET_PREFIX_RE: Final = re.compile(
-    r"(?<![A-Za-z0-9_])(?:AIza[A-Za-z0-9_-]{10,}|hf_[A-Za-z0-9]{10,}|sk-[A-Za-z0-9_-]{10,})"
+    r"(?<![A-Za-z0-9_])(?:AIza[A-Za-z0-9_-]{10,}|hf_[A-Za-z0-9]{10,}|sk-[A-Za-z0-9_-]{10,}|"
+    r"eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,})"
 )
 
 # Single vocabulary of secret-bearing key-name fragments, shared by the ledger
