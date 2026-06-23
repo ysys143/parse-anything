@@ -20,7 +20,7 @@ if str(_SRC) not in sys.path:
 
 from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
 from odl_vl.config import load_settings  # noqa: E402
-from odl_vl.pipeline.output import write_outputs  # noqa: E402
+from odl_vl.pipeline.output import document_dir, write_outputs  # noqa: E402
 from odl_vl.pipeline.run import run_document  # noqa: E402
 
 
@@ -32,18 +32,24 @@ def run_cli(argv, runtime: Runtime) -> int:
     use_vlm = (mode == "det_vlm") and key is not None
     client = safe_client(runtime) if use_vlm else None
 
-    result = run_document(args.pdf, mode=mode, vlm_client=client, api_key=key or "")
-    write_outputs(result, args.out)
+    result = run_document(
+        args.pdf, mode=mode, vlm_client=client, api_key=key or "",
+        source_id=args.source_id, external_id=args.external_id, ingested_from=args.ingested_from,
+    )
+    # Output root: --out > $ODL_VL_OUT_DIR > ./out. Per-document dir = <root>/<source_id>/<document_id>.
+    out_root = args.out or (runtime.environ or {}).get("ODL_VL_OUT_DIR") or "out"
+    out_dir = document_dir(out_root, result)
+    write_outputs(result, out_dir, pdf_path=args.pdf)
     if args.review:
         from odl_vl.pipeline.review import write_review
 
-        write_review(args.pdf, result, Path(args.out) / "review.html")
+        write_review(args.pdf, result, out_dir / "review.html")
 
     n = len(result.pages)
     vlm_pages = sum(1 for p in result.pages if p.used_vlm)
     flagged = sum(1 for p in result.pages if p.flags and p.route != "folded")
     print(
-        f"pages={n} mode={mode} vlm_pages={vlm_pages} flagged={flagged} out={args.out}",
+        f"pages={n} mode={mode} doc={result.meta.document_id} vlm_pages={vlm_pages} flagged={flagged} out={out_dir}",
         file=runtime.stdout,
     )
     return 0
@@ -52,10 +58,13 @@ def run_cli(argv, runtime: Runtime) -> int:
 def _parse_args(argv):
     parser = argparse.ArgumentParser(description="PDF -> Markdown pipeline (diagnose-then-configure modes)")
     parser.add_argument("--pdf", required=True)
-    parser.add_argument("--out", required=True)
+    parser.add_argument("--out", default=None, help="output root; default $ODL_VL_OUT_DIR or ./out")
     parser.add_argument("--mode", choices=["deterministic", "det_vlm"], default="det_vlm",
                         help="deterministic (ODL+pypdfium2) or det_vlm (+VLM reconciled); default det_vlm")
     parser.add_argument("--no-vlm", action="store_true", help="alias for --mode deterministic")
+    parser.add_argument("--source-id", default="default", help="source (document stream) id; output groups by it")
+    parser.add_argument("--external-id", default=None, help="caller-provided document id, preserved in metadata")
+    parser.add_argument("--ingested-from", default=None, help="provenance origin (path/url); defaults to --pdf")
     parser.add_argument("--review", action="store_true", help="also write review.html (source vs extraction + flags)")
     return parser.parse_args(argv)
 

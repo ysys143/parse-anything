@@ -40,9 +40,13 @@ def test_cli_offline_writes_markdown_and_ledger(tmp_path):
     code = cli.run_cli(["--pdf", pdf, "--out", str(out), "--no-vlm"], runtime)
 
     assert code == 0
-    assert (out / "document.md").read_text(encoding="utf-8").strip() != ""
-    assert (out / "pages" / "page-000.md").exists()
-    ledger = [json.loads(line) for line in (out / "ledger.jsonl").read_text().splitlines()]
+    docdirs = list((out / "default").glob("*"))   # <out>/<source_id>/<document_id>/
+    assert len(docdirs) == 1
+    docdir = docdirs[0]
+    assert (docdir / "document.md").read_text(encoding="utf-8").strip() != ""
+    assert (docdir / "pages" / "page-000.md").exists()
+    assert (docdir / "document.json").exists()      # rich output written
+    ledger = [json.loads(line) for line in (docdir / "ledger.jsonl").read_text().splitlines()]
     assert len(ledger) == 2
     assert all(r["used_vlm"] is False for r in ledger)  # --no-vlm
     summary = runtime.stdout.getvalue()

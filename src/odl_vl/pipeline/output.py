@@ -30,7 +30,7 @@ def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
     return Path(out_root) / meta.source_id / meta.document_id
 
 
-def write_outputs(result: DocumentResult, out_dir: str | Path) -> None:
+def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -53,7 +53,11 @@ def write_outputs(result: DocumentResult, out_dir: str | Path) -> None:
     _write_jsonl(out / "results.jsonl", results)
 
     if result.meta is not None:
-        tables = _write_document_json(out, result)
+        tables, figures, page_tables, page_figures = (
+            _serialize_structure(result.structure) if result.structure is not None else ([], [], {}, {})
+        )
+        _write_assets(out, figures, pdf_path)  # fills each figure["file"]
+        _write_document_json(out, result, tables, figures, page_tables, page_figures)
         _write_tables(out, tables)
 
 
@@ -79,7 +83,7 @@ def _serialize_structure(structure) -> tuple[list[dict], list[dict], dict[int, l
             p1 = table.page_index + 1  # 1-based source page; R2 v1 tables are single-page
             tables.append({
                 "table_id": tid, "label": table.label, "caption": table.caption,
-                "start_page": p1, "end_page": p1, "source_pages": [p1],
+                "source_pages": [p1],  # canonical page linkage; start/end = source_pages[0]/[-1]
                 "regions": [{"page": p1, "bbox": list(table.bbox)}],
                 "n_rows": table.n_rows, "n_cols": table.n_cols,
                 "cells": [list(r) for r in table.cells], "continued": False,
@@ -97,10 +101,44 @@ def _serialize_structure(structure) -> tuple[list[dict], list[dict], dict[int, l
     return tables, figures, page_tables, page_figures
 
 
-def _write_document_json(out: Path, result: DocumentResult) -> list[dict]:
-    tables, figures, page_tables, page_figures = (
-        _serialize_structure(result.structure) if result.structure is not None else ([], [], {}, {})
-    )
+def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale: float = 2.0) -> None:
+    """Crop each figure's bbox from the rendered page to assets/<figure_id>.png and set its
+    `file` pointer. ODL bbox is PDF space (origin bottom-left); the render is top-left."""
+    if not figures or not pdf_path:
+        return
+    import io
+
+    import pypdfium2 as pdfium
+    from PIL import Image
+
+    from .render import render_page_png
+
+    adir = out / "assets"
+    adir.mkdir(exist_ok=True)
+    doc = pdfium.PdfDocument(pdf_path)
+    try:
+        rendered: dict[int, Image.Image] = {}
+        heights: dict[int, float] = {}
+        for fig in figures:
+            pi = fig["page"] - 1
+            if pi not in rendered:
+                rendered[pi] = Image.open(io.BytesIO(render_page_png(pdf_path, pi, scale=scale))).convert("RGB")
+                heights[pi] = doc[pi].get_size()[1]
+            img, h = rendered[pi], heights[pi]
+            x0, y0, x1, y1 = fig["bbox"]
+            box = (int(x0 * scale), int((h - y1) * scale), int(x1 * scale), int((h - y0) * scale))
+            box = (max(0, box[0]), max(0, box[1]), min(img.width, box[2]), min(img.height, box[3]))
+            if box[2] <= box[0] or box[3] <= box[1]:
+                continue
+            name = f"{fig['figure_id']}.png"
+            img.crop(box).save(adir / name)
+            fig["file"] = f"assets/{name}"
+    finally:
+        doc.close()
+
+
+def _write_document_json(out: Path, result: DocumentResult, tables: list[dict], figures: list[dict],
+                         page_tables: dict[int, list[str]], page_figures: dict[int, list[str]]) -> None:
     doc = result.meta.to_dict()
     doc["pages"] = [
         {
@@ -114,7 +152,6 @@ def _write_document_json(out: Path, result: DocumentResult) -> list[dict]:
     doc["tables"] = tables
     doc["figures"] = figures
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
-    return tables
 
 
 def _write_tables(out: Path, tables: list[dict]) -> None:

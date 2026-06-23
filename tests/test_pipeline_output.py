@@ -2,10 +2,36 @@ from __future__ import annotations
 
 import json
 
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
 from odl_vl.pipeline.docmeta import DocumentMeta
 from odl_vl.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlTable
 from odl_vl.pipeline.output import document_dir, write_outputs
 from odl_vl.pipeline.run import DocumentResult, PageOutcome
+
+
+def _one_page_pdf(path) -> str:
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.drawString(72, 700, "page with a figure region")
+    c.showPage()
+    c.save()
+    return str(path)
+
+
+def test_assets_crops_figure_image_and_sets_pointer(tmp_path):
+    pdf = _one_page_pdf(tmp_path / "d.pdf")
+    figure = OdlImage(0, (72, 600, 300, 720), element_id="i1", label="Figure 1", kind="figure")
+    structure = OdlDocument(1, (OdlPage(0, "text", (), (figure,)),))
+    meta = DocumentMeta("id1234567890abcd", "id1234567890abcdff", "d.pdf", n_pages=1, mode="deterministic")
+    result = DocumentResult((PageOutcome(0, "deterministic", False, "md", 0.0, ()),), structure=structure, meta=meta)
+
+    out = document_dir(tmp_path, result)
+    write_outputs(result, out, pdf_path=pdf)
+
+    assert (out / "assets" / "f001.png").exists()
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert doc["figures"][0]["file"] == "assets/f001.png"
 
 
 def test_rich_output_document_json_and_tables(tmp_path):
