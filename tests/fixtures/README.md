@@ -25,3 +25,10 @@ The manifest is metadata-only. Future tasks may generate public synthetic artifa
 ## Scoring Policy
 
 Golden records are page-level JSON records. They should capture reading order, table structure, key fields, image-description expectations, bounding-box tolerance, provider-specific allowances, and scoring metrics. The schema is deliberately plain JSON so fixture validation does not add a YAML dependency.
+
+This is the current slice contract, not the full PDF pipeline contract. Before
+claiming compliance with the full requirements, fixture scoring must add
+document-level records for page-spanning tables, merged logical table ids,
+numeric source-oracle expectations, arithmetic invariant checks, hallucination
+guard flags, orientation correction, processing-depth routing, and privacy-safe
+provider routing.

@@ -31,15 +31,21 @@ ODL을 **결정론+triage 프런트**로만 쓰고(JSON 소비), VLM 2-패스·�
    - born-digital 단순(텍스트만) — 베이스라인
    - 다단 + 한/영 혼재
    - 병합셀/중첩헤더 표 (제조 스펙)
+   - 페이지에 걸친 표
    - 표 위 이미지 겹침
    - text-as-image 다이어그램 (OCR 금지 케이스)
+   - 산술 불변식이 있는 invoice/spec table
    - 수기·회전 글자
    - 스캔 PDF
    - HWP, xlsx, png (비-PDF 커버리지 — B에서만 의미)
 2. **평가 스코어카드** (§6) — 동일 루브릭.
-3. **VLM 2-패스 모듈** — `(1차 md + 페이지 이미지 + 유저 의도 프롬프트) → 2차 md/json`. **로직은 공유**, 호출 위치만 트랙별로 다름.
-4. **출력 IR 계약** — md + json(요소 타입·bbox·표HTML·confidence). 양 트랙 출력이 비교 가능하도록. (LightRAG `BaseExternalParser` RFC IR과 정렬.)
-5. **골든셋** — 페이지별 정답(읽기순서, 표 구조, 그림 설명 기대치, 핵심 필드 값).
+3. **Processing-depth router** — 기본은 결정론 처리. scan/text-layer 부재, 그림·차트, 인코딩 깨짐, 산술 불변식 실패, 결정론 불완전, 방향 불확실 같은 명시 트리거가 있을 때만 VLM/OCR로 escalation.
+4. **VLM 2-패스 모듈** — `(결정론 md/json + 페이지 이미지 또는 multi-image + 방향보정 + 유저 의도 프롬프트 + guard policy) → 2차 md/json/table/image_desc/guard_flags`. **로직은 공유**, 호출 위치만 트랙별로 다름.
+5. **출력 IR 계약** — page md/json + document md/json + logical tables + asset pointers + bbox/provenance/confidence/guard flags. 양 트랙 출력이 비교 가능하도록. (LightRAG `BaseExternalParser` RFC IR과 정렬.)
+6. **페이지 걸친 표 assembler** — bbox 열 좌표, column signature, header/caption continuation 신호로 logical table을 병합. 3쪽 이상 표는 overlap chunk로 처리.
+7. **숫자 guard** — born-digital은 텍스트 레이어 값을 oracle로 주입하고, source gate와 산술 불변식으로 hallucination을 차단/flag.
+8. **Processing tier / domain adaptation** — DET/VLM/HUM 경계, 잔여 사람검토량, 도메인 적응 전후 오류율·비용 변화를 측정한다.
+9. **골든셋** — 페이지별 정답뿐 아니라 문서 레벨 continuation, 표 병합, 숫자 정확성, guard flag 기대치를 포함.
 
 ---
 
@@ -77,17 +83,28 @@ ODL을 **결정론+triage 프런트**로만 쓰고(JSON 소비), VLM 2-패스·�
 | 범주 | 지표 | 측정법 |
 |---|---|---|
 | 인식 품질 | 읽기순서 정확도 | 골든셋 대비 NID |
+| | 페이지 방향/다단 보정 | orientation/skew + column order 정답률 |
 | | 표 충실도(병합셀/중첩헤더) | TEDS / 수동 채점 |
+| | 페이지 걸친 표 재구성 | logical table id + continuation 병합 정확도 |
 | | 그림/다이어그램 서술 품질 | 수동 1~5 + 쿼리 재현 |
 | | text-as-image 처리(OCR 오염 없음) | 수동 |
+| 숫자 안전 | 숫자 정확도 | source text oracle 대비 cell value 정확도 |
+| | hallucination rate | source에 없는 숫자 생성률 |
+| | source gate 오거부 | source에 있는 숫자를 잘못 flag한 비율 |
+| | 산술 불변식 | 소계/세금/수량×단가 pass rate |
 | triage | 라우팅 정확도(복잡 페이지만 VLM) | 혼동행렬 |
+| | processing depth 정확도 | 결정론/VLM/OCR/human-review route 정답률 |
 | | 비용 절감(VLM 스킵 비율) | % pages skipped |
+| 사람검토 | 검토량 | flag된 셀/표/페이지 수 |
+| | 검토 정밀도 | flag된 항목 중 실제 오류 비율 |
+| 적응 | 도메인 보정 효과 | 보정 전후 오류율·비용·검토량 delta |
 | 커스텀 | 유저 의도 프롬프트 반영 | 데모 가능/불가 |
 | | VLM 교체 용이성 | 교체 공수 |
 | provenance | bbox 보존(엔드투엔드) | 존재율 % |
 | 출력 | md/json 정확성 | 스키마 검증 |
+| | 합본 산출 | document.md/document.json + page pointers 존재 |
 | 운영 | per-page 비용/$·지연 | ledger 집계 |
-| | ledger 완전성(결정·비용) | 필드 충족 |
+| | ledger 완전성(결정·비용·guard) | 필드 충족 |
 | 커버리지 | 비-PDF 입력 처리 | 성공/실패 |
 | 엔지니어링 | Java 발자국 | LOC/런타임 |
 | | 개발·유지보수 공수 | 정성 |
@@ -119,7 +136,9 @@ ODL을 **결정론+triage 프런트**로만 쓰고(JSON 소비), VLM 2-패스·�
 ## 9. 리스크
 - **A**: ODL triage가 region 단위라 page-2패스와 충돌 → `hybrid_mode=full` 또는 triage-판정만 사용으로 회피. DoclingDocument/IObject 성형이 예상보다 큼.
 - **B**: ODL을 triage용으로 한 번 + 재처리로 두 번 도는 오버헤드. ODL JSON에 2-패스 그라운딩에 필요한 1차 md/이미지 접근이 충분한지 확인 필요.
-- **공통**: VLM 비용이 코퍼스 규모에서 폭발 → triage 스킵률이 ROI를 좌우(스코어카드에 포함).
+- **공통**: VLM 비용이 코퍼스 규모에서 폭발 → processing-depth 스킵률이 ROI를 좌우(스코어카드에 포함).
+- **공통**: 스캔 문서는 born-digital 숫자 oracle이 없으므로 완전 자동 숫자 신뢰를 약속할 수 없다. 잔여 위험 셀은 guard flag와 사람 검토 대상으로 남긴다.
+- **공통**: PaddleOCR official API처럼 이미지 URL fetch만 가능한 provider는 민감 문서에 공개 호스팅을 강제할 수 있으므로, privacy route 제약을 bake-off에 포함해야 한다.
 
 ## 10. 예상 수렴 (정직한 가설)
 PDF/HWP 슬라이스에선 A(특히 A1 무Java 주입)가 컴팩트하게 이기고, 비-PDF·ledger·멀티백엔드에선 B가 필요 → **하이브리드로 수렴할 가능성이 높음**. 그래도 bake-off로 "PDF 2-패스를 ODL 안/밖 어디서 돌릴지"를 데이터로 확정하는 게 목적.

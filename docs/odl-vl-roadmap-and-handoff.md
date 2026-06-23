@@ -6,15 +6,19 @@ ODL-VL is an early parsing experiment for a deterministic parsing front with VLM
 
 The external orchestrator is implemented: it consumes ODL-like page JSON, routes each page through the deterministic, PaddleOCR official API, or Gemini direct path, normalizes outputs into the existing IR, and records a faithful per-page ledger. See [orchestrator architecture](orchestrator-architecture.md). It is not an ODL CLI execution stage.
 
+The mandatory full PDF pipeline contract is now documented in [PDF pipeline requirements](pdf-pipeline-requirements.md). Processing-tier boundaries and domain adaptation are documented in [Processing tiers and domain adaptation](processing-tiers-and-adaptation.md). Current implementation covers only the page-level routing scaffold; rendering, deterministic extraction, orientation correction, processing-depth automation, page-spanning table assembly, numeric guards, human-review targeting, domain calibration tooling, and document-level outputs remain future work.
+
 ## Overall Roadmap
 
 1. Completed foundation: PaddleOCR official API + Gemini direct common scaffold.
 2. Completed: external orchestrator over ODL-like page JSON (offline default + opt-in live), not ODL CLI execution. See [orchestrator architecture](orchestrator-architecture.md).
-3. Next: add ODL runner and page renderer integration so real ODL local output and page images can feed the orchestrator.
-4. Then: generate real fixtures and add golden scoring over the documented fixture families.
-5. Then: run a live provider bake-off across deterministic, PaddleOCR official API, and Gemini direct routes.
-6. Later: add deferred provider adapters only after the provider interface, ledger fields, and fixture bake-off are stable.
-7. Optional later layer: add FastAPI or another service interface only after the CLI/library path proves the contract.
+3. Next: add PDF input rendering with a license-clean renderer and ODL/deterministic extraction so real text, bbox, table regions, and page images can feed the orchestrator.
+4. Then: add orientation correction, processing-depth routing, DET/VLM/HUM escalation boundaries, page-spanning table assembly, numeric source gates, arithmetic invariant checks, and document-level output assembly.
+5. Then: add domain adaptation tooling for measuring domain error rates, reviewing flagged cells/structures, capturing corrections, and comparing policy/provider changes.
+6. Then: generate real fixtures and add golden scoring over the documented fixture families, including page-spanning tables and numeric guard cases.
+7. Then: run a live provider bake-off across deterministic, PaddleOCR official API, Gemini direct, and privacy-safe alternatives where URL fetch is not acceptable.
+8. Later: add deferred provider adapters only after the provider interface, ledger fields, guard fields, adaptation metrics, and fixture bake-off are stable.
+9. Optional later layer: add FastAPI or another service interface only after the CLI/library path proves the contract.
 
 ## Completed Foundation
 
@@ -29,6 +33,8 @@ Completed pieces include:
 - Smoke CLI for dry config checks and optional live checks.
 - Metadata-only fixture manifest and golden schema for the initial eight fixture families.
 - README setup, offline test, dry config, optional live smoke, and fixture documentation.
+- Full target PDF pipeline requirements covering rendering, processing depth, complex/page-spanning tables, VLM input recipe, numeric guards, outputs, verification, licensing, and privacy constraints.
+- Processing-tier and domain-adaptation requirements covering deterministic/VLM/human boundaries, escalation policy, residual human review, and calibration tooling.
 
 ## Implemented: External Orchestrator
 
@@ -51,6 +57,13 @@ Out of scope for the external orchestrator slice:
 - ODL Java fork or `HybridRequest` changes.
 - ODL CLI subprocess execution.
 - PDF page rendering.
+- Page orientation correction.
+- Processing-depth automation.
+- Complex/page-spanning table reconstruction.
+- Numeric source gates and arithmetic invariant guards.
+- Human-review targeting.
+- Domain adaptation measurement/review/calibration tooling.
+- Document-level Markdown/JSON assembly.
 - Real generated PDF or image fixtures.
 - FastAPI or other service layer.
 - Ollama, GLM-OCR, NGC, or Nemotron provider adapters.

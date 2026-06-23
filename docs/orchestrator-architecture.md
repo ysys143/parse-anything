@@ -11,6 +11,21 @@ default and an opt-in live mode.
 **What it is not:** it does not execute ODL, render PDF pages, or generate
 fixture artifacts. It consumes page JSON that some upstream step produces.
 
+## Relationship to the Full PDF Contract
+
+The mandatory full-pipeline contract lives in
+[`pdf-pipeline-requirements.md`](pdf-pipeline-requirements.md), with
+processing-tier boundaries and domain adaptation in
+[`processing-tiers-and-adaptation.md`](processing-tiers-and-adaptation.md). This
+orchestrator is a page-level scaffold for provider routing and normalization; it
+does not yet satisfy the full contract.
+
+Missing full-contract pieces include PDF input rendering with pypdfium2,
+deterministic ODL extraction, page orientation correction, processing-depth
+automation, page-spanning table assembly, multi-image VLM requests, numeric
+source gates, arithmetic invariant checks, human-review targeting, domain
+calibration tooling, asset manifests, and document-level Markdown/JSON assembly.
+
 ## Module map (`src/odl_vl/`)
 
 | Module | Responsibility |
@@ -40,7 +55,7 @@ load_document_input(path)        # DocumentInput (tuple[PageInput, ...])
         |
   run provider (offline | live)  # -> NormalizedPage
         |
-  normalize -> NormalizedPage    # markdown (+ image_description, confidence, ...)
+  normalize -> NormalizedPage    # current: markdown (+ image_description, confidence, ...)
         |
   PageResult  ----------------->  results.jsonl, pages/page-<ordinal>-<slug>.md
         |
@@ -63,6 +78,11 @@ ledger writes (see the note on provider rate limits in the README).
 | `fixture_family` | Selects expected routing + golden family. |
 | `intent_prompt` (opt) | Per-page VLM prompt override. |
 | `has_text_layer`, `needs_table_structure`, `needs_image_description`, `is_rotated_or_scan`, `is_low_quality_scan` | Routing hints mapped onto `RoutingTask`. |
+
+This contract is intentionally narrower than the final PDF contract. Future
+inputs must add deterministic JSON/bbox/table candidates, orientation metadata,
+processing-depth signals, numeric oracle data, page-spanning table groups, and
+privacy/provider constraints.
 
 ## Providers and modes
 
@@ -90,6 +110,11 @@ Written under `--output-dir`:
   document content); `<slug>` is derived from `page_id`.
 - `ledger.jsonl` — per page: provider, model alias, route reason, latency,
   status, and non-secret metadata.
+
+These are current slice outputs, not the final parser artifact set. The full
+contract adds page JSON, `document.md`, `document.json`, logical table exports,
+asset metadata, guard flags, source provenance, provider cost, and
+processing-depth evidence.
 
 ## Contract verification
 

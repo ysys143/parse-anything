@@ -13,6 +13,16 @@ Initial development is limited to **PaddleOCR official API** and **Gemini direct
 
 See [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md) for the full decision record, provider environment-variable names, routing notes, and fixture strategy.
 
+## Target PDF Pipeline
+
+The full target is not just per-page OCR. It is a PDF pipeline that renders pages,
+keeps deterministic text/table/bbox data as the source of truth, escalates only
+when explicit processing-depth triggers require OCR/VLM, reconstructs complex and
+page-spanning tables, and writes both readable Markdown and loss-aware JSON. The
+mandatory target contract is documented in [PDF pipeline requirements](docs/pdf-pipeline-requirements.md).
+The processing-tier boundary and domain-adaptation requirements are documented
+in [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md).
+
 ## Setup
 
 Install the package and test dependency in editable mode:
@@ -71,7 +81,9 @@ The external orchestrator consumes ODL-like page JSON (document id, per-page
 hints), routes each page to the deterministic / PaddleOCR / Gemini path via the
 existing router, normalizes provider output into the internal IR, and writes a
 per-page ledger. **This is not an ODL runner or a PDF renderer**: it
-does not execute ODL, render PDF pages, or generate fixture artifacts.
+does not execute ODL, render PDF pages, generate fixture artifacts, reconstruct
+page-spanning tables, or enforce numeric source guards. Those are target
+requirements, not completed behavior in this slice.
 
 Run the offline orchestration over the sample document. Offline mode uses
 synthetic placeholder provider output, so it makes no network call:
@@ -110,6 +122,11 @@ sees the page (not just `first_pass_md`). Cross-provider fallback is not perform
 this slice: each page runs only its routed provider, and a failed page is reported
 as failed rather than silently re-run through another provider.
 
+The full pipeline output contract is broader: page-level Markdown/JSON, a
+document-level Markdown/JSON assembly, logical table outputs, image/table asset
+metadata, guard flags, and provider-cost ledger fields. See the requirements
+document before treating this CLI output as the final parser artifact format.
+
 ## Fixture Plan
 
 The fixture work is metadata-only in this slice. The initial eight fixture families and page-level golden schema contract live under [`tests/fixtures/`](tests/fixtures/README.md). The fixture sufficiency and discriminativeness criteria are documented in [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md#5-fixture-and-golden-set-strategy).
@@ -117,4 +134,6 @@ The fixture work is metadata-only in this slice. The initial eight fixture famil
 ## Design Notes
 
 - [External orchestrator architecture](docs/orchestrator-architecture.md): module map, data flow, input contract, provider modes, contract verification, and security posture.
+- [PDF pipeline requirements](docs/pdf-pipeline-requirements.md): mandatory full-pipeline behavior for rendering, processing-depth routing, complex/page-spanning tables, VLM inputs, numeric guards, outputs, validation, and provider/privacy constraints.
+- [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md): deterministic/VLM/human boundaries, escalation policy, and domain calibration tooling.
 - [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md): PaddleOCR official API + Gemini direct 개발 결정, provider key 계약, fixture/golden-set 전략.

@@ -229,3 +229,6 @@ __marimo__/
 results.jsonl
 ledger.jsonl
 /out/
+
+# Local measurement prototypes + data (incl. private documents). Never committed.
+.local/

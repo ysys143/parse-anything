@@ -22,14 +22,29 @@ JAR 디컴파일 + 로컬 실행으로 확인:
 
 ## 1. 공유 컴포넌트 (PDF 한정)
 
-- **페이지 렌더 유틸**: PDF page → PNG (pymupdf/pdfium).
+- **페이지 렌더 유틸**: PDF page → PNG. 기본 후보는 라이선스 clean path인 pypdfium2 계열이며, 고DPI 렌더와 orientation/skew metadata를 남겨야 한다.
+- **결정론 추출기**: ODL 또는 동등 엔진으로 텍스트, bbox, reading-order 후보, table region, semantic table(row/column/cell/bbox)을 뽑는다. born-digital 숫자와 텍스트는 이 결과를 source of truth로 둔다.
+- **Processing-depth router**: 기본은 결정론 처리. scan/text-layer 부재, 그림·차트, 인코딩 깨짐, 산술 불변식 실패, 결정론 table/reading-order 불완전, orientation 불확실 같은 명시 트리거가 있을 때만 OCR/VLM으로 escalation한다.
+- **페이지 방향 인식/보정**: 회전, skew, 다단 reading order를 VLM 입력과 최종 md/json 모두에 반영한다.
+- **페이지 걸친 표 assembler**: 연속 페이지의 table bbox 열 좌표, column signature, header/continuation 신호를 비교해 logical table을 하나로 병합한다.
 - **VLM 2-패스 모듈 (공유, 위치만 다름)**: 계약
   ```
-  vlm_pass(page_image, first_pass_md | None, intent_prompt | None)
-    -> { md, json, tables_html, image_desc, confidence }
+  vlm_pass(
+    deterministic_md | None,
+    deterministic_json | None,
+    page_images | multi_page_images,
+    orientation_metadata,
+    intent_prompt | None,
+    guard_policy
+  )
+    -> { md, json_elements, tables_html, image_desc, confidence, guard_flags }
   ```
-- **출력 IR**: md + json(요소 타입·bbox·표 HTML·confidence) + **ledger**(per-page: 경로결정·엔진·토큰·$·지연).
+- **숫자 guard**: born-digital은 결정론 source text를 oracle로 주입한다. VLM 출력 숫자가 source에 없거나 산술 불변식을 깨면 거부/flag한다.
+- **출력 IR**: page md/json + document md/json + logical tables + asset pointers + bbox/provenance/confidence/guard flags + **ledger**(per-page: 경로결정·엔진·토큰·$·지연·guard).
+- **Processing tier / domain adaptation**: DET/VLM/HUM 경계, 사람검토 대상 분리, 도메인별 보정 도구는 `docs/processing-tiers-and-adaptation.md`를 따른다.
 - **골든셋 + 스코어카드** (spike-plan §6).
+
+이 요구사항의 상세 계약은 `docs/pdf-pipeline-requirements.md`와 `docs/processing-tiers-and-adaptation.md`가 기준이다. 이 문서는 Track A/B 중 어디서 그 계약을 만족할지 비교한다.
 
 ---
 
@@ -40,7 +55,7 @@ JAR 디컴파일 + 로컬 실행으로 확인:
 opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
   1) ODL: veraPDF 결정론 파싱 + triage → 복잡 페이지 집합 산출
   2) ODL → adapter: POST /v1/convert/file  (원본 PDF + page_ranges=복잡페이지)
-  3) adapter: 해당 페이지 렌더 → [1차 md 필요시 자체 재파싱] → VLM 2-패스
+  3) adapter: 해당 페이지 렌더/방향보정 → [1차 md/json 필요시 자체 재파싱] → VLM 2-패스
               → DoclingDocument JSON 으로 성형하여 반환
   4) ODL: 백엔드 결과를 IObject로 흡수 → 최종 md/json + bbox + 태그
 ```
@@ -55,6 +70,8 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 - **(b) 동적 프롬프트 불가**: 요청에 prompt 없음 → **adapter 레벨 고정 프롬프트(코퍼스 단위 의도)**만 가능. 문서/쿼리별 동적 의도 ✗.
 - **(c) 출력 성형**: 결과를 **DoclingDocument 스키마**로 맞춰야 ODL이 흡수.
 - **(d) 대용량 오버헤드**: 매 백엔드 콜에 **전체 PDF 재전송**.
+- **(e) 페이지 걸친 표/멀티이미지 입력**: no-fork Track A는 backend protocol이 page range와 원본 PDF 중심이라, multi-image VLM 요청과 logical table 병합 책임이 adapter에 몰린다.
+- **(f) 숫자 guard**: VLM 숫자 출력을 신뢰하지 않으려면 adapter가 결정론 source text oracle과 산술 불변식 검증을 별도 구현해야 한다.
 
 ### 단계
 - **A1** 더미 어댑터: page_ranges 수신 로그만 → "triage가 어떤 입자(페이지 단위?)로, 어떤 페이지를 보내는가" 실측 + ODL VLM 주입 가능성 확정.
@@ -78,18 +95,25 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
         - ODL 캡처-어댑터로 page_ranges 관측 (하이브리드 1회)
         - ODL TriageLogger 로그 파싱
   3) 오케스트레이터(Python): 복잡 페이지만
-        페이지 렌더 + ODL 1차 md + 동적 프롬프트 → VLM 2-패스
-  4) 병합 → md/json 정규화 + ledger(결정·엔진·토큰·$·지연)
+        페이지 렌더 + 방향보정 + ODL 1차 md/json + 동적 프롬프트
+        + 필요 시 multi-image 묶음 → VLM 2-패스
+  4) 숫자/source guard + 표 병합 → md/json 정규화 + ledger(결정·엔진·토큰·$·지연·guard)
 ```
 
 ### 구성요소
 - ODL 러너(서브프로세스, 로컬 모드)
 - triage 신호원(pdf-inspector 우선)
+- orientation 보정기
+- processing-depth router
+- page-spanning table assembler
+- 숫자 oracle/source gate/arithmetic invariant guard
 - 오케스트레이터 + VLM 클라이언트(공유) + 정규화기 + ledger
 
 ### 장점 (코드로 확인)
 - **1차 md 보유 → 진짜 grounded 2-패스** ✓
+- **1차 JSON/bbox/table 후보 보유 → 숫자 oracle과 source gate 구현 용이** ✓
 - **동적 프롬프트 자유** ✓ (문서/쿼리별 의도)
+- **페이지 걸친 표를 multi-image VLM 요청으로 묶기 쉬움** ✓
 - **ledger 완전 자유** ✓
 - **무 Java** ✓
 
@@ -99,7 +123,8 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 
 ### B가 답해야 할 질문
 1. pdf-inspector triage 정확도가 ODL triage를 대체할 만한가? (아니면 캡처-어댑터로 ODL triage 차용)
-2. ODL JSON의 페이지별 1차 md/bbox 입자가 VLM grounding에 충분한가?
+2. ODL JSON의 페이지별 1차 md/bbox/table 입자가 VLM grounding과 숫자 guard에 충분한가?
+3. 페이지 걸친 표 continuation 판정 기준(bbox 열좌표, header/caption, column signature)의 false positive/negative는 허용 가능한가?
 
 ---
 
@@ -111,6 +136,9 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 | 1차 grounding → VLM | ✗ (원본만 전달, adapter 재파싱 필요) | **✓ (ODL 1차 md 보유)** |
 | 동적 프롬프트 | ✗ (요청에 없음, 어댑터 고정) | **✓** |
 | ledger | 제한(ODL 로그 + 어댑터) | **완전(자체)** |
+| 숫자 guard | adapter 별도 구현 필요 | **결정론 JSON 기반 구현 용이** |
+| 페이지 걸친 표 | adapter 책임 큼 | **orchestrator가 병합 소유** |
+| privacy/provider 제약 | backend별 별도 처리 | route policy에 통합 가능 |
 | Java | A1/A2 없음, A3 필요 | **없음** |
 | 처리 패스 | **1 (ODL 주도)** | 2 (ODL → VLM) |
 | 출력 성형 | DoclingDocument JSON 맞춤 | 자체 IR |
@@ -121,9 +149,9 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 
 ## 5. 핵심 통찰 (이게 결정의 축)
 
-당신들의 핵심 요구인 **"Enhans식 2-패스 = 1차 결정론 grounding + 동적 의도 프롬프트"** 는 **코드상 Track A 프로토콜 경로(A1/A2)로는 충족 불가**다 — ODL이 백엔드에 1차 md도 프롬프트도 안 넘기기 때문. A에서 그걸 원하면 **A3(Java)로 HybridRequest를 확장**하거나 **adapter가 자체 재파싱**해야 한다.
+당신들의 핵심 요구인 **"결정론 grounding + 이미지/multi-image + 방향보정 + 동적 의도 프롬프트 + 숫자 guard"** 는 **코드상 Track A 프로토콜 경로(A1/A2)로는 충족 불가**다 — ODL이 백엔드에 1차 md/json도 프롬프트도 안 넘기기 때문이다. A에서 그걸 원하면 **A3(Java)로 HybridRequest를 확장**하거나 **adapter가 자체 재파싱, 표 병합, 숫자 guard**를 맡아야 한다.
 
-반면 **Track B는 그 요구를 자연스럽게 충족**한다(ODL 1차 보유 + 자유 프롬프트 + ledger). 대신 B는 **triage를 직접 붙여야** 한다(pdf-inspector).
+반면 **Track B는 그 요구를 자연스럽게 충족**한다(ODL 1차 md/json 보유 + multi-image 구성 + 자유 프롬프트 + ledger + guard). 대신 B는 **triage/processing-depth와 page-spanning assembler를 직접 붙여야** 한다.
 
 > 정리: PDF만 봐도 갈림이 분명하다.
 > - **grounded·프롬프트형 2-패스가 핵심 → Track B** (또는 A3-Java).
