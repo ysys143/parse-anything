@@ -83,7 +83,7 @@ def _oracle_flags(pdf_path: str, page_indices: Sequence[int], markdown: str, ora
     return [f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=oracle_min_value)]
 
 
-def _process_single(pdf_path, i, route, *, vlm_client, api_key, prompt, oracle_min_value) -> PageOutcome:
+def _process_single(pdf_path, i, route, *, vlm_client, api_key, prompt, oracle_min_value, min_input_quality) -> PageOutcome:
     t0 = time.monotonic()
     flags: list[str] = []
     if route == Route.DETERMINISTIC:
@@ -92,10 +92,14 @@ def _process_single(pdf_path, i, route, *, vlm_client, api_key, prompt, oracle_m
         markdown, used = page_text(pdf_path, i), False
         flags.append("vlm_unavailable")  # VLM-needed page with no client: degrade to text, flag for review
     else:
+        from .quality import is_low_quality
         from .vlm import VlmError, transcribe_image
 
+        png = render_page_png(pdf_path, i)
+        if is_low_quality(png, min_laplacian_variance=min_input_quality):
+            flags.append("low_quality_input")  # cheap deterministic pre-signal (F4)
         try:
-            markdown = transcribe_image(render_page_png(pdf_path, i), _prompt_for(route, prompt), api_key=api_key, client=vlm_client)
+            markdown = transcribe_image(png, _prompt_for(route, prompt), api_key=api_key, client=vlm_client)
             used = True
             if markdown.strip() == LOW_QUALITY_SENTINEL:
                 # legibility gate fired: abstain rather than emit a fabricated transcription
@@ -138,6 +142,7 @@ def run_document(
     policy: TriagePolicy = TriagePolicy(),
     signals: Sequence[PageSignals] | None = None,
     oracle_min_value: float = 1000.0,
+    min_input_quality: float = 50.0,
     detect_spanning_tables: bool = True,
 ) -> DocumentResult:
     sigs = list(signals) if signals is not None else document_signals(pdf_path)
@@ -153,7 +158,7 @@ def run_document(
     for group in groups:
         if len(group) == 1:
             outcomes.append(
-                _process_single(pdf_path, group[0], routes[group[0]], vlm_client=vlm_client, api_key=api_key, prompt=prompt, oracle_min_value=oracle_min_value)
+                _process_single(pdf_path, group[0], routes[group[0]], vlm_client=vlm_client, api_key=api_key, prompt=prompt, oracle_min_value=oracle_min_value, min_input_quality=min_input_quality)
             )
         else:
             outcomes.extend(_process_group(pdf_path, group, vlm_client=vlm_client, api_key=api_key, oracle_min_value=oracle_min_value))

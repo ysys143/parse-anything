@@ -64,6 +64,17 @@ def test_vlm_route_without_client_flags_and_degrades_to_text(tmp_path):
     assert len(res.pages[0].markdown) > 0  # degraded to the deterministic text layer
 
 
+def test_low_quality_input_flag_is_threshold_driven(tmp_path):
+    pdf = _text_pdf(tmp_path / "d.pdf")
+    sig = [PageSignals(text_chars=0, table_rows=0, image_count=1)]
+    # threshold so high that any render counts as low quality -> flag fires
+    hi = run_document(pdf, vlm_client=_FakeClient([_gemini_ok("ok")]), api_key="k", signals=sig, min_input_quality=1e12)
+    assert "low_quality_input" in hi.pages[0].flags
+    # threshold 0 -> never low quality
+    lo = run_document(pdf, vlm_client=_FakeClient([_gemini_ok("ok")]), api_key="k", signals=sig, min_input_quality=0.0)
+    assert "low_quality_input" not in lo.pages[0].flags
+
+
 def _spanning_table_pdf(path) -> str:
     c = canvas.Canvas(str(path), pagesize=letter)
     cols = [72, 180, 300, 420]
