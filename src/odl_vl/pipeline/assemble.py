@@ -32,6 +32,7 @@ class DetVlmOptions:
     double_pass: bool = True   # R8.6 dual-provider pass on oracle-less scan pages
     arithmetic: bool = True    # R8.7 arithmetic-invariant guard on totals/subtotals
     prompt: str | None = None  # R8.4 custom base prompt (overrides DEFAULT/SCAN)
+    input_quality_min: float = 50.0  # R8.8 Laplacian-variance blur threshold (per-domain tunable)
 
 
 def _table_markdown(table: OdlTable) -> str:
@@ -144,7 +145,7 @@ def _assemble_det_vlm(
 
     flags: list[str] = []
     png = render_page_png(pdf_path, page_index)
-    if is_low_quality(png):
+    if is_low_quality(png, min_laplacian_variance=options.input_quality_min):
         flags.append("low_quality_input")
     # No text layer == scan-like: use the legibility-gate prompt (F6) so a degraded scan
     # abstains (IMAGE_TOO_LOW_QUALITY) instead of fabricating. Prompt choice by deterministic
