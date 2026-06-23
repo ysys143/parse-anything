@@ -124,20 +124,19 @@ Markdown은 사람이 읽기 좋은 view다. JSON은 source of truth이며, elem
 
 민감 문서는 provider I/O 제약을 route 결정에 반영한다. PaddleOCR official API가 이미지 URL fetch만 지원하고 base64 inline image를 지원하지 않는 경로라면, 공개 호스팅이 필요한 민감 문서에는 부적합하다. 그런 문서는 inline image 지원 provider, private network hosting, or local/self-hosted provider 경로로만 보낸다.
 
-## 10. Current Implementation Gap
+## 10. Implementation Status
 
-현재 구현(`src/odl_vl/pipeline/`)이 충족하는 것:
+목표 아키텍처(이 문서 + 처리계층 P7/§2.5–2.6)는 **R1–R8로 구현 완료**. 구현된 것:
 
-- PDF 입력 → pypdfium2 렌더(`render.py`) + 결정론 텍스트/숫자/위치 추출(`deterministic.py`)
-- 페이지 신호 + **런타임 per-page 자동 라우팅**(`triage.py decide_route`, `signals.py`) — *새 아키텍처에서 폐기 대상*
-- VLM 호출 단일/멀티이미지(`vlm.py`) + 값 오라클 source-gate(`oracle.py`)·가드(`guards.py`)·스캔 가독성·입력 품질(`quality.py`)
-- 페이지 걸친 표 연속판정·멀티이미지 배치(`crosspage.py`)
-- 출력 `pages/`·`document.md`·`ledger.jsonl`·`results.jsonl`(`output.py`), 리뷰 HTML(`review.py`), 스코어카드(`scorecard.py`)
+- **아키텍처(R1):** 런타임 per-page 자동 라우팅 폐기 — `decide_route`는 진단 신호로 강등(런타임 호출 0). 소스 단위 **진단-설정** + mode 구동(`run.py`/`assemble.py`). mode가 레버(키 누락 시 silent downgrade 금지).
+- **결정론 베이스(R1):** ODL(`odl_extract.py`, 구조·청결 텍스트·단락·표 격자·셀 bbox) + pypdfium2(값 완전성/위치) **병용**. `deterministic` 모드(ODL+pypdfium2 완전성 백스톱), `det_vlm` 모드(+ VLM 정합, R-M1).
+- **det_vlm 가드/보강(R8):** ODL+pypdfium2 **이중주입 그라운딩**(`grounding.py`), 스팬 표 다중이미지 재구성(`previous_table_id` 그룹), 값 오라클(`oracle.py`)·산술 불변식(`arithmetic.py`)·스캔 **이중패스**(Gemini+Paddle, `paddle_vlm.py`)·입력품질·가독성 가드. 전부 옵트아웃.
+- **진단 도구(R3–R4):** D-1 내장 VLM(`diagnose.py`, 측정 기반·구조-인지 샘플링) + D-2 에이전트 번들/스킬(`diagnose_prepare.py`, `docs/diagnostic-d2.md`) → `SourceProfile` 영속·재사용(per-source 임계값 루프 포함).
+- **리치 출력(R2):** `<out>/<source_id>/<document_id>/`에 `document.json`(loss-aware: content-hash id·프로비넌스·페이지 blocks·표/그림 bbox·원본 라벨·산술)·`tables/`·`assets/`·`pages/`·`ledger.jsonl`. content-hash 멱등 + 재처리 skip. SQLite 파생 카탈로그(`catalog.py`).
+- 측정 근거: F16–F21(measurement-findings). 164 테스트(격리 uv 환경).
 
-목표(이 문서 + 처리계층 P7/§2.5–2.6)와의 갭:
+**남은 것:**
 
-- **아키텍처:** 런타임 per-page 자동 라우팅(`decide_route`) → **소스 단위 진단-설정**으로 전환 필요(P7). `decide_route`는 진단 컴포넌트로 강등.
-- **결정론 베이스:** 현재 pypdfium2만; **ODL 통합**(구조·청결 텍스트) + ODL/pypdfium2 *병용*(결정론 모드)·*정합*(VLM 모드) 미구현.
-- **진단 도구:** D-1 내장 / D-2 에이전트 스킬 미구현.
-- **리치 출력:** `document.json`(loss-aware)·`tables/`·`assets/`·소스 메타데이터 미구현(현재 MD+ledger만).
-- **검증:** 30~50페이지 코퍼스 기반 scorecard는 도구는 있으나(`scorecard.py`) 실코퍼스 골든 미수행.
+- **§8 골든-코퍼스 정량 검증(미수행, 핵심):** 30~50페이지 골든셋으로 reading order·TEDS·numeric accuracy·hallucination rate·source-gate 오거부율·guard precision/recall·사람검토량 등 측정. 캘리브레이션(F18/F19, ~36문서)은 *mode 라벨 oracle 판정*이지 per-element 골든 채점이 아님 → **골든 라벨 생성이 선행.**
+- **enhancement:** oracle bbox **값-치환**(현재 *플래그*만, 정확 위치 *치환*은 미착수); 노이즈-인지 입력품질 지표(F21); 스팬에 Paddle 더블패스.
+- **의도적 보류(by design):** 서비스 레이어(FastAPI) — CLI/라이브러리가 계약 입증 후; 추가 provider(Ollama/GLM-OCR/Nemotron).
