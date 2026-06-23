@@ -85,9 +85,20 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
             return 2
         client = safe_client(runtime)
 
+    from odl_vl.pipeline.assemble import DetVlmOptions
+
+    custom_prompt = args.prompt
+    if args.prompt_file:
+        custom_prompt = Path(args.prompt_file).read_text(encoding="utf-8")
+    options = DetVlmOptions(
+        ground=not args.no_ground, spanning=not args.no_spanning,
+        double_pass=not args.no_double_pass, arithmetic=not args.no_arithmetic, prompt=custom_prompt,
+    )
+
     result = run_document(
         args.pdf, mode=mode, vlm_client=client, api_key=key or "",
         source_id=args.source_id, external_id=args.external_id, ingested_from=args.ingested_from,
+        options=options,  # paddle_client (R8.6 double-pass) wired separately
     )
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
@@ -123,6 +134,13 @@ def _parse_args(argv):
     parser.add_argument("--ingested-from", default=None, help="provenance origin (path/url); defaults to --pdf")
     parser.add_argument("--force", action="store_true", help="reprocess even if this content hash was already produced")
     parser.add_argument("--review", action="store_true", help="also write review.html (source vs extraction + flags)")
+    # det_vlm behaviour opt-outs (all ON by default)
+    parser.add_argument("--no-ground", action="store_true", help="det_vlm: skip ODL+pypdfium2 deterministic grounding")
+    parser.add_argument("--no-spanning", action="store_true", help="det_vlm: skip page-spanning table reconstruction")
+    parser.add_argument("--no-double-pass", action="store_true", help="det_vlm: skip dual-provider pass on scans")
+    parser.add_argument("--no-arithmetic", action="store_true", help="det_vlm: skip arithmetic-invariant guard")
+    parser.add_argument("--prompt", default=None, help="det_vlm: custom base prompt (overrides default)")
+    parser.add_argument("--prompt-file", default=None, help="det_vlm: read custom base prompt from a file")
     return parser.parse_args(argv)
 
 
