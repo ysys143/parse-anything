@@ -35,8 +35,10 @@ LOW_QUALITY_SENTINEL = "IMAGE_TOO_LOW_QUALITY"
 SCAN_PROMPT = (
     "First judge whether this scanned page is legible enough to transcribe reliably. If it "
     "is too low-resolution or blurry to read the characters with certainty, reply with "
-    f"EXACTLY `{LOW_QUALITY_SENTINEL}` and nothing else. Otherwise transcribe the page into "
-    "clean GitHub-flavored Markdown. Output ONLY that."
+    f"EXACTLY `{LOW_QUALITY_SENTINEL}` and nothing else. Otherwise transcribe ONLY the text that "
+    "is actually printed, verbatim -- never invent or paraphrase. For a figure or chart, emit a "
+    "single placeholder line `[figure]` and do NOT describe, interpret, or invent an image URL. "
+    "Output ONLY clean GitHub-flavored Markdown."
 )
 
 
