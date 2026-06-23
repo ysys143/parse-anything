@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .deterministic import page_text
+from .deterministic import number_tokens, page_text
 from .render import render_page_png
 from .signals import document_signals
 from .triage import PageSignals, Route, TriagePolicy, decide_route
@@ -60,6 +60,7 @@ def run_document(
     prompt: str = DEFAULT_PROMPT,
     policy: TriagePolicy = TriagePolicy(),
     signals: Sequence[PageSignals] | None = None,
+    oracle_min_value: float = 1000.0,
 ) -> DocumentResult:
     sigs = list(signals) if signals is not None else document_signals(pdf_path)
     outcomes: list[PageOutcome] = []
@@ -80,6 +81,13 @@ def run_document(
             try:
                 markdown = transcribe_image(render_page_png(pdf_path, i), prompt, api_key=api_key, client=vlm_client)
                 used_vlm = True
+                if route == Route.ORACLE_VLM:
+                    # born-digital value oracle: flag any VLM number absent from the text
+                    # layer (F8). Flagged numbers escalate per R-B3; they are not trusted.
+                    from .oracle import fabrication_flags
+
+                    source = [t.value for t in number_tokens(pdf_path, i, min_value=oracle_min_value)]
+                    flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=oracle_min_value))
             except VlmError as exc:
                 markdown, used_vlm = page_text(pdf_path, i), False
                 flags.append(str(exc))
