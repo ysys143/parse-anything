@@ -20,7 +20,7 @@ def _two_page_pdf(path) -> str:
 def _result() -> DocumentResult:
     return DocumentResult(
         (
-            PageOutcome(0, "oracle_vlm", True, "# Table\n\n| a | 1 |", 10.0, ("unsourced_number:9999999",)),
+            PageOutcome(0, "table_vlm", True, "# Table\n\n| a | 1 |", 10.0, ("unsourced_number:9999999",)),
             PageOutcome(1, "deterministic", False, "plain text page", 1.0, ()),
         )
     )

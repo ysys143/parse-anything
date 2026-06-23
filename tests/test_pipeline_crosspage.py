@@ -46,12 +46,12 @@ def test_different_columns_not_continuation(tmp_path):
 
 def test_continuation_groups_merges_matching_table_pages(tmp_path):
     pdf = _make_pdf(tmp_path / "cont.pdf", page2_cols=[72, 180, 300, 420])
-    assert continuation_groups(pdf, [Route.ORACLE_VLM, Route.ORACLE_VLM]) == [[0, 1]]
+    assert continuation_groups(pdf, [Route.TABLE_VLM, Route.TABLE_VLM]) == [[0, 1]]
 
 
 def test_continuation_groups_keeps_separate_tables_apart(tmp_path):
     pdf = _make_pdf(tmp_path / "sep.pdf", page2_cols=[110, 270])
-    assert continuation_groups(pdf, [Route.ORACLE_VLM, Route.ORACLE_VLM]) == [[0], [1]]
+    assert continuation_groups(pdf, [Route.TABLE_VLM, Route.TABLE_VLM]) == [[0], [1]]
 
 
 def test_continuation_groups_does_not_merge_non_table_routes(tmp_path):

@@ -9,7 +9,7 @@ from odl_vl.pipeline.run import DocumentResult, PageOutcome
 def _result() -> DocumentResult:
     return DocumentResult(
         (
-            PageOutcome(0, "oracle_vlm", True, "# Page 0\n\n| a | 1 |", 12.0, ("spanning_table:0-1",)),
+            PageOutcome(0, "table_vlm", True, "# Page 0\n\n| a | 1 |", 12.0, ("spanning_table:0-1",)),
             PageOutcome(1, "folded", False, "", 0.0, ("folded_into:0",)),
             PageOutcome(2, "deterministic", False, "plain text page", 1.0, ()),
         )
@@ -40,4 +40,4 @@ def test_ledger_jsonl_has_one_row_per_page(tmp_path):
     write_outputs(_result(), tmp_path)
     rows = [json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text().splitlines()]
     assert len(rows) == 3
-    assert rows[0]["route"] == "oracle_vlm" and rows[0]["used_vlm"] is True
+    assert rows[0]["route"] == "table_vlm" and rows[0]["used_vlm"] is True

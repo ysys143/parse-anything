@@ -7,7 +7,7 @@ from odl_vl.pipeline.scorecard import PageGold, score_document
 def _result() -> DocumentResult:
     return DocumentResult(
         (
-            PageOutcome(0, "oracle_vlm", True, "totals 1,234,567 and 89", 10.0, ("unsourced_number:9999999",)),
+            PageOutcome(0, "table_vlm", True, "totals 1,234,567 and 89", 10.0, ("unsourced_number:9999999",)),
             PageOutcome(1, "deterministic", False, "plain prose", 1.0, ()),
         )
     )
@@ -21,7 +21,7 @@ def test_numeric_recall_counts_expected_numbers_present():
 
 
 def test_routing_accuracy_compares_expected_route():
-    golden = [PageGold(0, expected_route="oracle_vlm"), PageGold(1, expected_route="scan_vlm")]
+    golden = [PageGold(0, expected_route="table_vlm"), PageGold(1, expected_route="scan_vlm")]
     sc = score_document(golden, _result())
     assert sc["routing_accuracy"] == 0.5  # page 0 matches, page 1 (deterministic vs scan) does not
 

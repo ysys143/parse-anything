@@ -109,9 +109,9 @@
 ## F13. 복잡 벡터 그림 오라우팅 (실제 코퍼스, → §3.4)
 
 - **방법:** 신경과학 논문(Latimer_kdPCA.pdf) p20 — 다중 패널 플롯(위상도 12개·색상 조건·축라벨) + 그림 캡션 + 본문. 파이프라인에 실투입.
-- **결과:** `image_count=0`(벡터 그래픽이라 raster 이미지 객체 없음), `table_rows=4`(플롯 격자·축 눈금이 표로 오인) → **oracle_vlm으로 오라우팅**. 이러면 oracle 숫자게이트가 *축 눈금 숫자*를 데이터 값으로 취급하는 무의미 검증. `figure_vlm` 경로(이미지 객체 기반)는 안 켜짐.
+- **결과:** `image_count=0`(벡터 그래픽이라 raster 이미지 객체 없음), `table_rows=4`(플롯 격자·축 눈금이 표로 오인) → **table_vlm으로 오라우팅**. 이러면 oracle 숫자게이트가 *축 눈금 숫자*를 데이터 값으로 취급하는 무의미 검증. `figure_vlm` 경로(이미지 객체 기반)는 안 켜짐.
 - **판별 신호:** path 객체 수 — 그림 페이지 **585/270** vs 텍스트 페이지 **5~13**.
-- **결론:** triage에 **벡터-그림 탐지**(`vector_paths` + `figure_caption`) 추가, figure-caption AND heavy-path → figure_vlm을 표 규칙보다 우선. 표 오라우팅 방지를 위해 캡션 AND 게이트(본문이 단지 "Fig. 12" 인용 시 path 적어 미발동). 적용 후 Latimer 24p = deterministic 9 / figure_vlm 9 / oracle_vlm 6.
+- **결론:** triage에 **벡터-그림 탐지**(`vector_paths` + `figure_caption`) 추가, figure-caption AND heavy-path → figure_vlm을 표 규칙보다 우선. 표 오라우팅 방지를 위해 캡션 AND 게이트(본문이 단지 "Fig. 12" 인용 시 path 적어 미발동). 적용 후 Latimer 24p = deterministic 9 / figure_vlm 9 / table_vlm 6.
 
 ---
 

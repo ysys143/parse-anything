@@ -49,7 +49,7 @@ def test_table_route_uses_injected_vlm_client(tmp_path):
         api_key="k",
         signals=[PageSignals(text_chars=100, table_rows=29, image_count=0)],
     )
-    assert res.pages[0].route == "oracle_vlm"
+    assert res.pages[0].route == "table_vlm"
     assert res.pages[0].used_vlm is True
     assert res.pages[0].markdown == "# From VLM"
 

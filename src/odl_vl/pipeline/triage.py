@@ -15,7 +15,7 @@ from enum import Enum
 
 class Route(str, Enum):
     DETERMINISTIC = "deterministic"  # born-digital prose: text layer only, skip VLM
-    ORACLE_VLM = "oracle_vlm"        # born-digital table: VLM structure + source-value oracle
+    TABLE_VLM = "table_vlm"        # born-digital table: VLM structure + source-value oracle
     FIGURE_VLM = "figure_vlm"        # figures/charts: VLM for semantic description
     SCAN_VLM = "scan_vlm"            # no text layer: OCR/VLM + full guard stack
 
@@ -55,7 +55,7 @@ def decide_route(signals: PageSignals, policy: TriagePolicy = TriagePolicy()) ->
     if signals.figure_caption and heavy_vector:
         return Route.FIGURE_VLM
     if signals.table_rows >= policy.min_table_rows:
-        return Route.ORACLE_VLM
+        return Route.TABLE_VLM
     if signals.image_count > 0 or heavy_vector:
         return Route.FIGURE_VLM
     return Route.DETERMINISTIC

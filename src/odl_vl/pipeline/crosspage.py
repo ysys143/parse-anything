@@ -114,7 +114,7 @@ def continues(pdf_path: str, page_a: int, page_b: int, *, policy: ContinuationPo
 
 def continuation_groups(pdf_path: str, routes: Sequence[Route], *, policy: ContinuationPolicy = ContinuationPolicy()) -> list[list[int]]:
     """Group consecutive page indices whose tables continue across the boundary. Only table
-    pages (Route.ORACLE_VLM) can join a group; singletons stay singletons. A multi-page group
+    pages (Route.TABLE_VLM) can join a group; singletons stay singletons. A multi-page group
     is sent as one multi-image VLM request and merged into the start page (§4)."""
     n = len(routes)
     groups: list[list[int]] = []
@@ -123,8 +123,8 @@ def continuation_groups(pdf_path: str, routes: Sequence[Route], *, policy: Conti
         group = [i]
         while (
             i + 1 < n
-            and routes[i] == Route.ORACLE_VLM
-            and routes[i + 1] == Route.ORACLE_VLM
+            and routes[i] == Route.TABLE_VLM
+            and routes[i + 1] == Route.TABLE_VLM
             and continues(pdf_path, i, i + 1, policy=policy).is_continuation
         ):
             group.append(i + 1)

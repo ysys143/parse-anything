@@ -105,7 +105,7 @@ def _process_single(pdf_path, i, route, *, vlm_client, api_key, prompt, oracle_m
                 # legibility gate fired: abstain rather than emit a fabricated transcription
                 markdown = ""
                 flags.append("illegible_low_quality")
-            elif route == Route.ORACLE_VLM:
+            elif route == Route.TABLE_VLM:
                 flags.extend(_oracle_flags(pdf_path, [i], markdown, oracle_min_value))
         except VlmError as exc:
             markdown, used = page_text(pdf_path, i), False
@@ -128,7 +128,7 @@ def _process_group(pdf_path, group, *, vlm_client, api_key, oracle_min_value) ->
         markdown = "\n\n".join(page_text(pdf_path, j) for j in group)
         used = False
         flags.append(str(exc))
-    start = PageOutcome(group[0], Route.ORACLE_VLM.value, used, markdown, (time.monotonic() - t0) * 1000.0, tuple(flags))
+    start = PageOutcome(group[0], Route.TABLE_VLM.value, used, markdown, (time.monotonic() - t0) * 1000.0, tuple(flags))
     folded = [PageOutcome(j, "folded", False, "", 0.0, (f"folded_into:{group[0]}",)) for j in group[1:]]
     return [start, *folded]
 
