@@ -53,6 +53,26 @@ def test_cli_offline_writes_markdown_and_ledger(tmp_path):
     assert "pages=2" in summary and "mode=deterministic" in summary
 
 
+def test_cli_skips_already_processed_unless_forced(tmp_path):
+    cli = _load_cli()
+    pdf = _text_pdf(tmp_path / "doc.pdf")
+    out = tmp_path / "out"
+    args = ["--pdf", pdf, "--out", str(out), "--no-vlm", "--source-id", "s"]
+
+    r1 = cli.Runtime(environ={}, stdout=io.StringIO())
+    assert cli.run_cli(args, r1, env_file=tmp_path / "absent.env") == 0  # first run processes
+    assert "mode=deterministic" in r1.stdout.getvalue()
+
+    r2 = cli.Runtime(environ={}, stdout=io.StringIO())
+    assert cli.run_cli(args, r2, env_file=tmp_path / "absent.env") == 0  # same input -> skipped
+    assert "skipped:" in r2.stdout.getvalue()
+
+    r3 = cli.Runtime(environ={}, stdout=io.StringIO())
+    assert cli.run_cli([*args, "--force"], r3, env_file=tmp_path / "absent.env") == 0  # --force reprocesses
+    out3 = r3.stdout.getvalue()
+    assert "skipped:" not in out3 and "mode=deterministic" in out3
+
+
 def test_cli_use_profile_skips_diagnosis(tmp_path):
     from odl_vl.pipeline.profile import SourceProfile, save_profile
 

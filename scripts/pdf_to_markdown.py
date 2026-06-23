@@ -10,6 +10,7 @@ pages route deterministically and VLM-needed pages degrade to the text layer wit
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -34,6 +35,24 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     args = _parse_args(argv)
     settings = load_settings(env_file=env_file or _REPO / ".env", environ=runtime.environ)
     key = settings.gemini_api_key
+    out_root = args.out or (runtime.environ or {}).get("ODL_VL_OUT_DIR") or "out"
+
+    # Reprocessing prevention: the document_id is a content hash, so an existing document.json with
+    # the same hash means this exact input was already processed. Skip (no re-run) unless --force.
+    if not args.force:
+        from odl_vl.pipeline.docmeta import document_id
+
+        short_id, full_hash = document_id(args.pdf)
+        existing = Path(out_root) / args.source_id / short_id / "document.json"
+        if existing.exists():
+            try:
+                prev_hash = json.loads(existing.read_text(encoding="utf-8")).get("content_sha256")
+            except (OSError, ValueError):
+                prev_hash = None
+            if prev_hash == full_hash:
+                print(f"skipped: {args.source_id}/{short_id} already processed (--force to reprocess)", file=runtime.stdout)
+                return 0
+
     profiles_dir = args.profiles_dir or (runtime.environ or {}).get("ODL_VL_PROFILE_DIR") or "profiles"
     mode = None
     if args.use_profile:
@@ -70,8 +89,7 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
         args.pdf, mode=mode, vlm_client=client, api_key=key or "",
         source_id=args.source_id, external_id=args.external_id, ingested_from=args.ingested_from,
     )
-    # Output root: --out > $ODL_VL_OUT_DIR > ./out. Per-document dir = <root>/<source_id>/<document_id>.
-    out_root = args.out or (runtime.environ or {}).get("ODL_VL_OUT_DIR") or "out"
+    # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
     write_outputs(result, out_dir, pdf_path=args.pdf)
     if args.review:
@@ -103,6 +121,7 @@ def _parse_args(argv):
     parser.add_argument("--source-id", default="default", help="source (document stream) id; output groups by it")
     parser.add_argument("--external-id", default=None, help="caller-provided document id, preserved in metadata")
     parser.add_argument("--ingested-from", default=None, help="provenance origin (path/url); defaults to --pdf")
+    parser.add_argument("--force", action="store_true", help="reprocess even if this content hash was already produced")
     parser.add_argument("--review", action="store_true", help="also write review.html (source vs extraction + flags)")
     return parser.parse_args(argv)
 
