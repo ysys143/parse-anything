@@ -116,4 +116,5 @@ The fixture work is metadata-only in this slice. The initial eight fixture famil
 
 ## Design Notes
 
+- [External orchestrator architecture](docs/orchestrator-architecture.md): module map, data flow, input contract, provider modes, contract verification, and security posture.
 - [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md): PaddleOCR official API + Gemini direct 개발 결정, provider key 계약, fixture/golden-set 전략.
