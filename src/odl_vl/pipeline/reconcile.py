@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 
 _HTML_TABLE = re.compile(r"<table.*?</table>", re.DOTALL | re.IGNORECASE)
-_SEP_ROW = re.compile(r"^\s*\|?\s*:?-{2,}")
 
 
 def table_blocks(md: str) -> list[str]:
@@ -32,11 +31,13 @@ def table_blocks(md: str) -> list[str]:
     return blocks
 
 
-def _cells(block: str) -> int:
-    return len(re.findall(r"<t[dh]", block, re.IGNORECASE)) + sum(
-        len(ln.strip().strip("|").split("|")) for ln in block.split("\n")
-        if ln.strip().startswith("|") and not _SEP_ROW.match(ln)
-    )
+def _content_size(block: str) -> int:
+    """Format-agnostic completeness proxy: actual cell-TEXT length (HTML tags + markdown table
+    punctuation stripped). A full 16-col HTML table beats a flat-markdown table that compressed
+    or dropped columns -- unlike raw cell counts, which mis-rank colspan/rowspan HTML."""
+    text = re.sub(r"<[^>]+>", " ", block)        # strip HTML tags
+    text = re.sub(r"[|:\-]+", " ", text)          # strip markdown table punctuation
+    return len(re.sub(r"\s+", "", text))
 
 
 def merge_outputs(primary_md: str, secondary_md: str) -> str:
@@ -49,7 +50,7 @@ def merge_outputs(primary_md: str, secondary_md: str) -> str:
         return primary_md
     out = primary_md
     for i, pt in enumerate(p_tables):
-        if i < len(s_tables) and _cells(s_tables[i]) >= _cells(pt):
+        if i < len(s_tables) and _content_size(s_tables[i]) >= _content_size(pt):
             out = out.replace(pt, s_tables[i], 1)
     for st in s_tables[len(p_tables):]:   # secondary tables the primary dropped -> APPEND
         out = (out + "\n\n" + st) if out.strip() else st
