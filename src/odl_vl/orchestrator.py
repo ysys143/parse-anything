@@ -121,7 +121,7 @@ def _process_page(page: PageInput, config: OrchestratorConfig, ledger_lock: thre
     # route_reason is a router decision string or a "route_error:<code>" built from an
     # opaque provider error code (e.g. gemini_http_429); neither carries a credential,
     # so it is recorded verbatim. Keeping secrets out of artifacts is enforced at the
-    # source (opaque error codes) and by the .gitignore + scanner gate, not here.
+    # source (opaque error codes) and by the .gitignore on run artifacts, not here.
     event = LedgerEvent(
         provider=provider_label,
         model_alias=model_alias,

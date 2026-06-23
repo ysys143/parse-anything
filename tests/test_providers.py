@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import urllib.error
@@ -58,6 +59,32 @@ def test_safe_transport_catches_read_timeout():
 
     # When / Then: a timeout is turned into status 0 instead of escaping the wrapper.
     assert transport.send(request).status_code == 0
+
+
+def test_safe_transport_catches_malformed_url_exceptions_without_leaking_url():
+    # Given inner transports that raise what urlopen raises for a malformed URL:
+    # http.client.InvalidURL (an HTTPException, NOT a URLError subclass) and ValueError.
+    # Their messages embed the offending URL -- including a signed URL's signature.
+    signature = "X-Amz-Signature=" + "TOPSECRETSIGNATUREVALUE"
+
+    @dataclass(slots=True)
+    class _InvalidUrlTransport:
+        def send(self, request: HttpRequest) -> HttpResponse:
+            raise http.client.InvalidURL(f"URL can't contain control characters. '/job?{signature}'")
+
+    @dataclass(slots=True)
+    class _ValueErrorTransport:
+        def send(self, request: HttpRequest) -> HttpResponse:
+            raise ValueError(f"unknown url type: 'ht!tp://host/r?{signature}'")
+
+    request = HttpRequest(method="GET", url="https://provider.example/r", headers={})
+
+    # When / Then: both collapse to status 0, so no URL-bearing exception text escapes
+    # the wrapper into the caller's error string.
+    for inner in (_InvalidUrlTransport(), _ValueErrorTransport()):
+        response = SafeTransport(inner).send(request)
+        assert response.status_code == 0
+        assert response.body == b""
 
 
 def test_build_gemini_generate_content_request_uses_safe_default_model():

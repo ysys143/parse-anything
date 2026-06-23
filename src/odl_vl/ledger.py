@@ -22,8 +22,8 @@ def event_payload(event: LedgerEvent) -> dict[str, Any]:
     # Faithful serialization: the ledger records exactly what the orchestrator and
     # providers supply. Keeping secrets out of the ledger is a source responsibility
     # (error codes are opaque and providers emit only non-secret metadata) backed by a
-    # .gitignore + pre-commit scanner gate -- not a runtime scrubbing pass that would
-    # also mangle benign long identifiers.
+    # .gitignore on the run artifacts -- not a runtime scrubbing pass that would also
+    # mangle benign long identifiers.
     payload: dict[str, Any] = {
         "provider": event.provider,
         "model_alias": event.model_alias,

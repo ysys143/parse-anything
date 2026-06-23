@@ -86,7 +86,7 @@ def test_dry_config_reports_presence_and_hosts_without_secret_values():
     assert "private/path" not in rendered
 
 
-def test_live_gemini_sends_minimal_prompt_and_redacts_response_body():
+def test_live_gemini_sends_minimal_prompt_and_does_not_print_response_body():
     # Given
     module = _load_smoke_module()
     output = io.StringIO()
@@ -219,7 +219,7 @@ def test_live_paddle_poll_http_error_ignores_done_body():
     assert "token=secret" not in rendered
 
 
-def test_live_http_error_prints_redacted_failure_without_traceback():
+def test_live_http_error_prints_opaque_failure_without_traceback():
     # Given
     module = _load_smoke_module()
     output = io.StringIO()

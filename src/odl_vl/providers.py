@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -127,9 +128,13 @@ class SafeTransport:
             except OSError:
                 body = b""
             return HttpResponse(status_code=error.code, body=body)
-        except (urllib.error.URLError, TimeoutError):
-            # TimeoutError (socket.timeout) is not a URLError subclass, so it must be
-            # caught explicitly or a read timeout would escape the wrapper.
+        except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ValueError):
+            # Collapse every transport-layer failure to status 0 so no URL-bearing
+            # exception string can escape into the caller's error text. TimeoutError
+            # (socket.timeout) is not a URLError subclass; http.client.InvalidURL and
+            # ValueError are raised by urlopen for a malformed URL (control chars, bad
+            # IPv6, unknown scheme) and their messages embed the offending URL --
+            # including a signed result URL's signature -- so they must be caught here.
             return HttpResponse(status_code=0, body=b"")
 
 
