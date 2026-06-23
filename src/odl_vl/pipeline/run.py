@@ -85,6 +85,7 @@ def run_document(
     ingested_from: str | None = None,
     options: Any | None = None,
     second_pass: Any | None = None,
+    primary_transcribe: Any | None = None,
 ) -> DocumentResult:
     """Run a document in a configured mode (no runtime routing). Delegates to assemble."""
     from .assemble import DetVlmOptions, assemble_document
@@ -92,5 +93,5 @@ def run_document(
     return assemble_document(
         pdf_path, mode=mode, vlm_client=vlm_client, api_key=api_key, odl_runner=odl_runner,
         source_id=source_id, external_id=external_id, ingested_from=ingested_from,
-        options=options or DetVlmOptions(), second_pass=second_pass,
+        options=options or DetVlmOptions(), second_pass=second_pass, primary_transcribe=primary_transcribe,
     )

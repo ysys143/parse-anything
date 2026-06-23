@@ -95,22 +95,24 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     options = DetVlmOptions(
         ground=not args.no_ground, spanning=not args.no_spanning,
         double_pass=not args.no_double_pass, arithmetic=not args.no_arithmetic, prompt=custom_prompt,
+        primary=args.primary,
     )
 
-    # R8.6 scan double-pass: PaddleOCR as the second provider (local-file upload) when configured.
-    second_pass = None
-    if mode == "det_vlm" and options.double_pass and settings.paddle_api_key and settings.paddle_base_url:
+    # PaddleOCR (local-file upload) as the scan double-pass second provider (R8.6) and/or the
+    # primary transcriber (R10 --primary paddle|combined), when configured.
+    paddle = None
+    if mode == "det_vlm" and settings.paddle_api_key and settings.paddle_base_url:
         from odl_vl.pipeline.paddle_vlm import make_transcriber
 
-        second_pass = make_transcriber(
-            safe_client(runtime), base_url=settings.paddle_base_url, token=settings.paddle_api_key,
-            model=settings.paddle_model or "PaddleOCR-VL-1.6",
-        )
+        paddle = make_transcriber(safe_client(runtime), base_url=settings.paddle_base_url,
+                                  token=settings.paddle_api_key, model=settings.paddle_model or "PaddleOCR-VL-1.6")
+    second_pass = paddle if options.double_pass else None
+    primary_transcribe = paddle if options.primary in ("paddle", "combined") else None
 
     result = run_document(
         args.pdf, mode=mode, vlm_client=client, api_key=key or "",
         source_id=args.source_id, external_id=args.external_id, ingested_from=args.ingested_from,
-        options=options, second_pass=second_pass,
+        options=options, second_pass=second_pass, primary_transcribe=primary_transcribe,
     )
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
@@ -151,6 +153,8 @@ def _parse_args(argv):
     parser.add_argument("--no-spanning", action="store_true", help="det_vlm: skip page-spanning table reconstruction")
     parser.add_argument("--no-double-pass", action="store_true", help="det_vlm: skip dual-provider pass on scans")
     parser.add_argument("--no-arithmetic", action="store_true", help="det_vlm: skip arithmetic-invariant guard")
+    parser.add_argument("--primary", choices=["gemini", "paddle", "combined"], default="gemini",
+                        help="det_vlm primary VLM: gemini (grounded), paddle (doc-specialised), or combined (reconcile both tables)")
     parser.add_argument("--prompt", default=None, help="det_vlm: custom base prompt (overrides default)")
     parser.add_argument("--prompt-file", default=None, help="det_vlm: read custom base prompt from a file")
     return parser.parse_args(argv)

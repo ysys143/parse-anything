@@ -33,6 +33,7 @@ class DetVlmOptions:
     arithmetic: bool = True    # R8.7 arithmetic-invariant guard on totals/subtotals
     prompt: str | None = None  # R8.4 custom base prompt (overrides DEFAULT/SCAN)
     input_quality_min: float = 50.0  # R8.8 Laplacian-variance blur threshold (per-domain tunable)
+    primary: str = "gemini"    # R10 primary VLM: "gemini" | "paddle" | "combined" (reconcile both)
 
 
 def _table_markdown(table: OdlTable) -> str:
@@ -90,6 +91,7 @@ def assemble_document(
     ingested_from: str | None = None,
     options: DetVlmOptions = DetVlmOptions(),
     second_pass: Any | None = None,
+    primary_transcribe: Any | None = None,
 ) -> DocumentResult:
     from .docmeta import build_meta
 
@@ -100,7 +102,7 @@ def assemble_document(
 
     # det_vlm reconstructs page-spanning tables in ONE multi-image VLM request (R8.2, F9); other
     # pages (and all of deterministic mode) are processed singly.
-    spanning = mode == "det_vlm" and options.spanning and vlm_client is not None
+    spanning = mode == "det_vlm" and options.spanning and options.primary in ("gemini", "combined") and vlm_client is not None
     groups = _spanning_groups(odl_doc, n) if spanning else [[i] for i in range(n)]
 
     outcomes: list[PageOutcome] = []
@@ -116,7 +118,8 @@ def assemble_document(
         elif mode == "det_vlm":
             outcomes.append(
                 _assemble_det_vlm(pdf_path, i, odl_page, pypdf_texts[i], recurring, vlm_client=vlm_client,
-                                  api_key=api_key, options=options, second_pass=second_pass)
+                                  api_key=api_key, options=options, second_pass=second_pass,
+                                  primary_transcribe=primary_transcribe)
             )
         else:
             raise ValueError(f"unknown mode: {mode!r}")
@@ -198,6 +201,7 @@ def _assemble_deterministic(page_index: int, odl_page: OdlPage, pypdf_text: str,
 def _assemble_det_vlm(
     pdf_path: str, page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str], *, vlm_client: Any, api_key: str,
     options: DetVlmOptions = DetVlmOptions(), second_pass: Any | None = None,
+    primary_transcribe: Any | None = None,
 ) -> PageOutcome:
     """Accuracy mode: VLM is the visual-structure source; pypdfium2 is the value authority
     (value oracle gates VLM numbers -- R-M1); ODL structure is available for rich output (R2).
@@ -211,7 +215,8 @@ def _assemble_det_vlm(
     from .run import DEFAULT_PROMPT, LOW_QUALITY_SENTINEL, SCAN_PROMPT
     from .vlm import VlmError, transcribe_image
 
-    if vlm_client is None:
+    needs_gemini = options.primary in ("gemini", "combined")
+    if needs_gemini and vlm_client is None:
         det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
         return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*det.flags, "vlm_unavailable"))
 
@@ -229,13 +234,29 @@ def _assemble_det_vlm(
         prompt = build_grounded_prompt(base_prompt, pypdf_text, odl_page)
     else:
         prompt = base_prompt
-    try:
-        markdown = transcribe_image(png, prompt, api_key=api_key, client=vlm_client)
-    except VlmError as exc:
-        det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
-        return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, str(exc)))
-    if markdown.strip() == LOW_QUALITY_SENTINEL:
-        return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
+    if options.primary == "paddle":  # R10 doc-specialised VLM as the primary transcriber (no prompt/sentinel)
+        if primary_transcribe is None:
+            det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
+            return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, "paddle_unavailable"))
+        try:
+            markdown = primary_transcribe(png)
+        except Exception:
+            det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
+            return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, "paddle_failed"))
+    else:  # gemini (grounded) -- optionally reconciled with paddle tables (combined)
+        try:
+            markdown = transcribe_image(png, prompt, api_key=api_key, client=vlm_client)
+        except VlmError as exc:
+            det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
+            return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, str(exc)))
+        if markdown.strip() == LOW_QUALITY_SENTINEL:
+            return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
+        if options.primary == "combined" and primary_transcribe is not None:  # R10 gemini text + paddle tables
+            from .reconcile import merge_outputs
+            try:
+                markdown = merge_outputs(markdown, primary_transcribe(png))
+            except Exception:
+                flags.append("combine_secondary_unavailable")
     source = [t.value for t in number_tokens(pdf_path, page_index, min_value=1000)]
     flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000))
     # Scans have NO value oracle (no text layer), so a second independent provider pass is the
