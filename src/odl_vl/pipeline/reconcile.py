@@ -1,10 +1,11 @@
 """Two-provider output reconciliation for det_vlm combined mode (R10).
 
 Benchmark evidence (hard cases): a doc-specialised VLM (PaddleOCR-VL) reconstructs large/complex
-tables far more completely than a general flash-lite VLM, which often abandons them. So combined
-mode keeps the (grounded) Gemini text as the spine and uses Paddle's tables where they are at
-least as complete -- REPLACING a Gemini table or APPENDING a table Gemini dropped entirely (the
-gap the earlier replace-only reconcile missed).
+tables far more completely than a general flash-lite VLM, which often abandons them -- but Paddle
+is also stronger at dense TEXT, so a fixed "Gemini text + Paddle tables" merge dropped combined
+below Paddle-alone (F22). Combined is now SYMMETRIC best-of-both: the text spine comes from
+whichever output has the richer non-table text, and each table takes the more-complete of the two
+-- REPLACING or APPENDING. Neither provider's strength is discarded by a fixed role.
 """
 from __future__ import annotations
 
@@ -40,18 +41,27 @@ def _content_size(block: str) -> int:
     return len(re.sub(r"\s+", "", text))
 
 
+def _text_size(md: str) -> int:
+    """Out-of-table text content size (so a big table doesn't decide the text spine)."""
+    body = md
+    for t in table_blocks(md):
+        body = body.replace(t, " ", 1)
+    return len(re.sub(r"<[^>]+>|[|:\-]|\s", "", body))
+
+
 def merge_outputs(primary_md: str, secondary_md: str) -> str:
-    """Primary (Gemini, grounded) text spine; secondary (Paddle) tables when more complete --
-    replacing the matching primary table or appending one the primary omitted."""
-    primary_md = primary_md or ""
-    p_tables = table_blocks(primary_md)
-    s_tables = table_blocks(secondary_md or "")
-    if not s_tables:
-        return primary_md
-    out = primary_md
-    for i, pt in enumerate(p_tables):
-        if i < len(s_tables) and _content_size(s_tables[i]) >= _content_size(pt):
-            out = out.replace(pt, s_tables[i], 1)
-    for st in s_tables[len(p_tables):]:   # secondary tables the primary dropped -> APPEND
-        out = (out + "\n\n" + st) if out.strip() else st
+    """Best-of-both: the spine (text) comes from whichever output has the richer non-table text,
+    and each table takes the more-complete of the two -- replacing or appending. Symmetric, so a
+    strong provider's text is never lost by forcing the weaker one as the spine (F22 fix: combined
+    text used to drop below Paddle because Gemini was always the spine)."""
+    primary_md, secondary_md = primary_md or "", secondary_md or ""
+    spine, other = ((primary_md, secondary_md) if _text_size(primary_md) >= _text_size(secondary_md)
+                    else (secondary_md, primary_md))
+    s_tables, o_tables = table_blocks(spine), table_blocks(other)
+    out = spine
+    for i, st in enumerate(s_tables):
+        if i < len(o_tables) and _content_size(o_tables[i]) > _content_size(st):
+            out = out.replace(st, o_tables[i], 1)
+    for ot in o_tables[len(s_tables):]:   # tables the spine dropped -> APPEND
+        out = (out + "\n\n" + ot) if out.strip() else ot
     return out

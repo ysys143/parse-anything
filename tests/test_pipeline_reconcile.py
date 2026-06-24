@@ -23,5 +23,15 @@ def test_merge_appends_table_primary_dropped():
     assert "| x | y |" in out and "Title" in out                   # paddle table appended, not lost
 
 
-def test_merge_noop_when_secondary_has_no_table():
-    assert merge_outputs("just text", "also just text") == "just text"
+def test_merge_noop_when_neither_has_table():
+    # no tables anywhere -> the richer-text spine, returned unchanged
+    assert merge_outputs("just text here", "x") == "just text here"
+
+
+def test_merge_uses_richer_text_as_spine_not_fixed_role():
+    # F22 fix: when the secondary (e.g. Paddle) has the richer text, it becomes the spine -- the
+    # primary's weaker text is NOT forced as the spine (which dropped combined below Paddle-alone).
+    weak = "# A\n\nshort"
+    rich = "# B\n\nmuch longer narrative content with many more words than the other side has"
+    out = merge_outputs(weak, rich)
+    assert "much longer narrative content" in out and "short" not in out
