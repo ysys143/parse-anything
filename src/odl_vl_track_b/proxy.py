@@ -38,13 +38,20 @@ DEFAULT_PROMPT = (
     "is not visible. Output only the Markdown, no preamble."
 )
 
-# A page hook: (pdf_path, page_index_0based, page_png, base_prompt) -> (prompt, extra_flags).
-# B-3 uses the identity hook; B-4 injects grounding here. Keeps the HTTP loop variant-agnostic.
+# Pre-hook: (pdf_path, page_index_0based, page_png, base_prompt) -> (prompt, extra_flags). Runs
+# before transcription. B-3 uses the identity hook; B-4 injects deterministic grounding here.
 PageHook = Callable[[str, int, bytes, str], tuple[str, tuple[str, ...]]]
+# Post-hook: (pdf_path, page_index_0based, markdown) -> extra_flags. Runs after transcription.
+# B-4 runs the value-oracle / arithmetic guards here. Keeps the HTTP loop variant-agnostic.
+PostHook = Callable[[str, int, str], tuple[str, ...]]
 
 
 def _identity_hook(_pdf_path: str, _page_index: int, _png: bytes, prompt: str) -> tuple[str, tuple[str, ...]]:
     return prompt, ()
+
+
+def _no_post(_pdf_path: str, _page_index: int, _markdown: str) -> tuple[str, ...]:
+    return ()
 
 
 def parse_multipart(body: bytes, boundary: str) -> dict[str, bytes]:
@@ -113,11 +120,13 @@ def convert_pdf(
     transcriber: Transcriber,
     prompt: str = DEFAULT_PROMPT,
     hook: PageHook = _identity_hook,
+    post_hook: PostHook = _no_post,
 ) -> dict[str, Any]:
     """Render + transcribe the requested pages and build the DoclingDocument envelope.
 
-    Pure function over bytes (no HTTP) so it is unit-testable with a fake transcriber. The ``hook``
-    is the B-3/B-4 seam: B-4 passes a grounding hook that rewrites the prompt per page.
+    Pure function over bytes (no HTTP) so it is unit-testable with a fake transcriber. ``hook``
+    (pre) and ``post_hook`` (post) are the B-3/B-4 seams: B-4 passes a grounding pre-hook that
+    rewrites the prompt and a guard post-hook that flags unsourced numbers in the transcription.
     """
     started = time.monotonic()
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
@@ -136,6 +145,7 @@ def convert_pdf(
                 png = render_page_png(pdf_path, idx)
                 page_prompt, flags = hook(pdf_path, idx, png, prompt)
                 markdown = transcriber(png, page_prompt)
+                flags = flags + post_hook(pdf_path, idx, markdown)
                 width, height = _page_size(pdf_path, idx)
                 blocks.append(PageBlock(page_no, width, height, markdown, flags=flags))
             except Exception as exc:  # never drop a page silently
@@ -158,6 +168,7 @@ class _Handler(BaseHTTPRequestHandler):
     transcriber: Transcriber  # set on the handler class by serve()
     prompt: str = DEFAULT_PROMPT
     hook: PageHook = staticmethod(_identity_hook)
+    post_hook: PostHook = staticmethod(_no_post)
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - base signature name
         logger.info("%s - %s", self.address_string(), format % args)
@@ -196,7 +207,8 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             result = convert_pdf(
                 fields["files"], page_ranges_str,
-                transcriber=type(self).transcriber, prompt=type(self).prompt, hook=type(self).hook,
+                transcriber=type(self).transcriber, prompt=type(self).prompt,
+                hook=type(self).hook, post_hook=type(self).post_hook,
             )
             self._send_json(result)
         except Exception as exc:
@@ -212,12 +224,14 @@ def serve(
     transcriber: Transcriber,
     prompt: str = DEFAULT_PROMPT,
     hook: PageHook = _identity_hook,
+    post_hook: PostHook = _no_post,
 ) -> ThreadingHTTPServer:
-    """Build (not start) a server bound to host:port with the given transcriber/hook."""
+    """Build (not start) a server bound to host:port with the given transcriber/hook(s)."""
     handler = type("_BoundHandler", (_Handler,), {})
     handler.transcriber = staticmethod(transcriber)  # type: ignore[assignment]
     handler.prompt = prompt
     handler.hook = staticmethod(hook)  # type: ignore[assignment]
+    handler.post_hook = staticmethod(post_hook)  # type: ignore[assignment]
     return ThreadingHTTPServer((host, port), handler)
 
 
@@ -226,12 +240,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5002)
     parser.add_argument("--provider", choices=["gemini", "paddle"], default="gemini")
+    parser.add_argument("--det-aug", action="store_true",
+                        help="B-4: deterministic grounding + value-oracle guards (re-parse in proxy)")
+    parser.add_argument("--no-odl-grounding", action="store_true",
+                        help="B-4: skip ODL structure outline, ground on pypdfium2 text only")
+    parser.add_argument("--min-value", type=float, default=None,
+                        help="B-4: only guard numbers >= this value (page numbers / small counts are noise)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     transcriber = transcriber_from_env(args.provider)
-    server = serve(host=args.host, port=args.port, transcriber=transcriber)
-    logger.info("B-3 proxy on http://%s:%d (provider=%s)", args.host, args.port, args.provider)
+    if args.det_aug:
+        from odl_vl_track_b.det_aug import make_grounding_hook, make_guard_hook
+        server = serve(
+            host=args.host, port=args.port, transcriber=transcriber,
+            hook=make_grounding_hook(use_odl=not args.no_odl_grounding),
+            post_hook=make_guard_hook(min_value=args.min_value),
+        )
+        variant = "B-4 (det-aug)"
+    else:
+        server = serve(host=args.host, port=args.port, transcriber=transcriber)
+        variant = "B-3 (pure VLM)"
+    logger.info("%s proxy on http://%s:%d (provider=%s)", variant, args.host, args.port, args.provider)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
