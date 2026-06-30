@@ -62,6 +62,10 @@ def _snap_past_table(lines: list[str], idx: int) -> int:
     return j
 
 
+def _norm_cap(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
 def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     """Insert ODL figure image references into a page's VLM Markdown at reading-order position.
 
@@ -79,8 +83,16 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     top_refs: list[str] = []
     end_refs: list[str] = []
     placed: list[tuple[int, str]] = []
+    joined = " ".join(norm).lower()
     for fig in sorted(figs, key=lambda f: -f["bbox"][3]):  # top of page first (larger y = higher)
         ref = f'![{fig.get("label") or "figure"}]({fig["file"]})'
+        cap, label = (fig.get("caption") or "").strip(), (fig.get("label") or "").strip()
+        # Recover a caption the transcription dropped: a full-page figure leaves a page the VLM types as
+        # empty and ODL files under type=caption (so it never reaches the body). Emit the figure's bound
+        # caption ONLY when it really is one (starts with the figure label, so a mis-bound body paragraph
+        # is skipped) AND it is not already in this page's text (so a transcribed caption is not doubled).
+        if cap and label and _norm_cap(cap).startswith(_norm_cap(label)) and _norm_cap(cap)[:40] not in joined:
+            ref += "\n\n" + cap
         if fig.get("description"):  # a VLM text description of the chart, as a blockquote under the image
             ref += "\n\n> " + " ".join(fig["description"].split())
         if not blocks:
