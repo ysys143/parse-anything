@@ -38,6 +38,22 @@ def _is_list_not_heading(text: str, kind: str) -> bool:
     return len(t) > 120 and ends_sentence
 
 
+_CITE_RE = re.compile(r"https?://|www\.|doi\.org|\bdoi:\s|\bPMID\b", re.IGNORECASE)
+_SENTENCE_BOUNDARY = re.compile(r"[.!?。][\s　]")
+
+
+def _is_prose_not_heading(text: str) -> bool:
+    """A NUMBERED line that is really citation/prose, not a heading: after stripping the numbering
+    marker it carries a URL/DOI/PMID, or has >=2 internal sentence boundaries (a heading is one short
+    phrase). Stops a reference entry ('13. Author A, Author B. Title. Journal. Year') or a citation
+    fragment ('(1):2757. https://doi.org/...') and a volume:page tail ('(3):213-224.') from being
+    leveled as a section. Document-agnostic."""
+    rest = _NUM_PREFIX.sub("", text.strip(), count=1).lstrip()
+    if not rest or rest[0] == ":":  # 'marker:digits' -> a volume:page citation, not a heading
+        return True
+    return bool(_CITE_RE.search(rest)) or len(_SENTENCE_BOUNDARY.findall(rest)) >= 2
+
+
 def _authority_level(text: str, page: int, authority: HeadingAuthority, printed_to_pdf: dict[str, int]) -> int | None:
     """Match a body heading to an authority entry (resolved to its PDF page) by normalized title."""
     norm = _normalize(text)
@@ -72,7 +88,8 @@ def _assign_heading_levels(blocks: list[dict], authority: HeadingAuthority | Non
     for b in blocks:
         text = b.get("text", "")
         nc = classify_numbering(text)
-        if nc is None or _is_list_not_heading(text, b.get("type", "")) or _CAPTION_LEAD.match(text):
+        if nc is None or _is_list_not_heading(text, b.get("type", "")) or _is_prose_not_heading(text) \
+                or _CAPTION_LEAD.match(text):
             continue
         cand[b["id"]] = nc
         meta[b["id"]] = (text, b.get("page"))
@@ -179,7 +196,8 @@ def apply_heading_levels(markdown: str, page_headings: list[tuple[str, int]] | N
                 lines[i] = body                 # strip the VLM's #
             continue
         nc = classify_numbering(body)
-        if nc is None or body.rstrip()[-1:] in _TERMINATORS or len(body) > 120:  # not a heading line
+        if nc is None or body.rstrip()[-1:] in _TERMINATORS or len(body) > 120 \
+                or _is_prose_not_heading(body):  # not a heading line (sentence / reference / citation)
             continue
         cand.append((i, nc, body))
 
