@@ -197,6 +197,24 @@ PDF/HWP 슬라이스에선 B(특히 B1 무Java 주입)가 컴팩트하게 이기
 
 > "어느 변종이 이긴다"가 아니라 "무엇에 강하냐"가 다르다. 도메인별 정량 비교(§7 스코어카드)와 재파싱 중복 비용(§5 C 정당화) 측정이 다음 단계.
 
+### 스코어카드 실측 (oracle/golden 기반, `scripts/track_b_scorecard.py`)
+
+라벨 골든셋이 없어 **born-digital은 pypdfium2 텍스트 레이어를 값 oracle**(F8)로, **스캔은 원본 숫자 골든셋**(`--golden`)으로 채점. 지표: number recall(누락), precision(환각/OCR 오류), 표 보존. 동일 콘텐츠(16행×7열 밀집 표, 93개 숫자, 병합 헤더, 6pt)를 born-digital과 스캔(텍스트 레이어 제거)으로 비교:
+
+| 변종 | born-digital recall | 스캔 recall | 스캔 precision | 스캔 표 |
+|---|---|---|---|---|
+| A (det_vlm) | 0.989 | 0.989 | 0.989 | O |
+| B-1 (VlmPipeline) | 0.989 | 0.989 | 0.989 | O |
+| B-2 (picture-desc) | 0.989 | **0.0** | — | **X** |
+| B-3 (gemini) | 0.989 | 0.989 | 0.989 | O |
+| B-3 (paddle) | 0.989 | 0.989 | 0.989 | O |
+
+**발견 (spike-plan 핵심 질문에 데이터 답)**:
+- **born-digital은 변종 무관**: 텍스트 레이어가 정답이라 5변종 전부 동률(0.989). "VLM을 어디서 부르나"가 무의미 — 결정론만으로 충분하다는 가설(measurement-findings) 재확인.
+- **스캔이 변별점**: 텍스트 레이어가 없으면 "VLM이 페이지 전체를 전사하나"가 결정적. A/B-1/B-3(전체 전사)는 0.989 강건, **B-2(그림 설명만)는 0.0 붕괴** — OCR 소스가 없고 picture-description VLM은 텍스트를 전사하지 않음(이 환경 OCR 엔진 PP-OCRv6 고장으로 B-2 OCR 경로 측정 불가; 단 구조적으로 그림설명만으론 스캔 텍스트를 못 뽑음).
+- **VLM 변종 간(A/B-1/B-3)은 아직 동률**: 깨끗한 렌더 스캔에선 Gemini/Paddle 모두 정확. 더 깊은 변별은 저해상도·노이즈·회전 스캔(VLM OCR 품질차) 또는 셀 위치 정확도(TEDS, 골든 라벨 필요)에서 날 것.
+- number recall의 한계: VLM이 `1,234`↔`1,243`을 *틀린 셀*에 넣어도 둘 다 골든에 있어 recall은 안 떨어진다 → 셀 단위 정확도는 별도 지표(TEDS) 필요.
+
 ## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
 - 연동 옵션/무Java 주입: `docs/odl-engine-rust-python-integration.md`
