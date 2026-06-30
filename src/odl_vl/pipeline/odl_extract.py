@@ -30,8 +30,9 @@ _IMAGE_TYPES = frozenset({"image", "figure", "picture"})
 # Original printed table/figure numbers ("Table 5-2", "표 5-2", "Figure 12", "그림 3", "表146-5",
 # "図147-2"). Includes JP/zh 表/図/圖/图 and the fullwidth/Unicode dashes those documents use.
 _LABEL_NUM = r"\d+(?:[-.‐-―−－]\d+)*"
-_TABLE_LABEL_RE = re.compile(rf"(?i)\b(?:table|tab\.?|表|표)\s*({_LABEL_NUM})")
-_FIGURE_LABEL_RE = re.compile(rf"(?i)\b(?:figure|figs?\.?|fig\.?|図|圖|图|그림)\s*({_LABEL_NUM})")
+# group(1) = the label WITHOUT any leading bracket ("<표 5-1>" / "〈図3〉" are common in KO/JP docs).
+_TABLE_LABEL_RE = re.compile(rf"(?i)[<〈【［(]?\s*((?:table|tab\.?|表|표)\s*{_LABEL_NUM})")
+_FIGURE_LABEL_RE = re.compile(rf"(?i)[<〈【［(]?\s*((?:figure|figs?\.?|fig\.?|図|圖|图|그림)\s*{_LABEL_NUM})")
 
 
 class OdlError(RuntimeError):
@@ -199,7 +200,7 @@ def extract_caption_labels(markdown: str) -> tuple[dict[str, str], ...]:
         for kind, regex in (("table", _TABLE_LABEL_RE), ("figure", _FIGURE_LABEL_RE)):
             match = regex.match(stripped)
             if match:
-                out.append({"kind": kind, "label": match.group(0).strip(), "caption": stripped})
+                out.append({"kind": kind, "label": match.group(1).strip(), "caption": stripped})
                 break
     return tuple(out)
 
@@ -231,19 +232,19 @@ def _label_tables_figures(
         if lk is not None and lk in by_table_id:  # explicit ODL caption->table link (preferred)
             k = by_table_id[lk]
             tables[k] = replace(tables[k], caption=cap.text, caption_id=cap.element_id,
-                                label=tables[k].label or (tlabel.group(0).strip() if tlabel else None))
+                                label=tables[k].label or (tlabel.group(1).strip() if tlabel else None))
         elif lk is not None and lk in by_image_id:  # explicit caption->figure link
             k = by_image_id[lk]
             images[k] = replace(images[k], caption=cap.text, caption_id=cap.element_id, kind="figure",
-                                label=images[k].label or (flabel.group(0).strip() if flabel else None))
+                                label=images[k].label or (flabel.group(1).strip() if flabel else None))
         elif tlabel and tables:  # fallback: nearest table to a "Table N" caption
             k = min(range(len(tables)), key=lambda j: _dist(cap.bbox, tables[j].bbox))
             if tables[k].label is None:
-                tables[k] = replace(tables[k], label=tlabel.group(0).strip(), caption=cap.text, caption_id=cap.element_id)
+                tables[k] = replace(tables[k], label=tlabel.group(1).strip(), caption=cap.text, caption_id=cap.element_id)
         elif flabel and images:  # fallback: nearest figure to a "Figure N" caption
             k = min(range(len(images)), key=lambda j: _dist(cap.bbox, images[j].bbox))
             if images[k].label is None:
-                images[k] = replace(images[k], label=flabel.group(0).strip(), caption=cap.text, caption_id=cap.element_id, kind="figure")
+                images[k] = replace(images[k], label=flabel.group(1).strip(), caption=cap.text, caption_id=cap.element_id, kind="figure")
     return tuple(tables), tuple(images)
 
 

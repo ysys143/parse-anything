@@ -12,6 +12,12 @@ def test_label_regex_handles_japanese_marks_and_unicode_dashes():
     assert not _TABLE_LABEL_RE.match("本表146は参照")     # an inline mention is not a caption
 
 
+def test_label_regex_strips_leading_brackets_korean_japanese():
+    assert _TABLE_LABEL_RE.match("<표 5-1> 의료 동향").group(1) == "표 5-1"   # angle-bracketed KO form
+    assert _FIGURE_LABEL_RE.match("〈図3〉 推移").group(1) == "図3"
+    assert _TABLE_LABEL_RE.match("表146−5 世界").group(1) == "表146−5"        # bare form unaffected
+
+
 def test_parse_binds_table_caption_from_a_heading_block():
     # ODL frequently tags a table title as a "heading", not a "caption" node; it must still bind.
     data = {
