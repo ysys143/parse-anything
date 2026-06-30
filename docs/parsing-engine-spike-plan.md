@@ -252,7 +252,9 @@ F22(OmniDocBench, 표 TEDS)는 "이미지에선 PaddleOCR-VL ≫ Gemini, 광폭 
 2. **recall이 TEDS를 못 잼**: number_recall은 숫자가 *어디든* 등장하면 hit — 표 구조/셀 위치/완전성을 못 본다(F22가 측정한 축).
 3. **천단위 구분자 미정규화**: Paddle은 천단위를 점(`5.405`)으로 표기하는데 스코어카드가 콤마만 제거해 소수로 오인 → **Paddle의 완벽한 광폭 표 전사를 recall 0.127로 오채점**. 정규화 수정 후 **1.0**.
 
-**교정 후 결과(광폭 이미지 표)**: A / B-1 / B-3(gemini) / B-3(paddle) 모두 **recall 1.0, tbl_cells 414** — number-recall 축에선 Paddle = Gemini(둘 다 완전 전사). **recall은 광폭 표에서 우열을 못 가린다.** F22의 Paddle 우위는 **표 TEDS(셀 구조 정확도)** 척도에서 나오며, 우리 oracle/golden 카드는 `tbl_cells`(완전성=양)까지만 — **셀 구조 정확도(TEDS)는 여전히 미측정**(골든 표 구조 라벨 + apted 필요, §8).
+4. **골든셋 불완전**: 자작 golden_wide.txt가 데이터 값만 담고 SKU 식별자·제목 숫자를 빠뜨려, VLM이 정확히 읽은 `SKU-1000`의 `1000`을 환각으로 오카운트 → precision이 0.937에 가짜로 묶임. **born-digital 원본 텍스트 레이어를 완전 oracle**로 쓰면(자작 골든 대신) precision 1.0, fabricated 0.
+
+**교정 후 결과(광폭 이미지 표, 완전 oracle)**: A / B-1 / B-3(gemini) / B-3(paddle) 모두 **recall 1.0, precision 1.0, fabricated 0, tbl_cells 414** — 4변종 전부 완벽 전사. number-recall/precision 축에선 Paddle = Gemini, **값 정확도로는 광폭 표에서 우열을 못 가린다.** F22의 Paddle 우위는 **표 TEDS(셀 구조 정확도)** 척도에서 나오며, 우리 oracle 카드는 `tbl_cells`(완전성=양)까지만 — **셀 구조 정확도(TEDS)는 여전히 미측정**(골든 표 구조 라벨 + apted 필요, §8).
 
 > **교훈(중요)**: 합성 PDF + 단일 지표로 provider 우열을 단정하지 말 것. Paddle을 세 번 연속 과소평가한 건 전부 우리 측정 쪽 결함이었다. provider 비교는 ① 각자 최적 설정 ② 형식차(천단위 점/콤마, HTML/MD 표) 정규화 ③ 적합한 지표(값=recall/precision, 구조=TEDS)가 전제되어야 한다. 신뢰할 결론은 실제 코퍼스(OmniDocBench 류) + TEDS에서 온다(F22).
 
