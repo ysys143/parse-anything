@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\necho \"=== worktree-c 존재? ===\"\nls -d worktree-c 2>/dev/null && echo \"WORKTREE-C EXISTS\"\necho \"=== tests/ 만 수집 (실제 에러 확인) ===\"\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -15",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -3",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -114,20 +114,20 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 52,
-      "lastAccessed": 1782820925882,
+      "accessCount": 55,
+      "lastAccessed": 1782821546731,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/odl_extract.py",
+      "accessCount": 22,
+      "lastAccessed": 1782822178726,
       "type": "file"
     },
     {
       "path": "src/odl_vl/pipeline/assemble.py",
       "accessCount": 18,
       "lastAccessed": 1782807866403,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/odl_extract.py",
-      "accessCount": 16,
-      "lastAccessed": 1782811493892,
       "type": "file"
     },
     {
@@ -162,8 +162,8 @@
     },
     {
       "path": "src/odl_vl/pipeline/reflow.py",
-      "accessCount": 6,
-      "lastAccessed": 1782807335386,
+      "accessCount": 7,
+      "lastAccessed": 1782821447782,
       "type": "file"
     },
     {
@@ -227,6 +227,12 @@
       "type": "file"
     },
     {
+      "path": "src/odl_vl/providers.py",
+      "accessCount": 3,
+      "lastAccessed": 1782822048382,
+      "type": "file"
+    },
+    {
       "path": ".local/workspace/teardown/teardown/5dde0b598b8d951b/document.md",
       "accessCount": 2,
       "lastAccessed": 1782799100713,
@@ -254,12 +260,6 @@
       "path": "src/odl_vl/pipeline/vlm.py",
       "accessCount": 2,
       "lastAccessed": 1782811818140,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/providers.py",
-      "accessCount": 2,
-      "lastAccessed": 1782811818338,
       "type": "file"
     },
     {
