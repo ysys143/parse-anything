@@ -161,6 +161,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     page_headings: dict[int, list[tuple[str, int]]] = {}
     figs_by_page: dict[int, list[dict]] = {}
     blocks_by_page: dict[int, tuple] = {}
+    chart_noise: dict[int, set[str]] = {}
     if result.meta is not None and result.structure is not None:
         labels_by_page = {p.page_index: p.labels for p in result.pages}
         pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
@@ -179,12 +180,21 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                     meta["figures"].append(fid)
                     meta["content"].append(fid)
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
-        if describe_figure is not None:  # R14: bind caption + VLM text description for each cropped chart
-            _describe_vector_figures(out, figures, blocks, describe_figure)
+        _bind_vector_captions(figures, blocks)  # 図N label + caption text (both modes)
+        if describe_figure is not None:  # R14: VLM text description per cropped vector chart (det_vlm)
+            for f in figures:
+                if f.get("source") == "vector" and f.get("file"):
+                    try:
+                        desc = describe_figure((out / f["file"]).read_bytes(), f.get("caption"))
+                    except Exception:  # noqa: BLE001 -- a failed description must not abort the run
+                        desc = ""
+                    if desc and desc.strip():
+                        f["description"] = desc.strip()
         for f in figures:
-            if f.get("file") and f.get("bbox"):  # only ODL figures with a real crop can be inlined
+            if f.get("file") and f.get("bbox"):  # only figures with a real crop can be inlined
                 figs_by_page.setdefault(f["page"] - 1, []).append(f)
         blocks_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
+        chart_noise = _chart_internal_noise(figures, blocks_by_page)  # legend/axis/year labels to drop
         if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
             page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
             authority = resolve_heading_authority(pdf_path, result.structure)
@@ -206,7 +216,10 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         if p.route == "folded":
             results.append(record)
             continue
-        markdown = reflow_markdown(p.markdown)  # join column-wrapped lines into flowing paragraphs
+        markdown = p.markdown
+        if p.page_index in chart_noise:  # drop chart-internal legend/axis/year labels (visual-only noise)
+            markdown = _suppress_chart_noise(markdown, chart_noise[p.page_index])
+        markdown = reflow_markdown(markdown)  # join column-wrapped lines into flowing paragraphs
         if headings:  # detect heading lines IN the markdown; section level-map refines where it matches
             markdown = apply_heading_levels(markdown, page_headings.get(p.page_index, []))
         if inline_figures and p.page_index in figs_by_page:
@@ -246,35 +259,54 @@ def _table_md(cells: list[list[dict]]) -> str:
 
 
 _PLACEHOLDER_RE = re.compile(r"(?im)^[ \t]*\[(?:figure|image)\][ \t]*\n?")  # bare VLM figure placeholder
-_FIG_CAPTION_RE = re.compile(r"(?i)^\s*((?:図|圖|图|그림|figure|fig\.?)\s*[0-9０-９][0-9０-９.\-－]*)")
+_FIG_CAPTION_RE = re.compile(r"(?i)[<〈【［(]?\s*((?:図|圖|图|그림|figure|fig\.?|表|table)\s*[0-9０-９][-.‐-―−－0-9０-９]*)")
+# Inside a chart's bbox, KEEP the caption + source/note lines; everything else (legend, axis ticks,
+# year labels) is visual-only and meaningless to a text model -- suppress it from the prose.
+_KEEP_IN_FIG = re.compile(r"(?i)^\s*(?:[<〈【［(]?\s*(?:図|圖|图|表|table|figure|fig|그림|표)\s*\d"
+                          r"|備考|注記|資料|出典|出所|出處|source|note)")
 
 
-def _describe_vector_figures(out: Path, figures: list[dict], blocks: list[dict],
-                             describe_figure: "Callable[[bytes, str | None], str]") -> None:
-    """Bind each vector figure to the nearest figure-caption block and attach a VLM text description
-    of the cropped chart, so a chart becomes image + searchable prose instead of a dead ``[figure]``."""
+def _bind_vector_captions(figures: list[dict], blocks: list[dict]) -> None:
+    """Attach each vector figure's nearest 図N caption block (label + caption text) by bbox proximity."""
     caps_by_page: dict[int, list[dict]] = {}
     for b in blocks:
         if _FIG_CAPTION_RE.match(b.get("text", "")):
             caps_by_page.setdefault(b["page"], []).append(b)
     for f in figures:
-        if f.get("source") != "vector" or not f.get("file"):
+        if f.get("source") != "vector" or not f.get("bbox"):
             continue
         fx0, _fy0, fx1, fy1 = f["bbox"]
-        caps = caps_by_page.get(f["page"], [])
-        if caps:  # the caption whose horizontal span overlaps the figure and is vertically closest
-            overlap = [b for b in caps if not (b["bbox"][2] < fx0 or b["bbox"][0] > fx1)] or caps
-            cap = min(overlap, key=lambda b: abs((b["bbox"][1] + b["bbox"][3]) / 2 - fy1))
-            m = _FIG_CAPTION_RE.match(cap["text"])
-            f["label"] = m.group(1) if m else None
-            f["caption"] = cap["text"]
-            f["caption_id"] = cap.get("id")
-        try:
-            desc = describe_figure((out / f["file"]).read_bytes(), f.get("caption"))
-        except Exception:  # noqa: BLE001 -- a failed description must not abort the run
-            desc = ""
-        if desc and desc.strip():
-            f["description"] = desc.strip()
+        page_caps = caps_by_page.get(f["page"], [])
+        caps = [b for b in page_caps if not (b["bbox"][2] < fx0 or b["bbox"][0] > fx1)] or page_caps
+        if not caps:
+            continue
+        cap = min(caps, key=lambda b: abs((b["bbox"][1] + b["bbox"][3]) / 2 - fy1))
+        m = _FIG_CAPTION_RE.match(cap["text"])
+        f["label"] = m.group(1) if m else None
+        f["caption"] = cap["text"]
+        f["caption_id"] = cap.get("id")
+
+
+def _chart_internal_noise(figures: list[dict], blocks_by_page: dict[int, tuple]) -> dict[int, set[str]]:
+    """Per page, ODL paragraph texts inside a vector chart's bbox that are NOT its caption/source line
+    -- legend, axis ticks, year labels: visual-only noise to drop from prose so a text/embedding model
+    sees the figure's DESCRIPTION instead of a scatter of disconnected numbers and country names."""
+    out: dict[int, set[str]] = {}
+    for f in figures:
+        if f.get("source") != "vector" or not f.get("bbox"):
+            continue
+        pi = f["page"] - 1
+        x0, y0, x1, y1 = f["bbox"]
+        for p in blocks_by_page.get(pi, ()):
+            cx, cy = (p.bbox[0] + p.bbox[2]) / 2, (p.bbox[1] + p.bbox[3]) / 2
+            if x0 <= cx <= x1 and y0 <= cy <= y1 and not _KEEP_IN_FIG.match(p.text):
+                out.setdefault(pi, set()).add(" ".join(p.text.split()))
+    return out
+
+
+def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:
+    """Drop standalone lines whose (whitespace-normalised) text is a chart-internal noise label."""
+    return "\n".join(ln for ln in markdown.split("\n") if " ".join(ln.split()) not in noise)
 
 
 def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale: float = 2.0) -> None:
