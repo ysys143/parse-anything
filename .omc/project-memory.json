@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m compileall -q src/odl_vl/pipeline/sections.py src/odl_vl/pipeline/output.py && echo COMPILE_OK\nuv run --no-sync python -m pytest -q 2>&1 | tail -4",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\necho \"=== worktree-c 존재? ===\"\nls -d worktree-c 2>/dev/null && echo \"WORKTREE-C EXISTS\"\necho \"=== tests/ 만 수집 (실제 에러 확인) ===\"\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -15",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -114,8 +114,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 35,
-      "lastAccessed": 1782810572043,
+      "accessCount": 52,
+      "lastAccessed": 1782820925882,
       "type": "file"
     },
     {
@@ -126,8 +126,14 @@
     },
     {
       "path": "src/odl_vl/pipeline/odl_extract.py",
+      "accessCount": 16,
+      "lastAccessed": 1782811493892,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/run.py",
       "accessCount": 15,
-      "lastAccessed": 1782808152247,
+      "lastAccessed": 1782811839340,
       "type": "file"
     },
     {
@@ -137,15 +143,9 @@
       "type": "file"
     },
     {
-      "path": "src/odl_vl/pipeline/run.py",
-      "accessCount": 14,
-      "lastAccessed": 1782807900971,
-      "type": "file"
-    },
-    {
       "path": "scripts/pdf_to_markdown.py",
-      "accessCount": 11,
-      "lastAccessed": 1782809515160,
+      "accessCount": 14,
+      "lastAccessed": 1782820958301,
       "type": "file"
     },
     {
@@ -173,6 +173,12 @@
       "type": "file"
     },
     {
+      "path": "src/odl_vl/pipeline/guards.py",
+      "accessCount": 5,
+      "lastAccessed": 1782811812149,
+      "type": "file"
+    },
+    {
       "path": "tests/test_pipeline_reflow.py",
       "accessCount": 4,
       "lastAccessed": 1782799861273,
@@ -188,6 +194,12 @@
       "path": "src/odl_vl/pipeline/grounding.py",
       "accessCount": 4,
       "lastAccessed": 1782807865849,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/render.py",
+      "accessCount": 4,
+      "lastAccessed": 1782811806668,
       "type": "file"
     },
     {
@@ -215,18 +227,6 @@
       "type": "file"
     },
     {
-      "path": "src/odl_vl/pipeline/render.py",
-      "accessCount": 3,
-      "lastAccessed": 1782807877131,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/guards.py",
-      "accessCount": 3,
-      "lastAccessed": 1782807885950,
-      "type": "file"
-    },
-    {
       "path": ".local/workspace/teardown/teardown/5dde0b598b8d951b/document.md",
       "accessCount": 2,
       "lastAccessed": 1782799100713,
@@ -236,6 +236,30 @@
       "path": "README.md",
       "accessCount": 2,
       "lastAccessed": 1782807882494,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/golden_schema.json",
+      "accessCount": 2,
+      "lastAccessed": 1782811494084,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/oracle.py",
+      "accessCount": 2,
+      "lastAccessed": 1782811799227,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/vlm.py",
+      "accessCount": 2,
+      "lastAccessed": 1782811818140,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/providers.py",
+      "accessCount": 2,
+      "lastAccessed": 1782811818338,
       "type": "file"
     },
     {
@@ -323,12 +347,6 @@
       "type": "file"
     },
     {
-      "path": "src/odl_vl/providers.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807838128,
-      "type": "file"
-    },
-    {
       "path": "requirements.txt",
       "accessCount": 1,
       "lastAccessed": 1782807839547,
@@ -344,12 +362,6 @@
       "path": "docs/orchestrator-architecture.md",
       "accessCount": 1,
       "lastAccessed": 1782807841772,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/vlm.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807844379,
       "type": "file"
     },
     {
@@ -389,21 +401,9 @@
       "type": "file"
     },
     {
-      "path": "src/odl_vl/pipeline/oracle.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807868473,
-      "type": "file"
-    },
-    {
       "path": ".omo/plans/odl-vl-external-orchestrator.md",
       "accessCount": 1,
       "lastAccessed": 1782807872973,
-      "type": "file"
-    },
-    {
-      "path": "tests/fixtures/golden_schema.json",
-      "accessCount": 1,
-      "lastAccessed": 1782807874192,
       "type": "file"
     },
     {
