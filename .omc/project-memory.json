@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nrm -rf .local/workspace/csnl-full 2>/dev/null\necho \"=== Trash의 csnl-full 사본들 (어느 게 최신인지) ===\"\nls -dlt ~/.Trash/csnl-full* 2>&1 | head\necho \"=== 읽기순서 재정렬: 단위테스트 상태 ===\"\nuv run --no-sync python -m pytest tests/test_pipeline_reading_order.py -q 2>&1 | tail -1\necho \"=== git 최근 커밋 (이번 세션 수정들) ===\"\ngit log --oneline -7 | grep -iE \"fix|feat\" ",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -119,15 +119,15 @@
       "type": "file"
     },
     {
-      "path": "src/odl_vl/pipeline/odl_extract.py",
-      "accessCount": 26,
-      "lastAccessed": 1782822587519,
+      "path": "src/odl_vl/pipeline/assemble.py",
+      "accessCount": 28,
+      "lastAccessed": 1782840443231,
       "type": "file"
     },
     {
-      "path": "src/odl_vl/pipeline/assemble.py",
-      "accessCount": 19,
-      "lastAccessed": 1782829540080,
+      "path": "src/odl_vl/pipeline/odl_extract.py",
+      "accessCount": 27,
+      "lastAccessed": 1782840626637,
       "type": "file"
     },
     {
@@ -167,6 +167,12 @@
       "type": "file"
     },
     {
+      "path": "src/odl_vl/pipeline/grounding.py",
+      "accessCount": 6,
+      "lastAccessed": 1782840514318,
+      "type": "file"
+    },
+    {
       "path": "src/odl_vl/pipeline/deterministic.py",
       "accessCount": 5,
       "lastAccessed": 1782808270966,
@@ -188,12 +194,6 @@
       "path": "tests/test_pipeline_reflow.py",
       "accessCount": 4,
       "lastAccessed": 1782799861273,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/grounding.py",
-      "accessCount": 4,
-      "lastAccessed": 1782807865849,
       "type": "file"
     },
     {
