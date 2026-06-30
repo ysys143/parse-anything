@@ -283,13 +283,17 @@ F22(OmniDocBench, 표 TEDS)는 "이미지에선 PaddleOCR-VL ≫ Gemini, 광폭 
 | ODL no-vlm (결정론만) | **0.000** | 0.000 |
 | 직접 API: gemini | 0.571 | 0.248 |
 | 직접 API: **paddle** | **0.825** | 0.636 |
-| B-1 (VlmPipeline, gemini) | 0.789 | 0.634 |
+| B-1 (docling VlmPipeline, gemini) | 0.789 | 0.634 |
+| B-1 (docling VlmPipeline, paddle) | 0.782 | 0.506 |
 | B-3 (proxy, gemini) | 0.582 | 0.309 |
 | B-3 (proxy, paddle) | 0.766 | 0.636 |
 
+> B-1 paddle은 Paddle official API(job 방식)가 OpenAI 비호환이라 직접 안 되고, **OpenAI 호환 shim**(`paddle_openai_shim.py`: chat/completions ↔ Paddle job 변환)을 앞에 둬서 구현. provider가 로컬이라서가 아니라 *프로토콜 호환성*이 docling 사용 가능 여부를 가른다(Gemini는 OpenAI 호환 엔드포인트 제공 → 직접, Paddle official은 shim 필요).
+
 - **결정론(ODL no-vlm) = 0.0**: 이미지-only(텍스트레이어 0)엔 결정론이 무력 — **VLM이 필수**임을 베이스라인이 못박는다(=hybrid/VLM 정당화).
 - **직접 API에서 Paddle ≫ Gemini**(표 TEDS 0.825 vs 0.571): F22 재현, 표-중심 이미지엔 Paddle이 정답.
-- **ODL 경유의 득실이 provider별로 갈린다**: Paddle은 직접 0.825 → proxy 0.766으로 **소폭 손실**(우리 `docling_out`이 Paddle HTML 표를 일부 깎음). Gemini는 직접 0.571 → B-1(docling VlmPipeline) 0.789로 **향상**(docling이 Gemini 출력을 더 잘 구조화). → proxy 표 성형 개선 + provider별 경로 선택의 근거.
+- **[중요] docling 구조화 효과가 provider에 따라 정반대**: Gemini는 docling 경유로 **0.571→0.789(+0.22)** 향상(불완전한 표를 VlmPipeline이 보완), Paddle은 **0.825→0.782(−0.04)** 소폭 손실(이미 완전한 HTML 표를 재처리하며 일부 깎임). **최적 경로가 provider별로 다르다 — Paddle은 직접, Gemini는 docling 경유.**
+- 우리 proxy(B-3)는 직접/B-1보다 양쪽 다 약간 낮다(Gemini 0.582, Paddle 0.766) — `docling_out` 성형 개선 여지.
 
 ## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
