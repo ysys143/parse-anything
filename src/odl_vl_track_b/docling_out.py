@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Any
 
 BBox = dict[str, Any]
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _SEP_CHARS = set("-: |")
+# VLM providers differ: Gemini emits Markdown tables (| a | b |), Paddle emits HTML (<table>...).
+_HTML_TABLE_RE = re.compile(r"<table\b.*?</table>", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,8 +68,62 @@ def _split_table_row(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
+class _HtmlTableParser(HTMLParser):
+    """Collect ``<tr>/<td>/<th>`` text into a row-major grid (Paddle's HTML table output)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[list[str]] = []
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        t = tag.lower()
+        if t == "tr":
+            self._row = []
+        elif t in ("td", "th"):
+            self._cell = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        t = tag.lower()
+        if t in ("td", "th") and self._cell is not None and self._row is not None:
+            self._row.append("".join(self._cell).strip())
+            self._cell = None
+        elif t == "tr" and self._row is not None:
+            self.rows.append(self._row)
+            self._row = None
+
+
+def _parse_html_table(html: str) -> list[list[str]]:
+    parser = _HtmlTableParser()
+    parser.feed(html)
+    return [r for r in parser.rows if r]
+
+
 def parse_markdown_blocks(markdown: str) -> list[tuple[str, Any]]:
-    """Parse Markdown into ordered blocks: ('heading',(level,text)) | ('table',rows) | ('text',str).
+    """Parse mixed Markdown/HTML into ordered blocks.
+
+    HTML ``<table>`` spans (Paddle) are extracted first and become table blocks; the text between
+    them is parsed as Markdown (headings, ``|`` tables, paragraphs) by ``_parse_md_segment``.
+    """
+    blocks: list[tuple[str, Any]] = []
+    pos = 0
+    for match in _HTML_TABLE_RE.finditer(markdown):
+        blocks.extend(_parse_md_segment(markdown[pos:match.start()]))
+        rows = _parse_html_table(match.group(0))
+        if rows:
+            blocks.append(("table", rows))
+        pos = match.end()
+    blocks.extend(_parse_md_segment(markdown[pos:]))
+    return blocks
+
+
+def _parse_md_segment(markdown: str) -> list[tuple[str, Any]]:
+    """Parse a Markdown-only segment: ('heading',(level,text)) | ('table',rows) | ('text',str).
 
     A table is a run of lines that start with ``|``; its delimiter row is dropped. Consecutive
     non-blank non-heading lines coalesce into one paragraph.

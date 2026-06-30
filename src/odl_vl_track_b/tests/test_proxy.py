@@ -97,6 +97,25 @@ def test_markdown_table_becomes_structured_table() -> None:
     assert any(t["label"] == "section_header" for t in doc["texts"])  # heading preserved
 
 
+def test_html_table_becomes_structured_table() -> None:
+    # Paddle returns HTML tables, not Markdown -- must structure the same way.
+    md = (
+        "## Report\n\n"
+        "<table border=1><tr><td>Region</td><td>Q1</td></tr>"
+        "<tr><td>North</td><td>123</td></tr><tr><td>South</td><td>456</td></tr></table>\n\n"
+        "Notes here."
+    )
+    doc = build_docling_document([PageBlock(1, 600.0, 800.0, md)])
+    assert len(doc["tables"]) == 1
+    data = doc["tables"][0]["data"]
+    assert data["num_rows"] == 3 and data["num_cols"] == 2
+    cell_texts = {c["text"] for c in data["table_cells"]}
+    assert {"Region", "Q1", "North", "123", "South", "456"} <= cell_texts
+    # heading + trailing paragraph preserved around the HTML table
+    assert any(t["label"] == "section_header" for t in doc["texts"])
+    assert any("Notes here." in t["text"] for t in doc["texts"])
+
+
 def test_sanitize_str() -> None:
     assert sanitize_str("a\x00b") == "a�b"
     assert sanitize_str("clean") == "clean"
