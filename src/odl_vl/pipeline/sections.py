@@ -231,7 +231,7 @@ def _num_key(text: str) -> str:
 
 
 _DIGIT_RUN = re.compile(r"\d+")
-_PUNCT = re.compile(r"[^\w\s]")
+_PUNCT = re.compile(r"[\W_]+")  # punctuation, separators AND underscores (rule-glyph '____' variants)
 
 
 def _line_key(line: str) -> str:
@@ -267,6 +267,13 @@ def strip_page_furniture(markdowns: dict[int, str], page_labels: dict[int, str |
         line_counts.update(lines)
     running_heads = {k for k, c in head_counts.items() if c >= 2}
     running_lines = {k for k, c in line_counts.items() if c >= max(3, n // 3)}  # recurs on many pages
+    # split-header fragments: the VLM sometimes breaks one running header into two short lines, each
+    # below threshold ('PLOS BIOLOGY' + 'Corrective feedback…'). A repeated candidate whose key is a
+    # whole token-run inside a confirmed furniture key is the same header, split -> also furniture.
+    fragments = {k for k, c in line_counts.items()
+                 if c >= 2 and len(k) >= 10 and k not in running_lines
+                 and any(f" {k} " in f" {f} " for f in running_lines)}
+    running_lines |= fragments
     out: dict[int, str] = {}
     for idx, md in markdowns.items():
         label = page_labels.get(idx)

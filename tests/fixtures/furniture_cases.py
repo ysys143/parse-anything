@@ -34,6 +34,17 @@ def _variant_header(n: int) -> dict[int, str]:
             for i in range(n)}
 
 
+def _split_header(n: int) -> dict[int, str]:
+    # most pages carry the full one-line header; a few pages split it into two short lines that are
+    # each below threshold -- the containment merge must still strip both fragments.
+    out = {}
+    for i in range(n):
+        body = f"Distinct body sentence number {i} discussing topic {chr(65 + i)} at length."
+        head = "JOURNAL NAME | The Running Article Title" if i < n - 3 else "JOURNAL NAME\n\nThe Running Article Title"
+        out[i] = f"{body}\n\n{head}"
+    return out
+
+
 FURNITURE_CASES: list[FurnitureCase] = [
     # journal running footer (page number varies) + running header, varied body per page
     FurnitureCase("journal_header_footer", _journal(6),
@@ -49,6 +60,13 @@ FURNITURE_CASES: list[FurnitureCase] = [
     # the same running header transcribed with and without the | separator -> merged + removed
     FurnitureCase("running_header_transcription_variants", _variant_header(6),
                   removed=["JOURNAL"], kept=["Perceptual decisions", "Conclusions and directions"]),
+    # the running header split into two short below-threshold lines -> containment merge strips both
+    FurnitureCase("split_header_fragments", _split_header(12),
+                  removed=["JOURNAL NAME", "The Running Article Title"], kept=["Distinct body sentence number 0"]),
+    # the header rendered with an underscore rule glyph on some pages -> merges with the | variant
+    FurnitureCase("header_underscore_rule_variant",
+                  {i: f"Body line {chr(65 + i)} stands alone.\n\n" + ("JOURNAL | Title" if i % 2 else "JOURNAL ______ Title")
+                   for i in range(8)}, removed=["JOURNAL"], kept=["Body line A stands alone"]),
     # unique pages, nothing repeats -> nothing removed
     FurnitureCase("no_repetition", {0: "Alpha section content.", 1: "Beta section content.", 2: "Gamma section."},
                   kept=["Alpha section", "Beta section", "Gamma section"]),
