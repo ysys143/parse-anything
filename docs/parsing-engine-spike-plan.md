@@ -215,6 +215,23 @@ PDF/HWP 슬라이스에선 B(특히 B1 무Java 주입)가 컴팩트하게 이기
 - **VLM 변종 간(A/B-1/B-3)은 아직 동률**: 깨끗한 렌더 스캔에선 Gemini/Paddle 모두 정확. 더 깊은 변별은 저해상도·노이즈·회전 스캔(VLM OCR 품질차) 또는 셀 위치 정확도(TEDS, 골든 라벨 필요)에서 날 것.
 - number recall의 한계: VLM이 `1,234`↔`1,243`을 *틀린 셀*에 넣어도 둘 다 골든에 있어 recall은 안 떨어진다 → 셀 단위 정확도는 별도 지표(TEDS) 필요.
 
+#### 저품질 스캔 — 환각 안전성이 변별점 (저해상도+skew+노이즈+블러+JPEG q32)
+
+동일 콘텐츠를 심하게 열화시킨 스캔(텍스트 레이어 0)으로 4 VLM 변종 비교:
+
+| 변종 | recall | precision | fabricated | 동작 |
+|---|---|---|---|---|
+| A (det_vlm) | 0.011 | **1.0** | 0 | abstain — `![figure]`만, 전사 포기 |
+| B-1 (VlmPipeline) | 0.097 | 0.29 | 22 | 그럴듯한 표 환각 |
+| B-3 (gemini) | 0.097 | 0.22 | 32 | 원본과 무관한 표 통째 환각 |
+| B-3 (paddle) | 0.011 | 0.5 | 1 | 노이즈를 거대 숫자로 폭주(4171자 쓰레기) |
+
+**발견**:
+- **모든 변종이 붕괴**(recall ≤ 0.097): 저품질 스캔은 자동 처리의 한계 영역.
+- **환각 안전성이 갈린다**: A(det_vlm)는 스캔-품질 게이트로 **abstain**(precision 1.0, 환각 0) — 안전하지만 거의 무용. 순수 VLM(B-1/B-3)은 항상 전사를 시도해 **그럴듯한 환각을 다발 생성**(precision 0.22~0.29, fabricated 22~32) — 신뢰 불가. Paddle은 노이즈에 폭주.
+- **det aug guard의 사각**: B-4의 값-oracle guard는 born-digital 텍스트 레이어에 의존하는데 스캔엔 레이어가 없어 **스캔 환각은 guard로 못 막는다**. det_vlm의 우위는 guard가 아니라 "스캔이면 보수적으로 abstain"하는 프롬프트/품질-게이트 전략에서 온다.
+- **정책 결론**: 저품질 스캔 → **사람 검토(T-HUM) 필수**(processing-tiers 경계를 데이터로 입증). precision/fabricated가 이 영역의 핵심 변별 지표 — recall만으론 "안전한 무응답(A)"과 "위험한 환각(B)"을 구분 못 한다.
+
 ## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
 - 연동 옵션/무Java 주입: `docs/odl-engine-rust-python-integration.md`
