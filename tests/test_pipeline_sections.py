@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.sections import apply_heading_levels, build_sections, heading_levels
+from odl_vl.pipeline.sections import (
+    apply_heading_levels, build_sections, heading_levels, strip_page_furniture,
+)
 
 
 def _b(bid, order, text, *, page=1, kind="paragraph"):
@@ -54,13 +56,22 @@ def test_vlm_headed_table_figure_caption_is_de_headed():
     assert "# 表145-3 機能性ガラス" not in lines
 
 
-def test_running_header_chapter_deduped_but_subsection_recurs():
-    seen: set[str] = set()
-    p1 = apply_heading_levels("第1章 概要\n\n本文", seen=seen).split("\n")
-    p2 = apply_heading_levels("第1章 概要\n\nもっと本文", seen=seen).split("\n")
-    assert "# 第1章 概要" in p1                          # first chapter occurrence -> heading
-    assert "第1章 概要" in p2 and "# 第1章 概要" not in p2   # repeat (running header) de-headed
-    s2 = set()
-    apply_heading_levels("（１）現状\n\n本文", seen=s2)
-    again = apply_heading_levels("（１）現状\n\n別の本文", seen=s2).split("\n")
-    assert "### （１）現状" in again                      # rank-3 subsection recurs per section, NOT deduped
+def test_strip_page_furniture_removes_running_headers_and_pagenum_leak():
+    p0 = "# 第1章 概要\n\n## 第4節 課題\n\n本文A\n\n## 6 セメント産業\n\n128"
+    p1 = "# 第1章 概要\n\n## 第4節 課題\n\nもっと本文\n\n129"
+    out = strip_page_furniture({0: p0, 1: p1}, {0: "128", 1: "129"})
+    assert "第1章 概要" not in out[0] and "第4節 課題" not in out[0]   # running headers (on both pages) gone
+    assert "## 6 セメント産業" in out[0]                              # one-off section kept
+    assert "128" not in out[0].split("\n") and "129" not in out[1].split("\n")  # page-number leak gone
+
+
+def test_strip_page_furniture_matches_by_number_despite_text_variation():
+    p0 = "# 第1章 我が国製造業第４節 主要製造業の課題"   # VLM merged two running headers onto one line
+    p1 = "# 第1章 我が国製造業の特徴"                      # same header, different transcription
+    out = strip_page_furniture({0: p0, 1: p1}, {})
+    assert "第1章" not in out[0] and "第1章" not in out[1]   # keyed by the leading 第1章 token, both gone
+
+
+def test_strip_page_furniture_keeps_recurring_subsections():
+    out = strip_page_furniture({0: "### （１）現状\n\n本文", 1: "### （１）現状\n\n別の本文"}, {})
+    assert "### （１）現状" in out[0] and "### （１）現状" in out[1]   # rank-3 subsection recurs legitimately

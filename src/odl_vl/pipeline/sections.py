@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import difflib
 import re
+from collections import Counter
 
 from .numbering import classify_numbering
 from .outline import HeadingAuthority
@@ -128,16 +129,14 @@ def build_sections(blocks: list[dict], tables: list[dict], figures: list[dict],
 
 
 def apply_heading_levels(markdown: str, page_headings: list[tuple[str, int]] | None = None, *,
-                         max_level: int = 6, seen: set[str] | None = None) -> str:
+                         max_level: int = 6) -> str:
     """Set ``#``*level on heading lines detected DIRECTLY in the markdown (the rendered view), so a
     running-header chapter/section line (``第1章 …``) is leveled even when the structure layer's ODL
     block text differs from the VLM's. A line's level is its section level from ``page_headings`` when
     matched, else its own numbering-class rank. Table/figure captions the VLM marked as headings are
     de-headed (a caption never outranks a chapter); enumerated ①②③ item runs with no body between
-    are left as plain list items, not headings. Pass a persistent ``seen`` set across pages to
-    de-head a chapter/section title that repeats verbatim (a running header) after its first use --
-    subsection titles (現状/強み) legitimately recur per section, so only ranks 1-2 are deduped.
-    Line count is unchanged."""
+    are left as plain list items. Cross-page running-header de-duplication is a separate document-level
+    pass (``strip_page_furniture``). Line count is unchanged."""
     level_of = {_normalize(t): lvl for t, lvl in (page_headings or [])}
     lines = markdown.split("\n")
     cand: list[tuple[int, int, str]] = []  # (line index, numbering rank, body text)
@@ -162,12 +161,42 @@ def apply_heading_levels(markdown: str, page_headings: list[tuple[str, int]] | N
             demote |= {i0, i1}
 
     for i, rank, body in cand:
-        norm = _normalize(body)
-        repeated = seen is not None and rank <= 2 and norm in seen   # a running-header repeat
-        if i in demote or repeated:
-            lines[i] = body                     # de-head: enumerated item, or repeated running header
+        if i in demote:
+            lines[i] = body                     # enumerated list item -> plain
             continue
-        if seen is not None and rank <= 2:
-            seen.add(norm)
-        lines[i] = "#" * min(level_of.get(norm, rank), max_level) + " " + body
+        lines[i] = "#" * min(level_of.get(_normalize(body), rank), max_level) + " " + body
     return "\n".join(lines)
+
+
+_HEADING_LINE = re.compile(r"^(#{1,2}) +(.*)")  # only chapter(#)/section(##) -- subsections recur legitimately
+
+
+def _num_key(text: str) -> str:
+    """The leading numbering token (第1章 / 6 / Ⅰ) as a whitespace-free key. Keying on the NUMBER, not
+    the title, makes running-header detection robust to the VLM transcribing the same header
+    differently across pages -- or merging two of them onto one line (第1章…第4節…)."""
+    m = _NUM_PREFIX.match(text)
+    return re.sub(r"\s+", "", m.group(0)) if m else _normalize(text)
+
+
+def strip_page_furniture(markdowns: dict[int, str], page_labels: dict[int, str | None]) -> dict[int, str]:
+    """Drop page furniture the VLM transcribed as content: a chapter/section heading (``#``/``##``)
+    whose leading number recurs on >=2 pages is a running header, not a real boundary (it would
+    fabricate a chapter break on every page); a bare line equal to a page's printed number is a
+    footer leak. Both are removed -- the genuine hierarchy still lives in ``sections[]`` and in the
+    one-off section headings. Subsection/item headings (``###``+) are never touched (現状/強み recur)."""
+    counts: Counter[str] = Counter()
+    for md in markdowns.values():
+        on_page = {_num_key(m.group(2)) for ln in md.split("\n") if (m := _HEADING_LINE.match(ln))}
+        counts.update(on_page)
+    running = {k for k, c in counts.items() if c >= 2}
+    out: dict[int, str] = {}
+    for idx, md in markdowns.items():
+        label = page_labels.get(idx)
+        kept = [
+            ln for ln in md.split("\n")
+            if not ((m := _HEADING_LINE.match(ln)) and _num_key(m.group(2)) in running)
+            and not (label is not None and ln.strip() == label)
+        ]
+        out[idx] = re.sub(r"\n{3,}", "\n\n", "\n".join(kept))  # collapse the blanks a removed line leaves
+    return out

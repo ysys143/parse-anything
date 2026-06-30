@@ -20,7 +20,7 @@ from .outline import resolve_heading_authority
 from .pageno import extract_printed_page_numbers, printed_to_index
 from .reflow import reflow_markdown
 from .run import DocumentResult
-from .sections import apply_heading_levels, build_sections, heading_levels
+from .sections import apply_heading_levels, build_sections, heading_levels, strip_page_furniture
 from .structure import build_graph
 
 
@@ -148,8 +148,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                 page_headings.setdefault(b["page"] - 1, []).append((b["text"], lvl))
 
     results: list[dict] = []
-    doc_parts: list[str] = []
-    seen_headings: set[str] = set()  # de-dup chapter/section running headers repeated across pages
+    rendered: list[tuple[int, str]] = []     # (page_index, page-md filename) in document order
+    md_by_index: dict[int, str] = {}
     for p in result.pages:
         record = {"page_index": p.page_index, "route": p.route, "used_vlm": p.used_vlm, "flags": list(p.flags)}
         if p.route == "folded":
@@ -157,15 +157,22 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             continue
         markdown = reflow_markdown(p.markdown)  # join column-wrapped lines into flowing paragraphs
         if headings:  # detect heading lines IN the markdown; section level-map refines where it matches
-            markdown = apply_heading_levels(markdown, page_headings.get(p.page_index, []), seen=seen_headings)
+            markdown = apply_heading_levels(markdown, page_headings.get(p.page_index, []))
         if inline_figures and p.page_index in figs_by_page:
             markdown = interleave_figures(markdown, figs_by_page[p.page_index], blocks_by_page.get(p.page_index, ()))
         name = f"page-{p.page_index:03d}.md"
-        (pages_dir / name).write_text(markdown, encoding="utf-8")
+        md_by_index[p.page_index] = markdown
         record["markdown_file"] = f"pages/{name}"
         results.append(record)
-        doc_parts.append(markdown)
+        rendered.append((p.page_index, name))
 
+    if headings:  # document-level: drop running headers + printed-page-number leaks (page furniture)
+        md_by_index = strip_page_furniture(md_by_index, page_labels)
+
+    doc_parts: list[str] = []
+    for page_index, name in rendered:
+        (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")
+        doc_parts.append(md_by_index[page_index])
     (out / "document.md").write_text("\n\n---\n\n".join(doc_parts), encoding="utf-8")
     _write_jsonl(out / "ledger.jsonl", result.ledger())
     _write_jsonl(out / "results.jsonl", results)
