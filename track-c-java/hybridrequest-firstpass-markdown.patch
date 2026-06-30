@@ -1,0 +1,181 @@
+diff --git a/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/DoclingFastServerClient.java b/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/DoclingFastServerClient.java
+index d5afd29..d8c435e 100644
+--- a/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/DoclingFastServerClient.java
++++ b/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/DoclingFastServerClient.java
+@@ -176,6 +176,12 @@ public class DoclingFastServerClient implements HybridClient {
+             bodyBuilder.addFormDataPart("page_ranges", minPage + "-" + maxPage);
+         }
+ 
++        // Track C: attach ODL's 1st-pass deterministic Markdown so the backend can ground on it
++        // without re-parsing. Absent on a standard request.
++        if (request.getFirstPassMarkdown() != null && !request.getFirstPassMarkdown().isEmpty()) {
++            bodyBuilder.addFormDataPart("markdown_1st", request.getFirstPassMarkdown());
++        }
++
+         return new Request.Builder()
+             .url(baseUrl + CONVERT_ENDPOINT)
+             .post(bodyBuilder.build())
+diff --git a/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/HybridClient.java b/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/HybridClient.java
+index 17fbe99..57ccca3 100644
+--- a/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/HybridClient.java
++++ b/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/HybridClient.java
+@@ -127,6 +127,9 @@ public interface HybridClient {
+         private final Set<Integer> pageNumbers;
+         private final Set<OutputFormat> outputFormats;
+         private final CropOutput cropOutput;
++        // Track C: ODL's 1st-pass deterministic Markdown for the requested pages, so the backend
++        // can ground on it without re-parsing. Nullable; absent on a standard request.
++        private final String firstPassMarkdown;
+ 
+         /**
+          * Creates a new HybridRequest.
+@@ -137,17 +140,19 @@ public interface HybridClient {
+          */
+         public HybridRequest(byte[] pdfBytes, Set<Integer> pageNumbers,
+                              Set<OutputFormat> outputFormats) {
+-            this(pdfBytes, pageNumbers, outputFormats, CropOutput.DISABLED);
++            this(pdfBytes, pageNumbers, outputFormats, CropOutput.DISABLED, null);
+         }
+ 
+         private HybridRequest(byte[] pdfBytes, Set<Integer> pageNumbers,
+-                              Set<OutputFormat> outputFormats, CropOutput cropOutput) {
++                              Set<OutputFormat> outputFormats, CropOutput cropOutput,
++                              String firstPassMarkdown) {
+             this.pdfBytes = pdfBytes != null ? Arrays.copyOf(pdfBytes, pdfBytes.length) : null;
+             this.pageNumbers = pageNumbers != null ? pageNumbers : Collections.emptySet();
+             this.outputFormats = outputFormats != null && !outputFormats.isEmpty()
+                 ? EnumSet.copyOf(outputFormats)
+                 : EnumSet.allOf(OutputFormat.class);
+             this.cropOutput = cropOutput != null ? cropOutput : CropOutput.DISABLED;
++            this.firstPassMarkdown = firstPassMarkdown;
+         }
+ 
+         /**
+@@ -159,7 +164,25 @@ public interface HybridClient {
+          * @return a new request carrying {@code cropOutput}
+          */
+         public HybridRequest withCropOutput(CropOutput cropOutput) {
+-            return new HybridRequest(pdfBytes, pageNumbers, outputFormats, cropOutput);
++            return new HybridRequest(pdfBytes, pageNumbers, outputFormats, cropOutput, firstPassMarkdown);
++        }
++
++        /**
++         * Returns a copy of this request carrying ODL's 1st-pass deterministic Markdown for the
++         * requested pages (Track C). The backend may ground on it instead of re-parsing.
++         *
++         * @param markdown 1st-pass Markdown, or {@code null} to omit
++         * @return a new request carrying {@code markdown}
++         */
++        public HybridRequest withFirstPassMarkdown(String markdown) {
++            return new HybridRequest(pdfBytes, pageNumbers, outputFormats, cropOutput, markdown);
++        }
++
++        /**
++         * ODL's 1st-pass deterministic Markdown for the requested pages, or {@code null} if absent.
++         */
++        public String getFirstPassMarkdown() {
++            return firstPassMarkdown;
+         }
+ 
+         /**
+diff --git a/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HybridDocumentProcessor.java b/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HybridDocumentProcessor.java
+index 3c81aa1..d7fabb9 100644
+--- a/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HybridDocumentProcessor.java
++++ b/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/processors/HybridDocumentProcessor.java
+@@ -53,6 +53,8 @@ import org.verapdf.wcag.algorithms.entities.geometry.BoundingBox;
+ import org.verapdf.wcag.algorithms.semanticalgorithms.containers.StaticContainers;
+ 
+ import java.io.IOException;
++import java.io.StringWriter;
++import org.opendataloader.pdf.markdown.MarkdownGenerator;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.util.ArrayList;
+@@ -321,7 +323,8 @@ public class HybridDocumentProcessor {
+         // List, etc.) re-run setIDs and mutate the picture's structure id.
+         Map<EnrichedImageChunk, Long> pictureSwapOriginalIds = new IdentityHashMap<>();
+         try {
+-            backendResults = processBackendPath(inputPdfName, backendPages, config, backendFailedPages);
++            backendResults = processBackendPath(inputPdfName, backendPages, config, backendFailedPages,
++                filteredContents, totalPages);
+             // Enrich backend results: copy StreamInfos from Java-extracted content for MCID linkage
+             enrichBackendResults(backendResults, filteredContents, config.getHybridConfig(),
+                 pictureSwapOriginalIds);
+@@ -630,7 +633,9 @@ public class HybridDocumentProcessor {
+             String inputPdfName,
+             Set<Integer> pageNumbers,
+             Config config,
+-            Set<Integer> backendFailedPages) throws IOException {
++            Set<Integer> backendFailedPages,
++            Map<Integer, List<IObject>> filteredContents,
++            int totalPages) throws IOException {
+ 
+         if (pageNumbers.isEmpty()) {
+             return new HashMap<>();
+@@ -685,9 +690,14 @@ public class HybridDocumentProcessor {
+                                  sortedPages.size()});
+             }
+ 
++            // Track C: serialize this chunk's 1st-pass deterministic IObjects to Markdown (reusing
++            // filteredContents computed before triage -- zero re-parse) so the backend can ground on it.
++            String firstPassMarkdown = buildFirstPassMarkdown(filteredContents, chunkPages, totalPages, config);
++
+             try {
+                 HybridRequest request = HybridRequest.forPages(pdfBytes, chunkPages1Indexed, outputFormats)
+-                    .withCropOutput(cropOutputFor(config));
++                    .withCropOutput(cropOutputFor(config))
++                    .withFirstPassMarkdown(firstPassMarkdown);
+                 long convertStartNs = System.nanoTime();
+                 HybridResponse response;
+                 try {
+@@ -783,6 +793,50 @@ public class HybridDocumentProcessor {
+         return results;
+     }
+ 
++    /**
++     * Track C: serialize the 1st-pass deterministic IObjects for a chunk's backend pages to
++     * Markdown, reusing {@code filteredContents} computed before triage (zero re-parse). Builds a
++     * full-document-sized list with only the chunk pages populated, so MarkdownGenerator emits just
++     * those pages. Returns {@code null} on any failure (the request then omits 1st-pass grounding).
++     */
++    private static String buildFirstPassMarkdown(Map<Integer, List<IObject>> filteredContents,
++                                                 List<Integer> chunkPages, int totalPages, Config config) {
++        try {
++            Set<Integer> chunkSet = new HashSet<>(chunkPages);
++            // filteredContents is raw chunks (triage input); MarkdownGenerator needs semantic
++            // structure (paragraphs/tables/lists). Java-path the chunk pages to get it -- this is
++            // Track C's real cost: ODL deterministically processes the backend pages once, in
++            // exchange for the proxy NOT re-parsing them. Re-uses filteredContents (no re-extract).
++            Map<Integer, List<IObject>> processed = processJavaPath(filteredContents, chunkSet, config, totalPages);
++            // processJavaPath doesn't run the heading-level pass for these pages, so SemanticHeading
++            // levels stay null and MarkdownGenerator NPEs on getHeadingLevel(). Default unset to 1.
++            for (List<IObject> pg : processed.values()) {
++                for (IObject o : pg) {
++                    if (o instanceof org.verapdf.wcag.algorithms.entities.SemanticHeading) {
++                        org.verapdf.wcag.algorithms.entities.SemanticHeading h =
++                            (org.verapdf.wcag.algorithms.entities.SemanticHeading) o;
++                        if (h.getHeadingLevel() == null) {
++                            h.setHeadingLevel(1);
++                        }
++                    }
++                }
++            }
++            List<List<IObject>> contents = new ArrayList<>(totalPages);
++            for (int i = 0; i < totalPages; i++) {
++                contents.add(processed.getOrDefault(i, new ArrayList<>()));
++            }
++            StringWriter writer = new StringWriter();
++            new MarkdownGenerator(writer, config).writeToMarkdown(contents);
++            String md = writer.toString().trim();
++            LOGGER.log(Level.FINE, "1st-pass markdown built: {0} chars for pages {1}",
++                new Object[]{md.length(), chunkPages});
++            return md.isEmpty() ? null : md;
++        } catch (Exception e) {
++            LOGGER.log(Level.WARNING, "1st-pass markdown generation failed", e);
++            return null;
++        }
++    }
++
+     /**
+      * Gets or creates a hybrid client based on configuration.
+      *
