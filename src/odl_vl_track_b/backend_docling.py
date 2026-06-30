@@ -156,11 +156,128 @@ def install_b2(api_key: str, *, model: str = DEFAULT_MODEL, prompt: str = B2_PRO
     return hs
 
 
+_MROPE_SECTION: list[int] | None = None
+
+
+def _paddleocr_mrope_section() -> list[int]:
+    """mrope_section from PaddleOCR-VL's config.json (transformers strips it under rope_type=default).
+    Read once and cached."""
+    global _MROPE_SECTION
+    if _MROPE_SECTION is None:
+        import json
+
+        from huggingface_hub import hf_hub_download
+
+        cfg = json.load(open(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6", "config.json"), encoding="utf-8"))
+        _MROPE_SECTION = cfg.get("rope_scaling", {}).get("mrope_section", [16, 24, 24])
+    return _MROPE_SECTION
+
+
+def _patch_paddleocr_vl_config() -> None:
+    """transformers 5.8.x ships PaddleOCR-VL with a config bug: sub_configs declares
+    ``text_config: PaddleOCRTextConfig`` and modeling reads ``config.text_config``, but the model's
+    config.json keeps text params at the TOP LEVEL (no ``text_config`` key), so from_pretrained
+    never builds the sub-config and ``config.text_config`` is missing.
+
+    Bridge it by deriving a real PaddleOCRTextConfig from the top-level params on demand (cached).
+    Returning a proper PaddleOCRTextConfig (which has no sub_configs) avoids the to_dict recursion
+    that returning ``self`` caused. Idempotent."""
+    import inspect
+
+    from transformers.models.paddleocr_vl.configuration_paddleocr_vl import (
+        PaddleOCRTextConfig,
+        PaddleOCRVLConfig,
+    )
+
+    if isinstance(getattr(PaddleOCRVLConfig, "text_config", None), property):
+        return
+
+    _text_params = [
+        p for p in inspect.signature(PaddleOCRTextConfig.__init__).parameters if p not in ("self", "kwargs")
+    ]
+
+    def _get(self: Any) -> Any:
+        cached = self.__dict__.get("_tc_obj")
+        if cached is None:
+            cached = PaddleOCRTextConfig(**{k: getattr(self, k) for k in _text_params if hasattr(self, k)})
+            # transformers drops mrope_section from rope_parameters when rope_type=="default", but
+            # PaddleOCR-VL's modeling reads config.rope_parameters["mrope_section"] (mRoPE). Restore it.
+            section = _paddleocr_mrope_section()
+            for attr in ("rope_parameters", "rope_scaling"):
+                rp = getattr(cached, attr, None)
+                if isinstance(rp, dict) and "mrope_section" not in rp:
+                    rp["mrope_section"] = section
+            self.__dict__["_tc_obj"] = cached
+        return cached
+
+    def _set(self: Any, value: Any) -> None:
+        # from_pretrained / save may assign; keep a real sub-config if given, else ignore.
+        if isinstance(value, PaddleOCRTextConfig):
+            self.__dict__["_tc_obj"] = value
+
+    PaddleOCRVLConfig.text_config = property(_get, _set)  # type: ignore[attr-defined]
+
+
+def _paddleocr_vl_local_options() -> Any:
+    """docling InlineVlmOptions for PaddleOCR-VL-1.6 run LOCALLY via transformers (no API).
+    Same model our official-API path uses (PaddleOCR-VL-1.6), but on-device: ERNIE-4.5 + NaViT,
+    ~1.0B, AutoModelForImageTextToText, needs trust_remote_code + transformers>=5."""
+    _patch_paddleocr_vl_config()
+    from docling.datamodel.pipeline_options_vlm_model import (
+        InferenceFramework,
+        InlineVlmOptions,
+        ResponseFormat,
+        TransformersModelType,
+    )
+
+    return InlineVlmOptions(
+        repo_id="PaddlePaddle/PaddleOCR-VL-1.6",
+        prompt="Convert this page to Markdown, preserving tables and reading order.",
+        response_format=ResponseFormat.MARKDOWN,
+        inference_framework=InferenceFramework.TRANSFORMERS,
+        transformers_model_type=TransformersModelType.AUTOMODEL_IMAGETEXTTOTEXT,
+        # trust_remote_code=False so docling uses transformers' BUILT-IN PaddleOCRVL classes --
+        # the ones our _patch_paddleocr_vl_config patched (remote dynamic classes would bypass it).
+        trust_remote_code=False,
+        torch_dtype="bfloat16",
+    )
+
+
+def install_b1_local(preset: str = "GRANITEDOCLING_MLX") -> Any:
+    """B-1 with docling's BUILT-IN local VLM (no API): VlmPipeline runs an InlineVlmOptions model
+    on-device. Built-in presets (GraniteDocling/SmolDocling via MLX) by name; "PADDLEOCR_VL" runs
+    PaddleOCR-VL-1.6 locally via transformers. No keys, no network at inference."""
+    from opendataloader_pdf import hybrid_server as hs
+
+    from docling.datamodel import vlm_model_specs
+
+    if preset == "PADDLEOCR_VL":
+        vlm_options = _paddleocr_vl_local_options()
+    else:
+        vlm_options = getattr(vlm_model_specs, preset)
+
+    def create_converter(**_kwargs: Any) -> Any:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import VlmPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.pipeline.vlm_pipeline import VlmPipeline
+
+        options = VlmPipelineOptions(vlm_options=vlm_options)  # local model -> no enable_remote_services
+        return DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_cls=VlmPipeline, pipeline_options=options)}
+        )
+
+    hs.create_converter = create_converter  # type: ignore[attr-defined]
+    return hs
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Track B (B-1/B-2): official docling-fast server with Gemini VLM")
     parser.add_argument("--variant", choices=["b1", "b2"], required=True)
-    parser.add_argument("--provider", choices=["gemini", "paddle"], default="gemini",
-                        help="b1 only: paddle routes via an OpenAI-compat shim over the Paddle job API")
+    parser.add_argument("--provider", choices=["gemini", "paddle", "local"], default="gemini",
+                        help="b1 only: paddle=OpenAI-compat shim over job API; local=docling built-in VLM (on-device)")
+    parser.add_argument("--local-model", default="GRANITEDOCLING_MLX",
+                        help="b1 local: docling vlm_model_specs preset (e.g. GRANITEDOCLING_MLX, SMOLDOCLING_MLX)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5002)
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -172,8 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     from odl_vl.config import load_settings
 
     settings = load_settings()
-    _is_b1_paddle = args.variant == "b1" and args.provider == "paddle"
-    if not _is_b1_paddle and not settings.has_gemini:
+    _no_gemini_key = args.variant == "b1" and args.provider in ("paddle", "local")
+    if not _no_gemini_key and not settings.has_gemini:
         raise SystemExit("GEMINI_API_KEY required for B-1/B-2 (Gemini VLM backend)")
 
     if args.variant == "b1":
@@ -181,6 +298,8 @@ def main(argv: list[str] | None = None) -> int:
             if not settings.has_paddle:
                 raise SystemExit("B-1 paddle requires PADDLE_BASE_URL + PADDLE_API_KEY")
             hs = install_b1_paddle(settings)
+        elif args.provider == "local":
+            hs = install_b1_local(args.local_model)
         else:
             hs = install_b1(settings.gemini_api_key, model=args.model)  # type: ignore[arg-type]
         app = hs.create_app()
