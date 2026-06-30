@@ -228,12 +228,14 @@ def _num_key(text: str) -> str:
 
 
 _DIGIT_RUN = re.compile(r"\d+")
+_PUNCT = re.compile(r"[^\w\s]")
 
 
 def _line_key(line: str) -> str:
-    """Whitespace-collapsed, digit-masked, lowered form so a running footer matches across pages even
-    though its page number ('30 / 32') changes."""
-    return _DIGIT_RUN.sub("#", " ".join(line.split())).lower()
+    """Lowercased, punctuation-stripped, digit-masked, whitespace-collapsed form so a running header/
+    footer matches across pages despite a changing page number ('30 / 32') AND transcription variants
+    of the same furniture ('PLOS BIOLOGY | Corrective…' vs 'PLOS BIOLOGY Corrective…')."""
+    return " ".join(_DIGIT_RUN.sub("#", _PUNCT.sub(" ", line.lower())).split())
 
 
 def _furniture_candidate(line: str) -> bool:
