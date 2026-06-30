@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/test_pipeline_chartnoise.py -q 2>&1 | tail -4",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -3",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -114,8 +114,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 61,
-      "lastAccessed": 1782824804593,
+      "accessCount": 63,
+      "lastAccessed": 1782827055911,
       "type": "file"
     },
     {
