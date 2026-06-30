@@ -196,6 +196,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         blocks_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
         chart_noise = _chart_internal_noise(figures, blocks_by_page)  # legend/axis/year labels to drop
         _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
+        _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
         if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
             page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
             authority = resolve_heading_authority(pdf_path, result.structure)
@@ -308,6 +309,29 @@ def _chart_internal_noise(figures: list[dict], blocks_by_page: dict[int, tuple])
 def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:
     """Drop standalone lines whose (whitespace-normalised) text is a chart-internal noise label."""
     return "\n".join(ln for ln in markdown.split("\n") if " ".join(ln.split()) not in noise)
+
+
+_DASHES = str.maketrans("‐‑‒–—―−－", "--------")
+
+
+def _ref_norm(s: str) -> str:
+    """Whitespace-free, dash-unified form for matching a 表N/図N reference across column wraps."""
+    return re.sub(r"\s+", "", s).translate(_DASHES)
+
+
+def _resolve_cross_references(blocks: list[dict], tables: list[dict], figures: list[dict]) -> None:
+    """Resolve each block's in-text 表N/図N mentions to the referenced table/figure node ids and store
+    them as a ``refs`` edge -- robust to column-wrap whitespace and dash variants. A section's RELATED
+    objects are then its contained content PLUS these referenced edges, both read straight from the
+    graph in a single pass (no second retrieval, no regex at query time)."""
+    index = [(_ref_norm(n["label"]), n["id"]) for n in (*tables, *figures) if n.get("label")]
+    for b in blocks:
+        norm = _ref_norm(b.get("text", ""))
+        refs = [nid for lab, nid in index
+                if lab and not norm.startswith(lab)  # skip a node's own leading caption
+                and re.search(re.escape(lab) + r"(?!\d)", norm)]
+        if refs:
+            b["refs"] = sorted(set(refs))
 
 
 def _mark_chart_label_blocks(figures: list[dict], blocks: list[dict]) -> None:
