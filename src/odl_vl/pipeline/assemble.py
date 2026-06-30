@@ -9,6 +9,7 @@ clean text = ODL. The mode is chosen by the source profile, not per-page at runt
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ class DetVlmOptions:
     prompt: str | None = None  # R8.4 custom base prompt (overrides DEFAULT/SCAN)
     input_quality_min: float = 50.0  # R8.8 Laplacian-variance blur threshold (per-domain tunable)
     primary: str = "gemini"    # R10 primary transcriber: "gemini" (grounded) | "paddle" (doc-specialised)
+    reading_order: bool = True  # R15 re-sequence VLM blocks into the PDF's ODL reading order (multi-column)
 
 
 def _table_markdown(table: OdlTable) -> str:
@@ -57,6 +59,69 @@ def _page_markdown(odl_page: OdlPage, tables: list[OdlTable]) -> str:
     items = [(p.order, p.text) for p in odl_page.paragraphs] + [(t.order, _table_markdown(t)) for t in tables]
     items.sort(key=lambda x: x[0])
     return "\n\n".join(md for _, md in items if md and md.strip())
+
+
+def _norm_block(text: str) -> str:
+    """Markdown-stripped, collapsed, lowercased form for aligning a VLM block to an ODL paragraph."""
+    text = re.sub(r"^[#>*\s]+", "", text)       # leading heading/quote/list markers
+    text = re.sub(r"[*_`#>]", "", text)          # inline emphasis / heading marks
+    return " ".join(text.split()).lower()
+
+
+def _common_prefix_len(a: str, b: str) -> int:
+    n = min(len(a), len(b))
+    i = 0
+    while i < n and a[i] == b[i]:
+        i += 1
+    return i
+
+
+def _reorder_by_odl_order(markdown: str, odl_page: OdlPage, *, min_match: float = 0.4) -> str:
+    """Re-sequence a det_vlm page's blocks into the PDF's logical reading order (ODL ``p.order`` = the
+    PDF/UA content-stream DFS index). The VLM transcribes a rendered page in VISUAL order, which on a
+    multi-column page (e.g. a journal sidebar beside the body) lands the sidebar mid-article. ODL carries
+    the document's true reading order, so each VLM block is aligned to its ODL paragraph and the blocks
+    are stably re-sorted by that order.
+
+    Matching is ONE-TO-ONE by longest common prefix with consumption: sibling blocks that share an
+    opening ('which defines the …') align to DISTINCT ODL paragraphs instead of all colliding on the
+    first. A block with no confident match (equations the VLM renders as LaTeX, text ODL garbled) is
+    anchored just after its preceding matched block -- so an equation stays interleaved with its
+    surrounding prose. Safety: if too few blocks align, the page is left untouched -- single-column
+    pages (VLM order already == ODL order) and unalignable pages are no-ops."""
+    paras = getattr(odl_page, "paragraphs", ())
+    if not paras:
+        return markdown
+    blocks = re.split(r"\n\s*\n", markdown.strip())
+    if len(blocks) < 4:
+        return markdown
+    odl_items = sorted(((p.order, _norm_block(p.text)) for p in paras if p.order >= 0), key=lambda x: x[0])
+    consumed: set[int] = set()
+    placed: list[tuple[float, int, str]] = []
+    matched, substantive, last = 0, 0, -1.0
+    for i, b in enumerate(blocks):
+        bn = _norm_block(b)
+        if len(bn) >= 8 and not bn.startswith("!["):
+            substantive += 1
+        best_order, best_lcp = None, 0
+        for order, on in odl_items:                # longest-common-prefix match among UNCONSUMED paras
+            if order in consumed or len(on) < 8:
+                continue
+            lcp = _common_prefix_len(bn, on)
+            if lcp > best_lcp:
+                best_lcp, best_order = lcp, order
+        if best_order is not None and best_lcp >= 10:
+            consumed.add(best_order)
+            last = float(best_order)
+            matched += 1
+            placed.append((last, i, b))
+        else:
+            last += 1e-3                          # anchor right after the previous matched block
+            placed.append((last, i, b))
+    if substantive == 0 or matched / substantive < min_match:  # not confidently alignable -> leave as-is
+        return markdown
+    placed.sort(key=lambda x: (x[0], x[1]))        # stable: ties keep original order
+    return "\n\n".join(b for _, _, b in placed)
 
 
 def _recurring_numbers(pypdf_texts: list[str], *, min_fraction: float = 0.5) -> set[str]:
@@ -251,6 +316,8 @@ def _assemble_det_vlm(
             return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, str(exc)))
         if markdown.strip() == LOW_QUALITY_SENTINEL:
             return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
+    if options.reading_order:  # follow the PDF's logical reading order (fixes multi-column linearization)
+        markdown = _reorder_by_odl_order(markdown, odl_page)
     source = [t.value for t in number_tokens(pdf_path, page_index, min_value=1000)]
     flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000))
     labels = extract_caption_labels(markdown)  # VLM reads captions ODL misses (R4.3)

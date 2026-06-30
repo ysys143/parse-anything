@@ -57,5 +57,9 @@ def build_grounded_prompt(base_prompt: str, pypdf_text: str, odl_page: Any | Non
         "",
         "Transcribe the PAGE IMAGE into Markdown, consistent with the grounding above. Where the "
         "image and the text layer agree, use the text-layer spelling and numbers.",
+        "READING ORDER: emit blocks in the SAME order as the Structure (ODL) outline above -- that is "
+        "the document's logical reading order. On a multi-column page (e.g. a journal sidebar beside the "
+        "main article), follow that logical order; do NOT read one whole column and then the other if it "
+        "contradicts the outline.",
     ]
     return "\n".join(parts)
