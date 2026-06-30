@@ -308,6 +308,24 @@ docling VlmPipeline에 **로컬 VLM**(InlineVlmOptions)을 꽂아 기기에서 �
 - **PaddleOCR-VL-1.6 로컬**: official-API와 *같은 모델*을 transformers로 on-device 실행. transformers 5.8.1의 내장 PaddleOCR-VL 통합에 **버그 4종**(config.text_config 누락 / get_text_config 재귀 / self 반환 시 to_dict 재귀 / rope_type=default에서 mrope_section 드롭)이 있어 `_patch_paddleocr_vl_config`로 우회해야 동작(**transformers 5.8.1 버전 특정 패치 — 버전 바뀌면 재검토 필요**). 결과: **텍스트 1-NED 0.636 = official API 동급**(같은 weights)이나 **표 TEDS 0.0** — transformers raw `generate`는 표를 평문으로 뱉는다.
 - **[중요] 핵심 교훈**: "같은 모델"이라도 **추론 경로가 결과를 가른다**. PaddleOCR-VL의 표 강점은 weights가 아니라 **official API의 page-level 후처리 파이프라인**에서 온다 — 로컬 transformers는 텍스트만 official급이고 표 구조는 못 만든다. 표-중심 소스엔 official API가 정답.
 
+#### n=30 직접 API 베이스라인 (OmniDocBench 층화, F22 통계 재현)
+
+로컬 가용 이미지 2장 한계를 넘어, HF datasets에서 표 포함 이미지 30장(9개 문서타입 × 4: research_report·textbook·book·exam·academic·note·newspaper·PPT·magazine, 표 72개)을 받아 **직접 API**를 채점:
+
+| 경로 | 표 TEDS | text 1-NED | 빈 출력 |
+|---|---|---|---|
+| 직접 API: gemini | 0.605 (n=30) | 0.249 | 7쪽 |
+| 직접 API: **paddle** | **0.890 (n=30)** | **0.381** | 1쪽 |
+
+- **표 TEDS: Paddle 0.890 ≫ Gemini 0.605** — F22(0.910 vs 0.696)를 n=30으로 통계 재현. 표-중심 이미지엔 Paddle이 명확히 우위.
+- **Gemini는 7쪽 빈 출력**(Paddle 1쪽) — 복잡 페이지에서 더 자주 실패/포기. robustness도 Paddle 우위.
+- **측정 범위(중요·정직)**: 이 n=30은 **직접 API 베이스라인일 뿐, 우리 파이프라인(Track B: ODL hybrid 왕복 + `docling_out`/docling 표 성형)은 n=30으로 아직 측정 안 함**(앞 Track B TEDS는 n=2). 직접 API 우열(Paddle≫Gemini)이 Track B 경로에서도 같은 폭으로 유지되는지는 미검증 — Track B의 n=30 측정이 다음 과제.
+
+### 측정 자산 (재현용)
+- `scripts/track_b_scorecard.py` — 값 정확도(recall/precision, oracle/golden, 천단위 점·콤마 정규화, 표 완전성 tbl_cells/bytes).
+- `scripts/track_b_teds.py` — 표 TEDS(apted) + 텍스트 1-NED, OmniDocBench GT 대비.
+- 변종 실행: `backend_docling.py`(B-1 gemini/paddle-shim/local, B-2), `proxy.py`(B-3/B-4, `--det-aug`/`--paddle-preprocess`), `paddle_openai_shim.py`(B-1 paddle).
+
 ## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
 - 연동 옵션/무Java 주입: `docs/odl-engine-rust-python-integration.md`
