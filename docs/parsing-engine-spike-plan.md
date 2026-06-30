@@ -321,6 +321,21 @@ docling VlmPipeline에 **로컬 VLM**(InlineVlmOptions)을 꽂아 기기에서 �
 - **Gemini는 7쪽 빈 출력**(Paddle 1쪽) — 복잡 페이지에서 더 자주 실패/포기. robustness도 Paddle 우위.
 - **측정 범위(중요·정직)**: 이 n=30은 **직접 API 베이스라인일 뿐, 우리 파이프라인(Track B: ODL hybrid 왕복 + `docling_out`/docling 표 성형)은 n=30으로 아직 측정 안 함**(앞 Track B TEDS는 n=2). 직접 API 우열(Paddle≫Gemini)이 Track B 경로에서도 같은 폭으로 유지되는지는 미검증 — Track B의 n=30 측정이 다음 과제.
 
+#### Track C 실측 — ODL Java 1차-md 전달 (born-digital)
+
+Track C(C1)를 **실제 구현**했다: ODL Java를 수정해 hybrid 요청에 1차 결정론 Markdown(`markdown_1st`)을
+실어 보내고(`HybridRequest` 확장 + `buildFirstPassMarkdown`, 재파싱 0 = `filteredContents` 재사용 +
+`processJavaPath` 의미구조화), proxy가 그걸로 grounding(B-4의 in-proxy 재파싱 제거). 코드: worktree-c
+`track-c-java/`(Java patch) + worktree-b `det_aug.use_supplied`/`proxy --ignore-supplied`.
+
+- **프로토콜 성공**: ODL → proxy `markdown_1st` 1133자 왕복 입증. (함정: `SemanticHeading` level null →
+  `MarkdownGenerator` NPE → level 1 보정으로 해결.)
+- **born-digital 벤치(hard 16×7 / wide 18열, full oracle)**: 직접 VLM = B-4(재파싱) = Track C(전달)
+  모두 recall/precision 0.989·0.987로 **동일**. grounding은 깨끗한 born-digital에 실이득 0(Gemini가 이미
+  정확), Track C 출력은 B-4와 완전 동일(재파싱을 전달로 대체).
+- **결론**: Track C는 작동하고 B-4와 동등 — 가치는 정확도 축에서 honest-null. 드러날 영역은 (a) 재파싱
+  비용이 지배적인 대규모 배치 (b) F22의 cross-page·조작숫자-0-보장(별도 축, 미측정).
+
 ### 측정 자산 (재현용)
 - `scripts/track_b_scorecard.py` — 값 정확도(recall/precision, oracle/golden, 천단위 점·콤마 정규화, 표 완전성 tbl_cells/bytes).
 - `scripts/track_b_teds.py` — 표 TEDS(apted) + 텍스트 1-NED, OmniDocBench GT 대비.
