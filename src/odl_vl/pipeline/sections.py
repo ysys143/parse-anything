@@ -47,7 +47,10 @@ def _is_prose_not_heading(text: str) -> bool:
     marker it carries a URL/DOI/PMID, or has >=2 internal sentence boundaries (a heading is one short
     phrase). Stops a reference entry ('13. Author A, Author B. Title. Journal. Year') or a citation
     fragment ('(1):2757. https://doi.org/...') and a volume:page tail ('(3):213-224.') from being
-    leveled as a section. Document-agnostic."""
+    leveled as a section. A line carrying a table pipe ('0.3 s | 0.9 s | …') is a data row, also not a
+    heading. Document-agnostic."""
+    if "|" in text:  # a table data row the VLM rendered inline, not a section heading
+        return True
     rest = _NUM_PREFIX.sub("", text.strip(), count=1).lstrip()
     if not rest or rest[0] == ":":  # 'marker:digits' -> a volume:page citation, not a heading
         return True

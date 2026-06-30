@@ -40,4 +40,5 @@ HEADING_CASES: list[HeadingCase] = [
                 False, "numbered prose with a URL"),
     HeadingCase("(3):213–224.", False, "volume:page citation tail"),
     HeadingCase("(1):2757", False, "bare volume:page"),
+    HeadingCase("0.3 s | 0.9 s | 0.5 s", False, "table data row rendered inline"),
 ]
