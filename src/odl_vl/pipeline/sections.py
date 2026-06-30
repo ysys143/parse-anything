@@ -12,7 +12,7 @@ import difflib
 import re
 from collections import Counter
 
-from .numbering import classify_numbering
+from .numbering import NumberClass, classify_numbering, level_for
 from .outline import HeadingAuthority
 
 _TERMINATORS = "。．.!?！？"          # a numbered line ending here is a sentence (body), not a heading
@@ -62,38 +62,62 @@ def _authority_level(text: str, page: int, authority: HeadingAuthority, printed_
     return best_level if best_ratio >= 0.8 else None
 
 
-def heading_levels(blocks: list[dict], authority: HeadingAuthority | None = None,
-                   printed_to_pdf: dict[str, int] | None = None) -> dict[object, int]:
-    """block id -> heading level (1-based). Only numbered/authority-matched headings; others abstain."""
+def _assign_heading_levels(blocks: list[dict], authority: HeadingAuthority | None = None,
+                           printed_to_pdf: dict[str, int] | None = None) -> tuple[dict[object, int], dict[str, int]]:
+    """(block id -> level, style -> first level). Levels are DOCUMENT-RELATIVE: detection/abstain/
+    run-demote are unchanged (they key on rank); a reading-order nesting stack owns the level."""
     printed_to_pdf = printed_to_pdf or {}
-    cand: dict[object, int] = {}
+    cand: dict[object, NumberClass] = {}   # id -> NumberClass (survivors of abstain/list/caption)
+    meta: dict[object, tuple] = {}         # id -> (text, page)
     for b in blocks:
         text = b.get("text", "")
         nc = classify_numbering(text)
-        if nc is None:  # no recognized numbering prefix -> abstain (table titles / unnumbered headings)
+        if nc is None or _is_list_not_heading(text, b.get("type", "")) or _CAPTION_LEAD.match(text):
             continue
-        if _is_list_not_heading(text, b.get("type", "")):
-            continue
-        if _CAPTION_LEAD.match(text):  # "Table 1 ..." / "図3 ..." is a caption label, not a section
-            continue
-        level = _authority_level(text, b["page"], authority, printed_to_pdf) if authority is not None else None
-        cand[b["id"]] = level if level is not None else nc.rank
+        cand[b["id"]] = nc
+        meta[b["id"]] = (text, b.get("page"))
 
-    # Demote ENUMERATED LISTS: item-level (deepest) candidates that run back-to-back with no body
-    # between them (①②③ conditions) are a list, not sections. Restricted to item level -- adjacent
-    # chapter/section/subsection markers (e.g. a 節 title then its first （１）) are legitimate structure.
-    out = dict(cand)
     ordered = sorted(blocks, key=lambda b: (b.get("page", 0), b.get("order", 0)))
+    # Demote ENUMERATED LISTS (unchanged): item-level (rank>=4) candidates back-to-back with no body
+    # between them are a list, not sections. Collect then remove (don't mutate cand mid-scan, else the
+    # next iteration's cand[prev_id] / membership checks break). Done before inference.
+    demoted: set[object] = set()
     prev_id, prev_pos = None, -1
     for pos, b in enumerate(ordered):
         if b["id"] not in cand:
             continue
-        if prev_id is not None and cand[b["id"]] == cand[prev_id] >= 4 \
+        if prev_id is not None and cand[b["id"]].rank == cand[prev_id].rank >= 4 \
                 and not any(x["id"] not in cand for x in ordered[prev_pos + 1:pos]):
-            out.pop(b["id"], None)
-            out.pop(prev_id, None)
+            demoted |= {b["id"], prev_id}
         prev_id, prev_pos = b["id"], pos
-    return out
+    for d in demoted:
+        cand.pop(d, None)
+
+    levels: dict[object, int] = {}
+    style_levels: dict[str, int] = {}
+    stack: list[dict] = []                  # frames: {style, level, tier, dec_depth}
+    for b in ordered:                       # global reading order
+        if b["id"] not in cand:
+            continue
+        sig = cand[b["id"]]
+        text, page = meta[b["id"]]
+        a = _authority_level(text, page, authority, printed_to_pdf) if authority is not None else None
+        if a is not None:                   # TOC/outline override: reconcile stack to its level
+            while stack and stack[-1]["level"] >= a:
+                stack.pop()
+            lvl = a
+        else:
+            lvl = level_for(sig, stack)
+        levels[b["id"]] = lvl
+        style_levels.setdefault(sig.style, lvl)
+        stack.append({"style": sig.style, "level": lvl, "tier": sig.tier, "dec_depth": sig.dec_depth})
+    return levels, style_levels
+
+
+def heading_levels(blocks: list[dict], authority: HeadingAuthority | None = None,
+                   printed_to_pdf: dict[str, int] | None = None) -> dict[object, int]:
+    """block id -> document-relative heading level. Thin wrapper over ``_assign_heading_levels``."""
+    return _assign_heading_levels(blocks, authority, printed_to_pdf)[0]
 
 
 def build_sections(blocks: list[dict], tables: list[dict], figures: list[dict],
@@ -133,17 +157,18 @@ def build_sections(blocks: list[dict], tables: list[dict], figures: list[dict],
 
 
 def apply_heading_levels(markdown: str, page_headings: list[tuple[str, int]] | None = None, *,
-                         max_level: int = 6) -> str:
+                         max_level: int = 6, style_levels: dict[str, int] | None = None) -> str:
     """Set ``#``*level on heading lines detected DIRECTLY in the markdown (the rendered view), so a
     running-header chapter/section line (``第1章 …``) is leveled even when the structure layer's ODL
-    block text differs from the VLM's. A line's level is its section level from ``page_headings`` when
-    matched, else its own numbering-class rank. Table/figure captions the VLM marked as headings are
-    de-headed (a caption never outranks a chapter); enumerated ①②③ item runs with no body between
-    are left as plain list items. Cross-page running-header de-duplication is a separate document-level
-    pass (``strip_page_furniture``). Line count is unchanged."""
+    block text differs from the VLM's. A line's level is its section level from ``page_headings`` if
+    matched, else the document-learned ``style_levels[style]`` (same document-relative scale, NOT the
+    dead absolute rank), else a minimal ``tier+1`` default. Table/figure captions the VLM marked as
+    headings are de-headed; enumerated ①②③ item runs with no body between are left as plain list
+    items. Line count is unchanged."""
     level_of = {_normalize(t): lvl for t, lvl in (page_headings or [])}
+    style_levels = style_levels or {}
     lines = markdown.split("\n")
-    cand: list[tuple[int, int, str]] = []  # (line index, numbering rank, body text)
+    cand: list[tuple[int, NumberClass, str]] = []  # (line index, NumberClass, body text)
     for i, ln in enumerate(lines):
         is_hash = ln.lstrip().startswith("#")
         body = ln.lstrip("#").lstrip() if is_hash else ln.strip()
@@ -156,19 +181,20 @@ def apply_heading_levels(markdown: str, page_headings: list[tuple[str, int]] | N
         nc = classify_numbering(body)
         if nc is None or body.rstrip()[-1:] in _TERMINATORS or len(body) > 120:  # not a heading line
             continue
-        cand.append((i, nc.rank, body))
+        cand.append((i, nc, body))
 
     cand_idx = {c[0] for c in cand}             # demote enumerated item runs (rank>=4, no body between)
     demote: set[int] = set()
-    for (i0, r0, _), (i1, r1, _) in zip(cand, cand[1:]):
-        if r1 == r0 >= 4 and not any(lines[k].strip() and k not in cand_idx for k in range(i0 + 1, i1)):
+    for (i0, n0, _), (i1, n1, _) in zip(cand, cand[1:]):
+        if n1.rank == n0.rank >= 4 and not any(lines[k].strip() and k not in cand_idx for k in range(i0 + 1, i1)):
             demote |= {i0, i1}
 
-    for i, rank, body in cand:
+    for i, nc, body in cand:
         if i in demote:
             lines[i] = body                     # enumerated list item -> plain
             continue
-        lines[i] = "#" * min(level_of.get(_normalize(body), rank), max_level) + " " + body
+        lvl = level_of.get(_normalize(body)) or style_levels.get(nc.style) or (nc.tier + 1)
+        lines[i] = "#" * min(lvl, max_level) + " " + body
     return "\n".join(lines)
 
 

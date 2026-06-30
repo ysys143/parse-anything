@@ -13,7 +13,7 @@ def test_numbered_heading_detected_body_and_caption_abstain():
     blocks = [_b("h1", 1, "第1章 概要"), _b("p1", 2, "これは本文です。"),
               _b("h2", 3, "（１）現状"), _b("cap", 4, "表1 データの推移")]
     lm = heading_levels(blocks)
-    assert lm["h1"] == 1 and lm["h2"] == 3
+    assert lm["h1"] == 1 and lm["h2"] == 2   # （１） nests DIRECTLY under 第1章 (no 節 between) -> gapless 2
     assert "p1" not in lm and "cap" not in lm   # plain body + a table-caption label abstain
 
 
@@ -23,13 +23,52 @@ def test_enumerated_item_run_demoted_section_kept():
               _b("i2", 3, "② 둘째 조건", kind="list item"),
               _b("i3", 4, "③ 셋째 조건", kind="list item")]
     lm = heading_levels(blocks)
-    assert lm.get("s") == 2 and not ({"i1", "i2", "i3"} & set(lm))   # ①②③ are a list, demoted
+    assert lm.get("s") == 1 and not ({"i1", "i2", "i3"} & set(lm))   # mid-doc 節 (no 章) is top; ①②③ demoted
 
 
 def test_subsection_with_body_between_is_kept():
     blocks = [_b("a", 1, "（１）現状"), _b("body", 2, "ここに本文がある。"), _b("b", 3, "（２）展望")]
     lm = heading_levels(blocks)
-    assert lm.get("a") == 3 and lm.get("b") == 3   # body between siblings -> both kept
+    assert lm.get("a") == 1 and lm.get("b") == 1   # body between siblings -> both kept; paren is top here
+
+
+def _seq_levels(*headings):
+    """Levels of a heading sequence with body between each (so the enumerated-list demote never fires)."""
+    blocks = []
+    for k, h in enumerate(headings):
+        blocks += [_b(f"h{k}", 2 * k, h), _b(f"x{k}", 2 * k + 1, "본문 문장이 여기 있다.")]
+    lm = heading_levels(blocks)
+    return [lm.get(f"h{k}") for k in range(len(headings))]
+
+
+def test_levels_document_relative_paren_above_circled_jp():
+    # 章>節>decimal>（N）>① : gapless, and paren is SHALLOWER than circled (the white-paper order)
+    assert _seq_levels("第1章 A", "第1節 B", "6 C", "（１）D", "①E", "②F", "（２）G", "7 H", "第2節 I") \
+        == [1, 2, 3, 4, 5, 5, 4, 3, 2]
+
+
+def test_levels_inverted_circled_above_paren_korean_legal():
+    # 제N조>①>가.>(1) : circled is SHALLOWER than paren -- the REVERSE order, learned from this document
+    assert _seq_levels("제1조 적용", "① 조건", "가. 세부", "(1) 항목", "제2조 정의", "① 조건") \
+        == [1, 2, 3, 4, 1, 2]
+
+
+def test_no_level_skip_chapter_to_enumerator():
+    assert _seq_levels("第1章 A", "（１）B") == [1, 2]   # paren directly under chapter -> 2 (gapless), not 3
+
+
+def test_mid_document_section_is_top_level():
+    assert _seq_levels("第1節 A", "（１）B") == [1, 2]   # no chapter present -> 節 is the top level
+
+
+def test_decimal_depth_monotonic_in_context():
+    assert _seq_levels("第1節 A", "1.1 B", "1.1.1 C") == [1, 2, 3]   # decimal chain stays gapless
+
+
+def test_apply_heading_levels_uses_style_levels_not_absolute_rank():
+    out = apply_heading_levels("（１）現状\n\n①強み", page_headings=[],
+                               style_levels={"paren": 2, "circled": 3}).split("\n")
+    assert "## （１）現状" in out and "### ①強み" in out   # document-learned scale, not fixed rank 3/4
 
 
 def test_build_sections_nests_and_backrefs():

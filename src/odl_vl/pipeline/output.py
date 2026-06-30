@@ -21,7 +21,7 @@ from .outline import resolve_heading_authority
 from .pageno import extract_printed_page_numbers, printed_to_index
 from .reflow import _is_cjk, _no_fold_into, _starts_unit, reflow_markdown
 from .run import DocumentResult
-from .sections import apply_heading_levels, build_sections, heading_levels, strip_page_furniture
+from .sections import _assign_heading_levels, apply_heading_levels, build_sections, strip_page_furniture
 from .structure import build_graph
 
 
@@ -159,6 +159,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     sections: list[dict] = []
     page_labels: dict[int, str | None] = {}
     page_headings: dict[int, list[tuple[str, int]]] = {}
+    style_levels: dict[str, int] = {}
     figs_by_page: dict[int, list[dict]] = {}
     blocks_by_page: dict[int, tuple] = {}
     chart_noise: dict[int, set[str]] = {}
@@ -200,7 +201,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
             page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
             authority = resolve_heading_authority(pdf_path, result.structure)
-            level_map = heading_levels(blocks, authority, printed_to_index(page_labels))
+            level_map, style_levels = _assign_heading_levels(blocks, authority, printed_to_index(page_labels))
             sections, section_by_node = build_sections(blocks, tables, figures, level_map)
             for node in (*blocks, *tables, *figures):
                 if node["id"] in section_by_node:
@@ -223,7 +224,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             markdown = _suppress_chart_noise(markdown, chart_noise[p.page_index])
         markdown = reflow_markdown(markdown)  # join column-wrapped lines into flowing paragraphs
         if headings:  # detect heading lines IN the markdown; section level-map refines where it matches
-            markdown = apply_heading_levels(markdown, page_headings.get(p.page_index, []))
+            markdown = apply_heading_levels(markdown, page_headings.get(p.page_index, []), style_levels=style_levels)
         if inline_figures and p.page_index in figs_by_page:
             markdown = interleave_figures(markdown, figs_by_page[p.page_index], blocks_by_page.get(p.page_index, ()))
         markdown = _PLACEHOLDER_RE.sub("", markdown)  # drop bare VLM [figure]/[image] placeholders

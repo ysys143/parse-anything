@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
-from .numbering import classify_numbering
+from .numbering import infer_text_levels
 from .odl_extract import OdlDocument
 
 
@@ -56,21 +56,23 @@ def parse_printed_toc(structure: OdlDocument) -> HeadingAuthority | None:
     from the title's numbering class (``classify_numbering``), NOT the line's ODL kind -- a TOC tags
     sibling entries inconsistently (Ⅰ as list item, Ⅱ as paragraph)."""
     toc_pages: list[int] = []
-    entries: list[OutlineEntry] = []
+    raw: list[tuple[str, str]] = []   # (title, printed_page) in reading order
     for page in structure.pages:
-        hits: list[OutlineEntry] = []
+        hits: list[tuple[str, str]] = []
         for p in page.paragraphs:
             m = _LEADER.match(p.text.strip())
             if not m:
                 continue
-            title = m.group("title").strip(" ·.…‧・")
-            nc = classify_numbering(title)
-            hits.append(OutlineEntry(title, nc.rank if nc else 1, m.group("page"), None, "printed_toc"))
+            hits.append((m.group("title").strip(" ·.…‧・"), m.group("page")))
         if len(hits) >= 4:  # a cluster -> a real TOC page (one stray dotted line is not a TOC)
             toc_pages.append(page.page_index)
-            entries.extend(hits)
-    if not entries:
+            raw.extend(hits)
+    if not raw:
         return None
+    # The TOC entry list IS a reading-order heading sequence -> level it document-relative (same nesting
+    # stack as the body) instead of the overfit fixed rank, so authority overrides stay gapless.
+    levels = infer_text_levels([t for t, _ in raw])
+    entries = [OutlineEntry(t, lv or 1, pg, None, "printed_toc") for (t, pg), lv in zip(raw, levels)]
     return HeadingAuthority(entries, frozenset(toc_pages), "printed_toc")
 
 

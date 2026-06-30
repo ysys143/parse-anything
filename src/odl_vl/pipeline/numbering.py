@@ -88,3 +88,45 @@ def classify_numbering(text: str) -> NumberClass | None:
     if _HANGUL.match(t):
         return NumberClass(4, "item", "hangul_letter", 2)
     return None
+
+
+def level_for(sig: NumberClass, stack: list[dict]) -> int:
+    """Document-relative level of a heading by its signature, given the open-ancestor ``stack`` (frames
+    ``{style, level, tier, dec_depth}``). Only chapter (resets), section (nests under the nearest
+    chapter) and decimal DEPTH (monotone) are fixed anchors; every other style nests one below the
+    current top the first time it appears -- which LEARNS the per-document enumerator order. Mutates
+    ``stack`` (pops closed ancestors); the caller pushes the new frame."""
+    if sig.tier == 0:                       # chapter: resets the whole hierarchy
+        stack.clear()
+        return 1
+    if sig.tier == 1:                       # section: nests under the nearest chapter
+        while stack and stack[-1]["tier"] != 0:
+            stack.pop()
+        return (stack[-1]["level"] + 1) if stack else 1
+    if sig.dec_depth is not None:           # decimal: exactly one below the open decimal:(d-1), gapless
+        for i in range(len(stack) - 1, -1, -1):
+            if stack[i]["dec_depth"] == sig.dec_depth - 1:
+                del stack[i + 1:]
+                return stack[i]["level"] + 1
+    for i in range(len(stack) - 1, -1, -1):  # sibling: same style still open -> reuse its level
+        if stack[i]["style"] == sig.style:
+            lvl = stack[i]["level"]
+            del stack[i:]
+            return lvl
+    return (stack[-1]["level"] + 1) if stack else 1   # new style -> one deeper (defines its order)
+
+
+def infer_text_levels(texts: list[str]) -> list[int | None]:
+    """Document-relative levels for a bare sequence of heading texts (e.g. a TOC). ``None`` where a
+    text has no recognized numbering. Same nesting stack as the body inference."""
+    stack: list[dict] = []
+    out: list[int | None] = []
+    for t in texts:
+        sig = classify_numbering(t)
+        if sig is None:
+            out.append(None)
+            continue
+        lvl = level_for(sig, stack)
+        out.append(lvl)
+        stack.append({"style": sig.style, "level": lvl, "tier": sig.tier, "dec_depth": sig.dec_depth})
+    return out
