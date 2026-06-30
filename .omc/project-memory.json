@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/test_pipeline_caption.py -q 2>&1 | tail -3\ngit reset -q\ngit add -- src/odl_vl/pipeline/odl_extract.py tests/test_pipeline_caption.py\ngit commit -q -F - <<'MSG'\nfix(captions): extract the number from bracketed labels (<표 5-1>, 〈図3〉)\n\nCross-doc validation surfaced the Korean/JP angle-bracket caption form \"<표 5-1> …\": the caption bound\nbut its label stayed null because the regex anchored on the keyword and the leading \"<\" blocked the\nmatch. Allow an optional opening bracket (<〈【［() and capture the label WITHOUT it, so label=\"표 5-1\".\nValidation result across JP/KO/EN/contract/insurance: no over-binding (a 17-table English paper bound\n0 body sentences as captions), no regression; JP 表/図 and now bracketed KO labels resolve. 241 tests.\nMSG\ngit log --oneline -1",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/test_pipeline_chartnoise.py -q 2>&1 | tail -4",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -114,8 +114,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 55,
-      "lastAccessed": 1782821546731,
+      "accessCount": 61,
+      "lastAccessed": 1782824804593,
       "type": "file"
     },
     {
