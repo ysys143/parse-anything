@@ -39,7 +39,9 @@ def _gemini_headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"}
 
 
-def _b1_create_converter(api_key: str, model: str, prompt: str) -> Callable[..., Any]:
+def _b1_create_converter(
+    api_key: str, model: str, prompt: str, *, url: str = GEMINI_OPENAI_URL, headers: dict[str, str] | None = None
+) -> Callable[..., Any]:
     def create_converter(**_kwargs: Any) -> Any:
         # OCR/enrichment kwargs from the official lifespan are ignored: VlmPipeline transcribes
         # the page image directly, so layout/OCR/TableFormer do not apply.
@@ -50,13 +52,13 @@ def _b1_create_converter(api_key: str, model: str, prompt: str) -> Callable[...,
         from docling.pipeline.vlm_pipeline import VlmPipeline
 
         vlm_options = ApiVlmOptions(
-            url=GEMINI_OPENAI_URL,
-            headers=_gemini_headers(api_key),
+            url=url,
+            headers=headers if headers is not None else _gemini_headers(api_key),
             params={"model": model},
             prompt=prompt,
             response_format=ResponseFormat.MARKDOWN,
             scale=2.0,
-            timeout=120,
+            timeout=600,  # Paddle shim (job poll + retries) can be slow; don't let docling cut it off
         )
         options = VlmPipelineOptions(enable_remote_services=True, vlm_options=vlm_options)
         return DocumentConverter(
@@ -111,6 +113,41 @@ def install_b1(api_key: str, *, model: str = DEFAULT_MODEL, prompt: str = B1_PRO
     return hs
 
 
+def install_b1_paddle(settings: Any, *, prompt: str = B1_PROMPT) -> Any:
+    """B-1 with Paddle: start an OpenAI-compat shim over the Paddle job API and point docling's
+    VlmPipeline at it. Lets docling structure Paddle's transcription the same way it does Gemini's."""
+    from opendataloader_pdf import hybrid_server as hs
+
+    import time
+
+    from odl_vl.pipeline import paddle_vlm
+    from odl_vl.providers import ProviderHttpClient, SafeTransport, UrllibTransport
+    from odl_vl_track_b.paddle_openai_shim import serve_shim_background
+
+    client = ProviderHttpClient(transport=SafeTransport(UrllibTransport(timeout_seconds=90)))
+
+    def _paddle(png: bytes) -> str:
+        last = ""
+        for _ in range(3):  # Paddle job API is occasionally flaky (http_0); retry
+            try:
+                return paddle_vlm.transcribe(
+                    png, client=client, base_url=settings.paddle_base_url, token=settings.paddle_api_key,
+                    model=settings.paddle_model or paddle_vlm._DEFAULT_MODEL, doc_preprocess=True,
+                    poll_interval=4, max_polls=90,
+                )
+            except Exception as exc:
+                last = type(exc).__name__
+                time.sleep(4)
+        raise RuntimeError(f"paddle_retries_exhausted:{last}")
+
+    shim = serve_shim_background(_paddle)
+    shim_url = f"http://127.0.0.1:{shim.server_address[1]}/v1/chat/completions"
+    hs.create_converter = _b1_create_converter(  # type: ignore[attr-defined]
+        "unused", "paddle", prompt, url=shim_url, headers={}
+    )
+    return hs
+
+
 def install_b2(api_key: str, *, model: str = DEFAULT_MODEL, prompt: str = B2_PROMPT) -> Any:
     """Patch the official server's create_converter to the B-2 picture-description+Gemini variant."""
     from opendataloader_pdf import hybrid_server as hs
@@ -122,6 +159,8 @@ def install_b2(api_key: str, *, model: str = DEFAULT_MODEL, prompt: str = B2_PRO
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Track B (B-1/B-2): official docling-fast server with Gemini VLM")
     parser.add_argument("--variant", choices=["b1", "b2"], required=True)
+    parser.add_argument("--provider", choices=["gemini", "paddle"], default="gemini",
+                        help="b1 only: paddle routes via an OpenAI-compat shim over the Paddle job API")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5002)
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -133,11 +172,17 @@ def main(argv: list[str] | None = None) -> int:
     from odl_vl.config import load_settings
 
     settings = load_settings()
-    if not settings.has_gemini:
+    _is_b1_paddle = args.variant == "b1" and args.provider == "paddle"
+    if not _is_b1_paddle and not settings.has_gemini:
         raise SystemExit("GEMINI_API_KEY required for B-1/B-2 (Gemini VLM backend)")
 
     if args.variant == "b1":
-        hs = install_b1(settings.gemini_api_key, model=args.model)  # type: ignore[arg-type]
+        if args.provider == "paddle":
+            if not settings.has_paddle:
+                raise SystemExit("B-1 paddle requires PADDLE_BASE_URL + PADDLE_API_KEY")
+            hs = install_b1_paddle(settings)
+        else:
+            hs = install_b1(settings.gemini_api_key, model=args.model)  # type: ignore[arg-type]
         app = hs.create_app()
     else:
         hs = install_b2(settings.gemini_api_key, model=args.model)  # type: ignore[arg-type]
