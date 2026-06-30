@@ -227,24 +227,52 @@ def _num_key(text: str) -> str:
     return re.sub(r"\s+", "", m.group(0)) if m else _normalize(text)
 
 
+_DIGIT_RUN = re.compile(r"\d+")
+
+
+def _line_key(line: str) -> str:
+    """Whitespace-collapsed, digit-masked, lowered form so a running footer matches across pages even
+    though its page number ('30 / 32') changes."""
+    return _DIGIT_RUN.sub("#", " ".join(line.split())).lower()
+
+
+def _furniture_candidate(line: str) -> bool:
+    s = line.strip()
+    return bool(s) and not s.startswith(("#", "|", ">", "![", "<!--"))
+
+
 def strip_page_furniture(markdowns: dict[int, str], page_labels: dict[int, str | None]) -> dict[int, str]:
-    """Drop page furniture the VLM transcribed as content: a chapter/section heading (``#``/``##``)
-    whose leading number recurs on >=2 pages is a running header, not a real boundary (it would
-    fabricate a chapter break on every page); a bare line equal to a page's printed number is a
-    footer leak. Both are removed -- the genuine hierarchy still lives in ``sections[]`` and in the
-    one-off section headings. Subsection/item headings (``###``+) are never touched (現状/強み recur)."""
-    counts: Counter[str] = Counter()
+    """Drop page furniture the VLM transcribed as content: (1) a chapter/section heading (``#``/``##``)
+    whose leading number recurs on >=2 pages (a running header faking a chapter break each page);
+    (2) a bare line equal to a page's printed number (footer leak); (3) any non-heading, non-table
+    line whose digit-masked form recurs on a large fraction of pages -- a running journal header/footer
+    ('PLOS Biology | … | 30 / 32'). The genuine hierarchy still lives in ``sections[]``; subsection/
+    item headings (``###``+) and one-off lines are never touched."""
+    n = len(markdowns)
+    head_counts: Counter[str] = Counter()
+    line_counts: Counter[str] = Counter()
     for md in markdowns.values():
-        on_page = {_num_key(m.group(2)) for ln in md.split("\n") if (m := _HEADING_LINE.match(ln))}
-        counts.update(on_page)
-    running = {k for k, c in counts.items() if c >= 2}
+        heads, lines = set(), set()
+        for ln in md.split("\n"):
+            if m := _HEADING_LINE.match(ln):
+                heads.add(_num_key(m.group(2)))
+            elif _furniture_candidate(ln):
+                lines.add(_line_key(ln))
+        head_counts.update(heads)
+        line_counts.update(lines)
+    running_heads = {k for k, c in head_counts.items() if c >= 2}
+    running_lines = {k for k, c in line_counts.items() if c >= max(3, n // 3)}  # recurs on many pages
     out: dict[int, str] = {}
     for idx, md in markdowns.items():
         label = page_labels.get(idx)
-        kept = [
-            ln for ln in md.split("\n")
-            if not ((m := _HEADING_LINE.match(ln)) and _num_key(m.group(2)) in running)
-            and not (label is not None and ln.strip() == label)
-        ]
+        kept: list[str] = []
+        for ln in md.split("\n"):
+            if (m := _HEADING_LINE.match(ln)) and _num_key(m.group(2)) in running_heads:
+                continue
+            if label is not None and ln.strip() == label:
+                continue
+            if _furniture_candidate(ln) and _line_key(ln) in running_lines:
+                continue
+            kept.append(ln)
         out[idx] = re.sub(r"\n{3,}", "\n\n", "\n".join(kept))  # collapse the blanks a removed line leaves
     return out
