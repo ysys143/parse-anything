@@ -45,16 +45,24 @@ def emitted_numbers(markdown: str) -> set[str]:
     return {_norm(m.group(0)) for m in _NUM_RE.finditer(markdown)}
 
 
-def score(pdf_path: str, markdown: str, *, min_value: float | None = None) -> dict[str, object]:
-    oracle = oracle_numbers(pdf_path, min_value=min_value)
+def score(oracle: set[str], markdown: str) -> dict[str, object]:
+    """Recall + precision of output numbers vs the oracle/golden set.
+
+    recall = golden numbers found in output (coverage); precision = output numbers that are in
+    golden (1 - fabrication/OCR-error rate). On born-digital recall is the value oracle (F8); on
+    scans recall+precision against a golden set catch both missed and hallucinated digits.
+    """
     emitted = emitted_numbers(markdown)
     hit = oracle & emitted
     recall = len(hit) / len(oracle) if oracle else 1.0
+    precision = len(hit) / len(emitted) if emitted else 1.0
     return {
-        "number_recall": round(recall, 3),
-        "oracle_n": len(oracle),
-        "hit_n": len(hit),
-        "table_preserved": bool(_MD_TABLE_RE.search(markdown)),
+        "recall": round(recall, 3),
+        "precision": round(precision, 3),
+        "hit": len(hit),
+        "golden": len(oracle),
+        "fabricated": len(emitted - oracle),
+        "table": bool(_MD_TABLE_RE.search(markdown)),
         "chars": len(markdown),
     }
 
@@ -63,7 +71,19 @@ def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(__doc__)
         return 2
+    # Optional --golden <file>: use a golden number list instead of the PDF text-layer oracle
+    # (required for scans, which have no text layer).
+    golden_file = None
+    if argv[0] == "--golden":
+        golden_file = argv[1]
+        argv = argv[2:]
     pdf_path = argv[0]
+    if golden_file:
+        with open(golden_file, encoding="utf-8") as fh:
+            oracle = {_norm(line.strip()) for line in fh if line.strip()}
+    else:
+        oracle = oracle_numbers(pdf_path)
+
     variants = []
     for arg in argv[1:]:
         label, _, md_path = arg.partition("=")
@@ -73,13 +93,13 @@ def main(argv: list[str]) -> int:
         except OSError as exc:
             print(f"  [skip] {label}: {type(exc).__name__}")
             continue
-        variants.append((label, score(pdf_path, markdown)))
+        variants.append((label, score(oracle, markdown)))
 
     if not variants:
         print("no readable variant outputs")
         return 1
 
-    cols = ["number_recall", "hit_n", "oracle_n", "table_preserved", "chars"]
+    cols = ["recall", "precision", "hit", "golden", "fabricated", "table", "chars"]
     width = max(len(label) for label, _ in variants)
     header = "variant".ljust(width) + "  " + "  ".join(c.rjust(15) for c in cols)
     print(header)
