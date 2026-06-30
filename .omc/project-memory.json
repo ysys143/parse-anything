@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -3",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2\ngit reset -q\ngit add -- src/odl_vl/pipeline/output.py tests/test_pipeline_xref.py\ngit commit -q -F - <<'MSG'\nfeat(graph): cross-reference edges (in-text 表N/図N -> node ids) for one-pass section retrieval\n\nAsked whether the graph can return a subsection's full text PLUS its related tables/figures without a\nsecond retrieval, verification showed contained content works but objects the text only REFERENCES\n(\"…（図146−4、表146−5）\") were missed, and a query-time label scan was fragile to column-wrap\nwhitespace (\"図146− 4\").\n\nResolve those references at build time into a `refs` edge on each block: index every table/figure by\nits label, normalise text + labels (strip whitespace, unify dashes) and match with a digit boundary\n(表14 won't match 表146). A section's RELATED objects are then contained-content ∪ block `refs`, both\nread straight from the graph in a single traversal. Verified: 6 セメント > （３） returns its full text\n+ {図146−4, 表146−5}; （１）現状 returns its text + {表146−1 (contained), 表146−2 (referenced)}.\ntests/: 248 pass.\nMSG\ngit log --oneline -1",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -114,8 +114,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 63,
-      "lastAccessed": 1782827055911,
+      "accessCount": 65,
+      "lastAccessed": 1782828430203,
       "type": "file"
     },
     {
