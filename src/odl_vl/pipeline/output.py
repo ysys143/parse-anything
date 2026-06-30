@@ -149,14 +149,15 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
 
     results: list[dict] = []
     doc_parts: list[str] = []
+    seen_headings: set[str] = set()  # de-dup chapter/section running headers repeated across pages
     for p in result.pages:
         record = {"page_index": p.page_index, "route": p.route, "used_vlm": p.used_vlm, "flags": list(p.flags)}
         if p.route == "folded":
             results.append(record)
             continue
         markdown = reflow_markdown(p.markdown)  # join column-wrapped lines into flowing paragraphs
-        if p.page_index in page_headings:        # prefix/relevel heading lines with #*level
-            markdown = apply_heading_levels(markdown, page_headings[p.page_index])
+        if headings:  # detect heading lines IN the markdown; section level-map refines where it matches
+            markdown = apply_heading_levels(markdown, page_headings.get(p.page_index, []), seen=seen_headings)
         if inline_figures and p.page_index in figs_by_page:
             markdown = interleave_figures(markdown, figs_by_page[p.page_index], blocks_by_page.get(p.page_index, ()))
         name = f"page-{p.page_index:03d}.md"

@@ -43,3 +43,24 @@ def test_apply_heading_levels_prefixes_and_relevels():
     assert "# 第1章 概要" in lines       # deterministic line (no #) gets a prefix
     assert "### （１）現状" in lines      # VLM's single # is re-leveled to ###
     assert "本文" in lines               # body untouched
+
+
+def test_vlm_headed_table_figure_caption_is_de_headed():
+    md = "# 表145-3 機能性ガラス\n\n## 6 セメント産業\n\n# Figure 2: a plot"
+    lines = apply_heading_levels(md, [("6 セメント産業", 2)]).split("\n")
+    assert "## 6 セメント産業" in lines                  # the real section keeps its level
+    assert "表145-3 機能性ガラス" in lines               # table caption de-headed (no #)
+    assert "Figure 2: a plot" in lines                  # figure caption de-headed
+    assert "# 表145-3 機能性ガラス" not in lines
+
+
+def test_running_header_chapter_deduped_but_subsection_recurs():
+    seen: set[str] = set()
+    p1 = apply_heading_levels("第1章 概要\n\n本文", seen=seen).split("\n")
+    p2 = apply_heading_levels("第1章 概要\n\nもっと本文", seen=seen).split("\n")
+    assert "# 第1章 概要" in p1                          # first chapter occurrence -> heading
+    assert "第1章 概要" in p2 and "# 第1章 概要" not in p2   # repeat (running header) de-headed
+    s2 = set()
+    apply_heading_levels("（１）現状\n\n本文", seen=s2)
+    again = apply_heading_levels("（１）現状\n\n別の本文", seen=s2).split("\n")
+    assert "### （１）現状" in again                      # rank-3 subsection recurs per section, NOT deduped

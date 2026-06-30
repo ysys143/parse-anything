@@ -127,18 +127,47 @@ def build_sections(blocks: list[dict], tables: list[dict], figures: list[dict],
     return sections, section_by_node
 
 
-def apply_heading_levels(markdown: str, page_headings: list[tuple[str, int]], *, max_level: int = 6) -> str:
-    """Prefix/relevel heading lines with ``#``*level. ``page_headings`` = (heading_text, level) for
-    this page; the line is located by normalized-prefix match. Works for both deterministic (no #)
-    and det_vlm (existing # restripped) markdown; line count is unchanged."""
-    if not page_headings:
-        return markdown
-    wanted = {_normalize(t): min(lvl, max_level) for t, lvl in page_headings}
+def apply_heading_levels(markdown: str, page_headings: list[tuple[str, int]] | None = None, *,
+                         max_level: int = 6, seen: set[str] | None = None) -> str:
+    """Set ``#``*level on heading lines detected DIRECTLY in the markdown (the rendered view), so a
+    running-header chapter/section line (``第1章 …``) is leveled even when the structure layer's ODL
+    block text differs from the VLM's. A line's level is its section level from ``page_headings`` when
+    matched, else its own numbering-class rank. Table/figure captions the VLM marked as headings are
+    de-headed (a caption never outranks a chapter); enumerated ①②③ item runs with no body between
+    are left as plain list items, not headings. Pass a persistent ``seen`` set across pages to
+    de-head a chapter/section title that repeats verbatim (a running header) after its first use --
+    subsection titles (現状/強み) legitimately recur per section, so only ranks 1-2 are deduped.
+    Line count is unchanged."""
+    level_of = {_normalize(t): lvl for t, lvl in (page_headings or [])}
     lines = markdown.split("\n")
+    cand: list[tuple[int, int, str]] = []  # (line index, numbering rank, body text)
     for i, ln in enumerate(lines):
-        body = ln.lstrip("#").lstrip()
+        is_hash = ln.lstrip().startswith("#")
+        body = ln.lstrip("#").lstrip() if is_hash else ln.strip()
+        if not body:
+            continue
+        if _CAPTION_LEAD.match(body):           # table/figure caption -> never a section heading
+            if is_hash:
+                lines[i] = body                 # strip the VLM's #
+            continue
+        nc = classify_numbering(body)
+        if nc is None or body.rstrip()[-1:] in _TERMINATORS or len(body) > 120:  # not a heading line
+            continue
+        cand.append((i, nc.rank, body))
+
+    cand_idx = {c[0] for c in cand}             # demote enumerated item runs (rank>=4, no body between)
+    demote: set[int] = set()
+    for (i0, r0, _), (i1, r1, _) in zip(cand, cand[1:]):
+        if r1 == r0 >= 4 and not any(lines[k].strip() and k not in cand_idx for k in range(i0 + 1, i1)):
+            demote |= {i0, i1}
+
+    for i, rank, body in cand:
         norm = _normalize(body)
-        if norm and norm in wanted:
-            lines[i] = "#" * wanted[norm] + " " + body
-            del wanted[norm]  # each heading matched once
+        repeated = seen is not None and rank <= 2 and norm in seen   # a running-header repeat
+        if i in demote or repeated:
+            lines[i] = body                     # de-head: enumerated item, or repeated running header
+            continue
+        if seen is not None and rank <= 2:
+            seen.add(norm)
+        lines[i] = "#" * min(level_of.get(norm, rank), max_level) + " " + body
     return "\n".join(lines)
