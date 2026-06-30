@@ -24,6 +24,13 @@ from odl_vl.config import load_settings  # noqa: E402
 from odl_vl.pipeline.output import document_dir, write_outputs  # noqa: E402
 from odl_vl.pipeline.run import run_document  # noqa: E402
 
+_FIG_DESCRIBE_PROMPT = (
+    "You are describing a figure/chart for a reader who cannot see it. In 2-4 sentences, state what "
+    "the figure depicts, its axes and their units, and the main trend or the most important values. "
+    "Respond in the SAME language as the figure's own labels. Output only the description -- no "
+    "preamble, no markdown, no heading."
+)
+
 
 def _now() -> str:
     from datetime import datetime, timezone
@@ -113,8 +120,18 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     )
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
+
+    describe_figure = None  # R14: a VLM text description for each cropped vector chart (det_vlm only)
+    if client is not None and key and not args.no_describe_figures:
+        from odl_vl.pipeline.vlm import transcribe_image
+
+        def describe_figure(png: bytes, caption: str | None) -> str:
+            prompt = _FIG_DESCRIBE_PROMPT + (f"\nThe figure's caption is: {caption}" if caption else "")
+            return transcribe_image(png, prompt, api_key=key, client=client)
+
     write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic,
-                  inline_figures=not args.no_inline_figures, headings=not args.no_headings)
+                  inline_figures=not args.no_inline_figures, headings=not args.no_headings,
+                  describe_figure=describe_figure)
     if args.review:
         from odl_vl.pipeline.review import write_review
 
@@ -154,6 +171,8 @@ def _parse_args(argv):
                         help="skip interleaving ODL figure (signature/stamp/logo) image refs into the page Markdown")
     parser.add_argument("--no-headings", action="store_true",
                         help="skip the chapter/section/subsection hierarchy (sections[] tree + #/##/### in Markdown)")
+    parser.add_argument("--no-describe-figures", action="store_true",
+                        help="det_vlm: skip the VLM text description generated for each cropped vector chart")
     parser.add_argument("--primary", choices=["gemini", "paddle"], default="gemini",
                         help="det_vlm primary transcriber: gemini (grounded) or paddle (doc-specialised)")
     parser.add_argument("--prompt", default=None, help="det_vlm: custom base prompt (overrides default)")

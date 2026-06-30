@@ -13,7 +13,8 @@ fig/table labels, bbox, cells). Run artifacts are git-ignored.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+import re
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from .outline import resolve_heading_authority
@@ -80,6 +81,8 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     placed: list[tuple[int, str]] = []
     for fig in sorted(figs, key=lambda f: -f["bbox"][3]):  # top of page first (larger y = higher)
         ref = f'![{fig.get("label") or "figure"}]({fig["file"]})'
+        if fig.get("description"):  # a VLM text description of the chart, as a blockquote under the image
+            ref += "\n\n> " + " ".join(fig["description"].split())
         if not blocks:
             end_refs.append(ref)
             continue
@@ -108,7 +111,8 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
 
 
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
-                  arithmetic: bool = True, inline_figures: bool = True, headings: bool = True) -> None:
+                  arithmetic: bool = True, inline_figures: bool = True, headings: bool = True,
+                  describe_figure: "Callable[[bytes, str | None], str] | None" = None) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -129,7 +133,21 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
         for t in tables:  # per-table view files are named by the table's graph id
             t["views"] = {"md": f"tables/{t['id']}.md", "json": f"tables/{t['id']}.json"}
+        if inline_figures and pdf_path:  # R14: recover vector charts ODL's raster-figure detector misses
+            from .vecfig import detect_vector_figures
+            tbp = {pg.page_index: [t.bbox for t in pg.tables] for pg in result.structure.pages}
+            for pi, bboxes in detect_vector_figures(pdf_path, tbp).items():
+                meta = pages_meta.setdefault(pi, {"content": [], "blocks": [], "tables": [], "figures": []})
+                for k, bbox in enumerate(bboxes):
+                    fid = f"p{pi + 1}_vec{k}"
+                    figures.append({"id": fid, "type": "figure", "page": pi + 1, "bbox": list(bbox),
+                                    "order": 10_000 + k, "source": "vector", "caption_id": None,
+                                    "caption": None, "label": None})
+                    meta["figures"].append(fid)
+                    meta["content"].append(fid)
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
+        if describe_figure is not None:  # R14: bind caption + VLM text description for each cropped chart
+            _describe_vector_figures(out, figures, blocks, describe_figure)
         for f in figures:
             if f.get("file") and f.get("bbox"):  # only ODL figures with a real crop can be inlined
                 figs_by_page.setdefault(f["page"] - 1, []).append(f)
@@ -160,6 +178,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             markdown = apply_heading_levels(markdown, page_headings.get(p.page_index, []))
         if inline_figures and p.page_index in figs_by_page:
             markdown = interleave_figures(markdown, figs_by_page[p.page_index], blocks_by_page.get(p.page_index, ()))
+        markdown = _PLACEHOLDER_RE.sub("", markdown)  # drop bare VLM [figure]/[image] placeholders
         name = f"page-{p.page_index:03d}.md"
         md_by_index[p.page_index] = markdown
         record["markdown_file"] = f"pages/{name}"
@@ -192,6 +211,38 @@ def _table_md(cells: list[list[dict]]) -> str:
              "| " + " | ".join("---" for _ in range(width)) + " |"]
     lines += ["| " + " | ".join(c.replace("|", r"\|") for c in r) + " |" for r in rows[1:]]
     return "\n".join(lines)
+
+
+_PLACEHOLDER_RE = re.compile(r"(?im)^[ \t]*\[(?:figure|image)\][ \t]*\n?")  # bare VLM figure placeholder
+_FIG_CAPTION_RE = re.compile(r"(?i)^\s*((?:図|圖|图|그림|figure|fig\.?)\s*[0-9０-９][0-9０-９.\-－]*)")
+
+
+def _describe_vector_figures(out: Path, figures: list[dict], blocks: list[dict],
+                             describe_figure: "Callable[[bytes, str | None], str]") -> None:
+    """Bind each vector figure to the nearest figure-caption block and attach a VLM text description
+    of the cropped chart, so a chart becomes image + searchable prose instead of a dead ``[figure]``."""
+    caps_by_page: dict[int, list[dict]] = {}
+    for b in blocks:
+        if _FIG_CAPTION_RE.match(b.get("text", "")):
+            caps_by_page.setdefault(b["page"], []).append(b)
+    for f in figures:
+        if f.get("source") != "vector" or not f.get("file"):
+            continue
+        fx0, _fy0, fx1, fy1 = f["bbox"]
+        caps = caps_by_page.get(f["page"], [])
+        if caps:  # the caption whose horizontal span overlaps the figure and is vertically closest
+            overlap = [b for b in caps if not (b["bbox"][2] < fx0 or b["bbox"][0] > fx1)] or caps
+            cap = min(overlap, key=lambda b: abs((b["bbox"][1] + b["bbox"][3]) / 2 - fy1))
+            m = _FIG_CAPTION_RE.match(cap["text"])
+            f["label"] = m.group(1) if m else None
+            f["caption"] = cap["text"]
+            f["caption_id"] = cap.get("id")
+        try:
+            desc = describe_figure((out / f["file"]).read_bytes(), f.get("caption"))
+        except Exception:  # noqa: BLE001 -- a failed description must not abort the run
+            desc = ""
+        if desc and desc.strip():
+            f["description"] = desc.strip()
 
 
 def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale: float = 2.0) -> None:
