@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.vecfig import _cluster, _in_table
+import pytest
+
+from fixtures.figure_cases import FIGURE_CASES
+from odl_vl.pipeline.vecfig import _cluster, _in_table, _page_figures
+
+
+@pytest.mark.parametrize("case", FIGURE_CASES, ids=lambda c: c.name)
+def test_figure_detection_generalizes_across_doc_types(case):
+    figs = _page_figures(case.paths, case.tables, case.text_blocks, width=case.width, height=case.height)
+    assert len(figs) == case.expected, f"{case.name}: got {figs}"
 
 
 def test_cluster_groups_nearby_paths_and_separates_distant_ones():

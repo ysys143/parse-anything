@@ -171,7 +171,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         if inline_figures and pdf_path:  # R14: recover vector charts ODL's raster-figure detector misses
             from .vecfig import detect_vector_figures
             tbp = {pg.page_index: [t.bbox for t in pg.tables] for pg in result.structure.pages}
-            for pi, bboxes in detect_vector_figures(pdf_path, tbp).items():
+            txt = {pg.page_index: [p.bbox for p in pg.paragraphs] for pg in result.structure.pages}
+            for pi, bboxes in detect_vector_figures(pdf_path, tbp, txt).items():
                 meta = pages_meta.setdefault(pi, {"content": [], "blocks": [], "tables": [], "figures": []})
                 for k, bbox in enumerate(bboxes):
                     fid = f"p{pi + 1}_vec{k}"
@@ -180,6 +181,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                                     "caption": None, "label": None})
                     meta["figures"].append(fid)
                     meta["content"].append(fid)
+        figures = [f for f in figures if not _tiny_figure(f.get("bbox"))]  # drop hairline icons/logos
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
         _bind_vector_captions(figures, blocks)  # 図N label + caption text (both modes)
         if describe_figure is not None:  # R14: VLM text description per cropped vector chart (det_vlm)
@@ -267,6 +269,15 @@ _FIG_CAPTION_RE = re.compile(r"(?i)[<〈【［(]?\s*((?:図|圖|图|그림|figur
 # year labels) is visual-only and meaningless to a text model -- suppress it from the prose.
 _KEEP_IN_FIG = re.compile(r"(?i)^\s*(?:[<〈【［(]?\s*(?:図|圖|图|表|table|figure|fig|그림|표)\s*\d"
                           r"|備考|注記|資料|出典|出所|出處|source|note)")
+
+
+def _tiny_figure(bbox) -> bool:
+    """A hairline rule or a tiny icon/logo, not a content figure. Figures with no bbox (caption-only
+    nodes) are kept."""
+    if not bbox:
+        return False
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    return w * h < 900 or min(w, h) < 12
 
 
 def _bind_vector_captions(figures: list[dict], blocks: list[dict]) -> None:
