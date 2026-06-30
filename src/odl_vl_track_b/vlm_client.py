@@ -37,14 +37,21 @@ def gemini_transcriber(api_key: str, *, client: Any = None) -> Transcriber:
     return lambda png, prompt: transcribe_image(png, prompt, api_key=api_key, client=cl)
 
 
-def paddle_transcriber(base_url: str, token: str, *, model: str | None = None, client: Any = None) -> Transcriber:
+def paddle_transcriber(
+    base_url: str, token: str, *, model: str | None = None, client: Any = None, doc_preprocess: bool = False
+) -> Transcriber:
     cl = client or make_http_client()
-    fn = paddle_vlm.make_transcriber(cl, base_url=base_url, token=token, model=model or paddle_vlm._DEFAULT_MODEL)
+    fn = paddle_vlm.make_transcriber(
+        cl, base_url=base_url, token=token, model=model or paddle_vlm._DEFAULT_MODEL, doc_preprocess=doc_preprocess
+    )
     return lambda png, _prompt: fn(png)  # Paddle ignores the prompt
 
 
-def transcriber_from_env(provider: str, *, settings: _Settings | None = None) -> Transcriber:
-    """Build a transcriber from .env/env settings. Raises if the provider is unconfigured."""
+def transcriber_from_env(
+    provider: str, *, settings: _Settings | None = None, doc_preprocess: bool = False
+) -> Transcriber:
+    """Build a transcriber from .env/env settings. Raises if the provider is unconfigured.
+    ``doc_preprocess`` enables Paddle's scan orientation/unwarp correction (no-op for Gemini)."""
     s = settings or load_settings()
     if provider == "gemini":
         if not s.has_gemini:
@@ -53,5 +60,7 @@ def transcriber_from_env(provider: str, *, settings: _Settings | None = None) ->
     if provider == "paddle":
         if not s.has_paddle:
             raise RuntimeError("paddle provider requires PADDLE_BASE_URL + PADDLE_API_KEY")
-        return paddle_transcriber(s.paddle_base_url, s.paddle_api_key, model=s.paddle_model)  # type: ignore[arg-type]
+        return paddle_transcriber(
+            s.paddle_base_url, s.paddle_api_key, model=s.paddle_model, doc_preprocess=doc_preprocess  # type: ignore[arg-type]
+        )
     raise ValueError(f"unknown provider: {provider!r}")

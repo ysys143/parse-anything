@@ -15,7 +15,18 @@ from typing import Any, Callable
 from odl_vl.providers import HttpRequest, _join_url, _paddle_jobs_url, is_success_status
 
 _DEFAULT_MODEL = "PaddleOCR-VL-1.6"
-_OPTIONAL_PAYLOAD = {"useDocOrientationClassify": False, "useDocUnwarping": False, "useChartRecognition": False}
+
+
+def _optional_payload(doc_preprocess: bool) -> dict[str, bool]:
+    """PaddleOCR pre-processing toggles. Orientation-classify + unwarp correct scan skew/warp;
+    OFF by default (born-digital is already upright -- R8.5, and the toggles add latency). Turn ON
+    for scans: it materially improves recall/precision on skewed, noisy pages (measured: mild scan
+    0.946->0.968 recall, fabricated 7->2)."""
+    return {
+        "useDocOrientationClassify": doc_preprocess,
+        "useDocUnwarping": doc_preprocess,
+        "useChartRecognition": False,
+    }
 
 
 class PaddleError(RuntimeError):
@@ -44,12 +55,13 @@ def _data(response: Any) -> dict[str, Any]:
 
 def transcribe(
     png: bytes, *, client: Any, base_url: str, token: str, model: str = _DEFAULT_MODEL,
-    poll_interval: float = 5.0, max_polls: int = 120,
+    poll_interval: float = 5.0, max_polls: int = 120, doc_preprocess: bool = False,
 ) -> str:
     jobs_url = _paddle_jobs_url(base_url)
     auth = {"Authorization": f"bearer {token}"}
 
-    body, content_type = _multipart(png, {"model": model, "optionalPayload": json.dumps(_OPTIONAL_PAYLOAD)})
+    payload = json.dumps(_optional_payload(doc_preprocess))
+    body, content_type = _multipart(png, {"model": model, "optionalPayload": payload})
     job_id = _data(client.send(HttpRequest("POST", jobs_url, {**auth, "Content-Type": content_type}, body))).get("jobId")
     if not job_id:
         raise PaddleError("paddle_no_job_id")
@@ -79,6 +91,11 @@ def transcribe(
     return "\n".join(texts)
 
 
-def make_transcriber(client: Any, *, base_url: str, token: str, model: str = _DEFAULT_MODEL) -> Callable[[bytes], str]:
-    """A png -> text callable for det_vlm's injectable primary transcriber (--primary paddle, R10)."""
-    return lambda png: transcribe(png, client=client, base_url=base_url, token=token, model=model)
+def make_transcriber(
+    client: Any, *, base_url: str, token: str, model: str = _DEFAULT_MODEL, doc_preprocess: bool = False
+) -> Callable[[bytes], str]:
+    """A png -> text callable for det_vlm's injectable primary transcriber (--primary paddle, R10).
+    Set ``doc_preprocess=True`` for scans (orientation/unwarp correction)."""
+    return lambda png: transcribe(
+        png, client=client, base_url=base_url, token=token, model=model, doc_preprocess=doc_preprocess
+    )

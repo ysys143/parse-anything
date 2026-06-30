@@ -240,6 +240,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5002)
     parser.add_argument("--provider", choices=["gemini", "paddle"], default="gemini")
+    parser.add_argument("--paddle-preprocess", action="store_true",
+                        help="Enable Paddle scan orientation/unwarp correction (recommended for scans)")
     parser.add_argument("--det-aug", action="store_true",
                         help="B-4: deterministic grounding + value-oracle guards (re-parse in proxy)")
     parser.add_argument("--no-odl-grounding", action="store_true",
@@ -249,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    transcriber = transcriber_from_env(args.provider)
+    transcriber = transcriber_from_env(args.provider, doc_preprocess=args.paddle_preprocess)
     if args.det_aug:
         from odl_vl_track_b.det_aug import make_grounding_hook, make_guard_hook
         server = serve(
