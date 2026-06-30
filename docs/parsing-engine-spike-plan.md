@@ -295,6 +295,19 @@ F22(OmniDocBench, 표 TEDS)는 "이미지에선 PaddleOCR-VL ≫ Gemini, 광폭 
 - **[중요] docling 구조화 효과가 provider에 따라 정반대**: Gemini는 docling 경유로 **0.571→0.789(+0.22)** 향상(불완전한 표를 VlmPipeline이 보완), Paddle은 **0.825→0.782(−0.04)** 소폭 손실(이미 완전한 HTML 표를 재처리하며 일부 깎임). **최적 경로가 provider별로 다르다 — Paddle은 직접, Gemini는 docling 경유.**
 - 우리 proxy(B-3)는 직접/B-1보다 양쪽 다 약간 낮다(Gemini 0.582, Paddle 0.766) — `docling_out` 성형 개선 여지.
 
+##### docling 내장 로컬 추론 (on-device VLM, no API)
+
+docling VlmPipeline에 **로컬 VLM**(InlineVlmOptions)을 꽂아 기기에서 추론:
+
+| 로컬 모델 | 표 TEDS | text 1-NED | 비고 |
+|---|---|---|---|
+| GraniteDocling-258M (MLX) | 0.000 | 0.000 | 258M 소형 — 복잡 표 이미지에 무력(`![image]`만) |
+| PaddleOCR-VL-1.6 (transformers, MPS) | 0.000 | **0.636** | 텍스트는 official API급, 표는 평문 |
+
+- **GraniteDocling-258M**: docling 권장 내장 모델이나 너무 작아 복잡 표/이미지를 거의 전사 못 함.
+- **PaddleOCR-VL-1.6 로컬**: official-API와 *같은 모델*을 transformers로 on-device 실행. transformers 5.8.1의 내장 PaddleOCR-VL 통합에 **버그 4종**(config.text_config 누락 / get_text_config 재귀 / self 반환 시 to_dict 재귀 / rope_type=default에서 mrope_section 드롭)이 있어 `_patch_paddleocr_vl_config`로 우회해야 동작(**transformers 5.8.1 버전 특정 패치 — 버전 바뀌면 재검토 필요**). 결과: **텍스트 1-NED 0.636 = official API 동급**(같은 weights)이나 **표 TEDS 0.0** — transformers raw `generate`는 표를 평문으로 뱉는다.
+- **[중요] 핵심 교훈**: "같은 모델"이라도 **추론 경로가 결과를 가른다**. PaddleOCR-VL의 표 강점은 weights가 아니라 **official API의 page-level 후처리 파이프라인**에서 온다 — 로컬 transformers는 텍스트만 official급이고 표 구조는 못 만든다. 표-중심 소스엔 official API가 정답.
+
 ## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
 - 연동 옵션/무Java 주입: `docs/odl-engine-rust-python-integration.md`
