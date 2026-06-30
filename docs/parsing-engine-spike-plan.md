@@ -256,7 +256,25 @@ F22(OmniDocBench, 표 TEDS)는 "이미지에선 PaddleOCR-VL ≫ Gemini, 광폭 
 
 **교정 후 결과(광폭 이미지 표, 완전 oracle)**: A / B-1 / B-3(gemini) / B-3(paddle) 모두 **recall 1.0, precision 1.0, fabricated 0, tbl_cells 414** — 4변종 전부 완벽 전사. number-recall/precision 축에선 Paddle = Gemini, **값 정확도로는 광폭 표에서 우열을 못 가린다.** F22의 Paddle 우위는 **표 TEDS(셀 구조 정확도)** 척도에서 나오며, 우리 oracle 카드는 `tbl_cells`(완전성=양)까지만 — **셀 구조 정확도(TEDS)는 여전히 미측정**(골든 표 구조 라벨 + apted 필요, §8).
 
-> **교훈(중요)**: 합성 PDF + 단일 지표로 provider 우열을 단정하지 말 것. Paddle을 세 번 연속 과소평가한 건 전부 우리 측정 쪽 결함이었다. provider 비교는 ① 각자 최적 설정 ② 형식차(천단위 점/콤마, HTML/MD 표) 정규화 ③ 적합한 지표(값=recall/precision, 구조=TEDS)가 전제되어야 한다. 신뢰할 결론은 실제 코퍼스(OmniDocBench 류) + TEDS에서 온다(F22).
+> **교훈(중요)**: 합성 PDF + 단일 지표로 provider 우열을 단정하지 말 것. Paddle을 네 번 연속 과소평가한 건 전부 우리 측정 쪽 결함이었다. provider 비교는 ① 각자 최적 설정 ② 형식차(천단위 점/콤마, HTML/MD 표) 정규화 ③ 적합한 지표(값=recall/precision, 구조=TEDS) ④ 완전한 골든이 전제되어야 한다. 신뢰할 결론은 실제 코퍼스(OmniDocBench 류) + TEDS에서 온다(F22).
+
+#### 실측: Track B 변종 × OmniDocBench TEDS (`scripts/track_b_teds.py`)
+
+위 교훈대로 실제 GT로 채점했다. OmniDocBench 로컬 가용분(표 포함 2쪽/7표, 소표본)을 각 변종으로 ODL hybrid 왕복 → apted 표 TEDS + 텍스트 1-NED:
+
+| 변종 | 표 TEDS | 텍스트 1-NED |
+|---|---|---|
+| B-1 (VlmPipeline, gemini) | 0.789 | 0.634 |
+| B-3 (proxy, gemini) | 0.582 | 0.309 |
+| B-3 (proxy, paddle) | **0.766** | 0.636 |
+| *F22 참고 (직접 VLM): paddle* | *0.910* | *0.873* |
+| *F22 참고 (직접 VLM): gemini* | *0.696* | *0.842* |
+
+**발견**:
+- **실제 GT TEDS에서 Paddle(0.766) > proxy Gemini(0.582)** — F22의 Paddle 표 우위가 우리 환경에서도 재현. **number_recall(합성)으론 둘 다 1.0이라 안 보이던 차이를 TEDS가 잡는다.** 적합 지표의 결정적 중요성.
+- 표본에 중국어 교과서가 포함 — Paddle의 문서특화/다국어 OCR 강점이 발휘되는 곳(F22의 "이미지에선 PaddleOCR-VL ≫ Gemini" 일관).
+- **proxy 성형 손실**: 같은 Gemini인데 B-1(docling VlmPipeline) 0.789 > B-3(우리 proxy) 0.582 — 우리 `docling_out` 표/텍스트 성형이 docling 본가보다 더 잃는다(개선 여지).
+- **한계**: n=2쪽(로컬 OmniDocBench 이미지 28장 중 표 포함 2장)이라 통계적으로 약함 — 전체 1651쪽 이미지 확보 후 재측정 필요. 단 방향은 F22(층화 ~40쪽)와 일치.
 
 ## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
