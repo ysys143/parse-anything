@@ -23,11 +23,15 @@ from odl_vl.pipeline.oracle import fabrication_flags
 OdlRunner = Callable[[str], dict]
 
 
-def make_grounding_hook(*, use_odl: bool = True, runner: OdlRunner | None = None):
+def make_grounding_hook(*, use_odl: bool = True, runner: OdlRunner | None = None, use_supplied: bool = True):
     """Pre-hook: inject pypdfium2 text (+ optional ODL structure) into the prompt.
 
     The ODL document is parsed once per PDF path and cached; parse failure falls back to
     pypdfium2-only grounding (still preserves numeric values). ``runner`` is injectable for tests.
+
+    ``use_supplied`` (Track C): when True and ODL shipped a 1st-pass Markdown, ground on that
+    directly (no in-proxy re-parse). False forces B-4's in-proxy re-parse even if md was supplied
+    -- the lever for benchmarking Track C (supplied) vs B-4 (re-parse).
     """
     odl_cache: dict[str, Any] = {}
 
@@ -47,7 +51,14 @@ def make_grounding_hook(*, use_odl: bool = True, runner: OdlRunner | None = None
                 return page
         return None
 
-    def hook(pdf_path: str, page_index: int, _png: bytes, prompt: str) -> tuple[str, tuple[str, ...]]:
+    def hook(pdf_path: str, page_index: int, _png: bytes, prompt: str,
+             supplied_md: str | None = None) -> tuple[str, tuple[str, ...]]:
+        if use_supplied and supplied_md is not None and supplied_md.strip():
+            # Track C: ODL already shipped its 1st-pass deterministic Markdown -- ground on it
+            # directly, NO re-parse (the whole point: remove B-4's in-proxy odl_extract/pypdfium2).
+            grounded = grounding.build_grounded_prompt(prompt, supplied_md, None)
+            return grounded, ()
+        # B-4: reconstruct grounding by re-parsing the PDF in-proxy.
         pypdf_text = deterministic.page_text(pdf_path, page_index)
         odl_page = _odl_page(pdf_path, page_index)
         grounded = grounding.build_grounded_prompt(prompt, pypdf_text, odl_page)

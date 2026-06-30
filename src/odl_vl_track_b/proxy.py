@@ -38,15 +38,17 @@ DEFAULT_PROMPT = (
     "is not visible. Output only the Markdown, no preamble."
 )
 
-# Pre-hook: (pdf_path, page_index_0based, page_png, base_prompt) -> (prompt, extra_flags). Runs
-# before transcription. B-3 uses the identity hook; B-4 injects deterministic grounding here.
-PageHook = Callable[[str, int, bytes, str], tuple[str, tuple[str, ...]]]
+# Pre-hook: (pdf_path, page_index_0based, page_png, base_prompt, supplied_md) -> (prompt, flags).
+# Runs before transcription. B-3 uses the identity hook; B-4 injects deterministic grounding here.
+# supplied_md is ODL's 1st-pass Markdown for the page (Track C) or None (B-4 re-parses instead).
+PageHook = Callable[[str, int, bytes, str, "str | None"], tuple[str, tuple[str, ...]]]
 # Post-hook: (pdf_path, page_index_0based, markdown) -> extra_flags. Runs after transcription.
 # B-4 runs the value-oracle / arithmetic guards here. Keeps the HTTP loop variant-agnostic.
 PostHook = Callable[[str, int, str], tuple[str, ...]]
 
 
-def _identity_hook(_pdf_path: str, _page_index: int, _png: bytes, prompt: str) -> tuple[str, tuple[str, ...]]:
+def _identity_hook(_pdf_path: str, _page_index: int, _png: bytes, prompt: str,
+                   _supplied_md: "str | None") -> tuple[str, tuple[str, ...]]:
     return prompt, ()
 
 
@@ -121,12 +123,15 @@ def convert_pdf(
     prompt: str = DEFAULT_PROMPT,
     hook: PageHook = _identity_hook,
     post_hook: PostHook = _no_post,
+    supplied_markdown: str | None = None,
 ) -> dict[str, Any]:
     """Render + transcribe the requested pages and build the DoclingDocument envelope.
 
     Pure function over bytes (no HTTP) so it is unit-testable with a fake transcriber. ``hook``
     (pre) and ``post_hook`` (post) are the B-3/B-4 seams: B-4 passes a grounding pre-hook that
     rewrites the prompt and a guard post-hook that flags unsourced numbers in the transcription.
+    ``supplied_markdown`` is ODL's 1st-pass Markdown for the requested pages (Track C): passed to
+    the pre-hook so it can ground without re-parsing. For a single-page chunk it is that page's md.
     """
     started = time.monotonic()
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
@@ -143,7 +148,7 @@ def convert_pdf(
             idx = page_no - 1
             try:
                 png = render_page_png(pdf_path, idx)
-                page_prompt, flags = hook(pdf_path, idx, png, prompt)
+                page_prompt, flags = hook(pdf_path, idx, png, prompt, supplied_markdown)
                 markdown = transcriber(png, page_prompt)
                 flags = flags + post_hook(pdf_path, idx, markdown)
                 width, height = _page_size(pdf_path, idx)
@@ -204,11 +209,16 @@ class _Handler(BaseHTTPRequestHandler):
             return
         page_ranges = fields.get("page_ranges")
         page_ranges_str = page_ranges.decode("latin1").strip() if page_ranges else None
+        # Track C: ODL's 1st-pass deterministic Markdown for the chunk (if it shipped one).
+        supplied = fields.get("markdown_1st")
+        supplied_markdown = supplied.decode("utf-8", "replace") if supplied else None
+        logger.info("markdown_1st received: %d chars", len(supplied_markdown) if supplied_markdown else 0)
         try:
             result = convert_pdf(
                 fields["files"], page_ranges_str,
                 transcriber=type(self).transcriber, prompt=type(self).prompt,
                 hook=type(self).hook, post_hook=type(self).post_hook,
+                supplied_markdown=supplied_markdown,
             )
             self._send_json(result)
         except Exception as exc:
@@ -248,6 +258,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="B-4: skip ODL structure outline, ground on pypdfium2 text only")
     parser.add_argument("--min-value", type=float, default=None,
                         help="B-4: only guard numbers >= this value (page numbers / small counts are noise)")
+    parser.add_argument("--ignore-supplied", action="store_true",
+                        help="B-4 mode: re-parse in proxy even if ODL shipped 1st-pass md (Track C off)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -256,10 +268,10 @@ def main(argv: list[str] | None = None) -> int:
         from odl_vl_track_b.det_aug import make_grounding_hook, make_guard_hook
         server = serve(
             host=args.host, port=args.port, transcriber=transcriber,
-            hook=make_grounding_hook(use_odl=not args.no_odl_grounding),
+            hook=make_grounding_hook(use_odl=not args.no_odl_grounding, use_supplied=not args.ignore_supplied),
             post_hook=make_guard_hook(min_value=args.min_value),
         )
-        variant = "B-4 (det-aug)"
+        variant = "B-4 (re-parse)" if args.ignore_supplied else "Track C (supplied grounding)"
     else:
         server = serve(host=args.host, port=args.port, transcriber=transcriber)
         variant = "B-3 (pure VLM)"
