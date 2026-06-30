@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .outline import resolve_heading_authority
 from .pageno import extract_printed_page_numbers, printed_to_index
-from .reflow import reflow_markdown
+from .reflow import _is_cjk, _no_fold_into, _starts_unit, reflow_markdown
 from .run import DocumentResult
 from .sections import apply_heading_levels, build_sections, heading_levels, strip_page_furniture
 from .structure import build_graph
@@ -110,6 +110,39 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     return out
 
 
+_PAGE_TERMINATORS = "。．.!?！？"  # a page ending here finished its sentence; absence => mid-sentence cut
+
+
+def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
+    """Assemble per-page Markdown into one continuous document. The page boundary is a physical PDF
+    artifact, not document structure, so a sentence wrapped across it is STITCHED back (the same
+    continuation rule reflow uses within a page, plus a terminator check since the page break carries
+    no blank-line signal). Each page is marked with an invisible ``<!-- page N -->`` comment (printed
+    label) so provenance survives without interrupting the prose. The per-page files keep the splits."""
+    out = ""
+    for i, (label, md) in enumerate(pages):
+        md = md.strip("\n")
+        marker = f"<!-- page {label} -->" if label else ""
+        if i == 0:
+            out = f"{marker}\n\n{md}" if marker else md
+            continue
+        if not md:
+            out += f"\n\n{marker}" if marker else ""
+            continue
+        last = out.rsplit("\n", 1)[-1]
+        first = md.split("\n", 1)[0]
+        rest = md[len(first):]
+        stitch = bool(last) and last.rstrip()[-1:] not in _PAGE_TERMINATORS \
+            and "|" not in last and "|" not in first \
+            and not _no_fold_into(last) and not _starts_unit(first)
+        if stitch:  # mid-sentence wrap -> join the fragments, marker invisibly between them
+            sep = "" if (_is_cjk(last[-1:]) or _is_cjk(first.lstrip()[:1])) else " "
+            out = f"{out}{marker}{sep}{first.lstrip()}{rest}"
+        else:
+            out = f"{out}\n\n{marker}\n\n{md}" if marker else f"{out}\n\n{md}"
+    return out
+
+
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
                   arithmetic: bool = True, inline_figures: bool = True, headings: bool = True,
                   describe_figure: "Callable[[bytes, str | None], str] | None" = None) -> None:
@@ -188,11 +221,10 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     if headings:  # document-level: drop running headers + printed-page-number leaks (page furniture)
         md_by_index = strip_page_furniture(md_by_index, page_labels)
 
-    doc_parts: list[str] = []
     for page_index, name in rendered:
-        (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")
-        doc_parts.append(md_by_index[page_index])
-    (out / "document.md").write_text("\n\n---\n\n".join(doc_parts), encoding="utf-8")
+        (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")  # per-page keeps the split
+    pages_doc = [(page_labels.get(pi) or str(pi + 1), md_by_index[pi]) for pi, _ in rendered]
+    (out / "document.md").write_text(_assemble_document(pages_doc), encoding="utf-8")
     _write_jsonl(out / "ledger.jsonl", result.ledger())
     _write_jsonl(out / "results.jsonl", results)
 

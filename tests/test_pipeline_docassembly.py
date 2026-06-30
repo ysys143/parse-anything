@@ -1,0 +1,24 @@
+from __future__ import annotations
+
+from odl_vl.pipeline.output import _assemble_document
+
+
+def test_stitches_midsentence_page_break_with_invisible_marker():
+    doc = _assemble_document([("128", "本文が家電産業の"), ("129", "製造工程について。")])
+    assert doc.startswith("<!-- page 128 -->")
+    assert "家電産業の<!-- page 129 -->製造工程について。" in doc   # CJK join, marker invisibly between
+
+
+def test_paragraph_break_when_sentence_completes_on_the_page():
+    doc = _assemble_document([("1", "文が完成した。"), ("2", "新しい段落。")])
+    assert "完成した。\n\n<!-- page 2 -->\n\n新しい段落。" in doc   # terminator -> break, marker on its own line
+
+
+def test_does_not_stitch_a_continuation_into_a_heading_or_table():
+    assert "<!-- page 2 -->\n\n## 第2章" in _assemble_document([("1", "未完の文"), ("2", "## 第2章")])
+    assert "<!-- page 2 -->\n\n| a | b |" in _assemble_document([("1", "未完の文"), ("2", "| a | b |")])
+
+
+def test_latin_text_joins_with_a_space():
+    doc = _assemble_document([("1", "the quick brown"), ("2", "fox jumped.")])
+    assert "the quick brown<!-- page 2 --> fox jumped." in doc   # space sep for non-CJK
