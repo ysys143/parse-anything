@@ -67,6 +67,8 @@ ODL Java 소스를 직접 수정해 HybridRequest 프로토콜을 확장. 1차 m
   docling-fast 프로토콜로 부족하면 `HybridClient`+`SchemaTransformer`(→veraPDF IObject) 작성·등록. **IObject 변환 비용을 여기서 측정.**
 - **B 측정 포인트**: triage 입자(page vs region) 적합성, 프롬프트 주입 가능성, DoclingDocument/IObject 성형 공수, Java 발자국, 출력 품질.
 
+> 위 단계는 방법론이고, 실제 구현은 4개 변종(B-1~B-4)으로 분기해 전부 동작 검증됐다 — **§12 Track B 변종 실측** 참조.
+
 ## 4. Track A 작업 단계
 
 - **A1. ODL JSON 소비**
@@ -165,7 +167,37 @@ ODL Java 소스를 직접 수정해 HybridRequest 프로토콜을 확장. 1차 m
 ## 11. 예상 수렴 (정직한 가설)
 PDF/HWP 슬라이스에선 B(특히 B1 무Java 주입)가 컴팩트하게 이기고, 비-PDF·ledger·멀티백엔드에선 A가 필요. Java 수정이 허용되고 grounded 2-패스와 동적 프롬프트가 필수라면 C가 B의 프로토콜 한계를 해소 → **하이브리드로 수렴할 가능성이 높음**. 그래도 bake-off로 "PDF 2-패스를 ODL 안/밖/Java 수정 중 어디서 돌릴지"를 데이터로 확정하는 게 목적.
 
-## 12. 참고
+## 12. Track B 변종 실측 (track-b 브랜치 구현)
+
+§3의 B1/B2/B3는 방법론적 *단계*(무Java검증 → 실VLM → 조건부Java)다. 실제 구현은 "VLM을 어디서/어떤 입력으로 부르나"에 따라 **4개 변종**으로 분기했고, 전부 **ODL 업스트림 무수정**(Java fork 0)으로 동작 검증됐다. 코드: `src/odl_vl_track_b/` (커밋 86b8262 / 9e5ad09 / 1ded424 / 3221486).
+
+| 변종 | upstream | VLM 범위 | grounding | 구현 |
+|---|---|---|---|---|
+| **B-1** | 무수정 (공식 서버 monkeypatch) | 페이지 전체 전사 | Docling 자체 | `backend_docling.py`: Docling `VlmPipeline` + `ApiVlmOptions` → Gemini OpenAI 호환 엔드포인트 |
+| **B-2** | 무수정 (공식 서버 monkeypatch) | 그림 설명만 | 없음 | `backend_docling.py`: 표준 `PdfPipelineOptions`(layout+TableFormer) + `PictureDescriptionApiOptions`(Gemini) |
+| **B-3** | 무수정 (독립 proxy) | 페이지 전체 전사 | 없음(순수 VLM) | `proxy.py`: stdlib `http.server`, 수동 multipart, 신규 의존성 0 |
+| **B-4** | 무수정 (독립 proxy) | 페이지 전체 전사 | **det aug 풀세트** | `proxy.py` + `det_aug.py`: pypdfium2 값 + ODL 구조 grounding pre-hook, 값-oracle guard post-hook (기존 `pipeline/grounding·oracle·guards` 재사용) |
+
+### 핵심 발견
+
+- **공식 `hybrid_server.py`는 포크 불필요**: ODL 하이브리드 프로토콜(multipart in / DoclingDocument out)을 이미 말하고, VLM 구성이 모듈 전역 `create_converter` 한 곳에 모여 있어 **monkeypatch로 VLM만 교체**(1000줄 포크 회피). → B-1/B-2.
+- **proxy면 Java 없이 동적 프롬프트 가능**: ODL은 프롬프트를 운반 못 하지만(원래 Track C 명분), proxy가 ODL과 VLM *사이*에서 프롬프트를 직접 주입 → C의 프롬프트 가치를 흡수. C에 남는 순수 가치는 "ODL 1차 결과 재사용(재파싱 중복 제거) + IObject 직매핑"으로 좁혀짐.
+- **표 보존은 출력 성형에 달림**: ODL `DoclingSchemaTransformer`는 `data.grid`(차원, 필수) + `data.table_cells`(셀 텍스트)를 읽는다(`DoclingSchemaTransformer.java` L439/L464). proxy가 VLM Markdown을 파싱해 이 형식으로 emit하면 B-3/B-4도 표·heading 구조를 보존(초기 평탄화 → 구조화, 커밋 3221486).
+- **모델 버전 드리프트 주의**: `gemini-2.0-flash`는 폐기(404)되어 live에서 적발 → `providers.DEFAULT_GEMINI_MODEL`로 레포 전체와 모델 id를 묶음.
+- **B 의존성 경계**: B-1/B-2는 `docling`+`fastapi`/`uvicorn`/`python-multipart`(`[hybrid]` extra) 필요. B-3/B-4는 신규 의존성 0(stdlib + 기존 `odl_vl.pipeline`).
+
+### 동일 입력 출력 특성 (1p born-digital, 비테두리 표)
+
+| 변종 | heading | 표 | 값 guard |
+|---|---|---|---|
+| B-1 | 평문 | **Markdown 표 보존** | 없음 |
+| B-2 | `#` 인식 | 평탄화(비테두리 표는 TableFormer 미검출) | 없음 |
+| B-3 | `#` 인식 | **표 보존**(성형 개선 후) | 없음 |
+| B-4 | `#` 인식 | **표 보존** | `unsourced_number` flag |
+
+> "어느 변종이 이긴다"가 아니라 "무엇에 강하냐"가 다르다. 도메인별 정량 비교(§7 스코어카드)와 재파싱 중복 비용(§5 C 정당화) 측정이 다음 단계.
+
+## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
 - 연동 옵션/무Java 주입: `docs/odl-engine-rust-python-integration.md`
 - LightRAG `BaseExternalParser` RFC (IR 계약 정렬 대상): https://github.com/HKUDS/LightRAG/issues/3197
