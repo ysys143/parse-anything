@@ -16,8 +16,11 @@ import json
 from collections.abc import Iterable
 from pathlib import Path
 
+from .outline import resolve_heading_authority
+from .pageno import extract_printed_page_numbers, printed_to_index
 from .reflow import reflow_markdown
 from .run import DocumentResult
+from .sections import apply_heading_levels, build_sections, heading_levels
 from .structure import build_graph
 
 
@@ -105,7 +108,7 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
 
 
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
-                  arithmetic: bool = True, inline_figures: bool = True) -> None:
+                  arithmetic: bool = True, inline_figures: bool = True, headings: bool = True) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -116,6 +119,9 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     blocks: list[dict] = []
     tables: list[dict] = []
     figures: list[dict] = []
+    sections: list[dict] = []
+    page_labels: dict[int, str | None] = {}
+    page_headings: dict[int, list[tuple[str, int]]] = {}
     figs_by_page: dict[int, list[dict]] = {}
     blocks_by_page: dict[int, tuple] = {}
     if result.meta is not None and result.structure is not None:
@@ -128,6 +134,18 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             if f.get("file") and f.get("bbox"):  # only ODL figures with a real crop can be inlined
                 figs_by_page.setdefault(f["page"] - 1, []).append(f)
         blocks_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
+        if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
+            page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
+            authority = resolve_heading_authority(pdf_path, result.structure)
+            level_map = heading_levels(blocks, authority, printed_to_index(page_labels))
+            sections, section_by_node = build_sections(blocks, tables, figures, level_map)
+            for node in (*blocks, *tables, *figures):
+                if node["id"] in section_by_node:
+                    node["section"] = section_by_node[node["id"]]
+            by_id = {b["id"]: b for b in blocks}
+            for bid, lvl in level_map.items():
+                b = by_id[bid]
+                page_headings.setdefault(b["page"] - 1, []).append((b["text"], lvl))
 
     results: list[dict] = []
     doc_parts: list[str] = []
@@ -137,6 +155,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             results.append(record)
             continue
         markdown = reflow_markdown(p.markdown)  # join column-wrapped lines into flowing paragraphs
+        if p.page_index in page_headings:        # prefix/relevel heading lines with #*level
+            markdown = apply_heading_levels(markdown, page_headings[p.page_index])
         if inline_figures and p.page_index in figs_by_page:
             markdown = interleave_figures(markdown, figs_by_page[p.page_index], blocks_by_page.get(p.page_index, ()))
         name = f"page-{p.page_index:03d}.md"
@@ -150,7 +170,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     _write_jsonl(out / "results.jsonl", results)
 
     if result.meta is not None:
-        _write_document_json(out, result, pages_meta, blocks, tables, figures)
+        _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels)
         _write_tables(out, tables)
 
 
@@ -205,13 +225,16 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
 
 
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
-                         blocks: list[dict], tables: list[dict], figures: list[dict]) -> None:
-    """Emit the R12 graph: per-page reading-order ``content`` (id stream) + typed id lists, plus
-    document-level ``blocks``/``tables``/``figures`` registries keyed by stable id."""
+                         blocks: list[dict], tables: list[dict], figures: list[dict],
+                         sections: list[dict], page_labels: dict[int, str | None]) -> None:
+    """Emit the R12/R13 graph: per-page reading-order ``content`` (id stream) + typed id lists, the
+    document-level ``blocks``/``tables``/``figures``/``sections`` registries keyed by stable id, and
+    each page's printed ``page_label``."""
     doc = result.meta.to_dict()
     doc["pages"] = [
         {
-            "page_index": p.page_index, "page_number": p.page_index + 1, "page_label": None,
+            "page_index": p.page_index, "page_number": p.page_index + 1,
+            "page_label": page_labels.get(p.page_index),
             "mode": p.route, "used_vlm": p.used_vlm, "flags": list(p.flags),
             "markdown_file": f"pages/page-{p.page_index:03d}.md",
             "content": pages_meta.get(p.page_index, {}).get("content", []),
@@ -221,6 +244,7 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
         }
         for p in result.pages if p.route != "folded"
     ]
+    doc["sections"] = sections
     doc["blocks"] = blocks
     doc["tables"] = tables
     doc["figures"] = figures

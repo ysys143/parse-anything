@@ -114,7 +114,7 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
     write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic,
-                  inline_figures=not args.no_inline_figures)
+                  inline_figures=not args.no_inline_figures, headings=not args.no_headings)
     if args.review:
         from odl_vl.pipeline.review import write_review
 
@@ -152,6 +152,8 @@ def _parse_args(argv):
     parser.add_argument("--no-arithmetic", action="store_true", help="det_vlm: skip arithmetic-invariant guard")
     parser.add_argument("--no-inline-figures", action="store_true",
                         help="skip interleaving ODL figure (signature/stamp/logo) image refs into the page Markdown")
+    parser.add_argument("--no-headings", action="store_true",
+                        help="skip the chapter/section/subsection hierarchy (sections[] tree + #/##/### in Markdown)")
     parser.add_argument("--primary", choices=["gemini", "paddle"], default="gemini",
                         help="det_vlm primary transcriber: gemini (grounded) or paddle (doc-specialised)")
     parser.add_argument("--prompt", default=None, help="det_vlm: custom base prompt (overrides default)")
