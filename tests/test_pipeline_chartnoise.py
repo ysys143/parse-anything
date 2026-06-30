@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from odl_vl.pipeline.odl_extract import OdlParagraph
-from odl_vl.pipeline.output import _KEEP_IN_FIG, _chart_internal_noise, _suppress_chart_noise
+from odl_vl.pipeline.output import (
+    _KEEP_IN_FIG, _chart_internal_noise, _mark_chart_label_blocks, _suppress_chart_noise,
+)
 
 
 def test_suppress_chart_noise_drops_only_matching_standalone_lines():
@@ -28,3 +30,14 @@ def test_chart_internal_noise_drops_ticks_inside_bbox_but_keeps_caption_and_outs
     )
     fig = {"source": "vector", "page": 1, "bbox": [0.0, 90.0, 250.0, 140.0]}
     assert _chart_internal_noise([fig], {0: paras}) == {0: {"1,000"}}
+
+
+def test_mark_chart_label_blocks_flags_inside_excludes_caption_and_outside():
+    blocks = [
+        {"id": "b1", "page": 1, "bbox": [10.0, 100.0, 50.0, 110.0], "text": "1,000"},       # inside -> mark
+        {"id": "b2", "page": 1, "bbox": [10.0, 120.0, 200.0, 130.0], "text": "図3 推移"},    # caption -> keep
+        {"id": "b3", "page": 1, "bbox": [500.0, 500.0, 540.0, 510.0], "text": "本文の段落"},  # outside -> keep
+    ]
+    _mark_chart_label_blocks([{"source": "vector", "page": 1, "bbox": [0.0, 90.0, 250.0, 140.0], "id": "f1"}], blocks)
+    assert blocks[0].get("figure") == "f1"
+    assert not blocks[1].get("figure") and not blocks[2].get("figure")

@@ -195,6 +195,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                 figs_by_page.setdefault(f["page"] - 1, []).append(f)
         blocks_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
         chart_noise = _chart_internal_noise(figures, blocks_by_page)  # legend/axis/year labels to drop
+        _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
         if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
             page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
             authority = resolve_heading_authority(pdf_path, result.structure)
@@ -307,6 +308,26 @@ def _chart_internal_noise(figures: list[dict], blocks_by_page: dict[int, tuple])
 def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:
     """Drop standalone lines whose (whitespace-normalised) text is a chart-internal noise label."""
     return "\n".join(ln for ln in markdown.split("\n") if " ".join(ln.split()) not in noise)
+
+
+def _mark_chart_label_blocks(figures: list[dict], blocks: list[dict]) -> None:
+    """Flag graph blocks that are a chart's internal labels (legend/axis/year) with ``figure``=its id,
+    so a JSON consumer can exclude them from text retrieval/embedding -- the loss-aware mirror of the
+    Markdown suppression (data kept, but filterable)."""
+    by_page: dict[object, list[dict]] = {}
+    for b in blocks:
+        by_page.setdefault(b.get("page"), []).append(b)
+    for f in figures:
+        if f.get("source") != "vector" or not f.get("bbox"):
+            continue
+        x0, y0, x1, y1 = f["bbox"]
+        for b in by_page.get(f["page"], []):
+            bb = b.get("bbox")
+            if not bb:
+                continue
+            cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+            if x0 <= cx <= x1 and y0 <= cy <= y1 and not _KEEP_IN_FIG.match(b.get("text", "")):
+                b["figure"] = f["id"]
 
 
 def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale: float = 2.0) -> None:

@@ -39,6 +39,13 @@ def test_build_sections_nests_and_backrefs():
     assert sbn["p"] == secs[0]["id"] and "p" in secs[0]["content"]   # body attaches to its section
 
 
+def test_build_sections_attaches_table_with_pages_list_to_open_section():
+    blocks = [_b("h", 1, "第1章 A")]
+    tables = [{"id": "t1", "type": "table", "pages": [1], "order": 2, "text": ""}]  # `pages`, not `page`
+    secs, sbn = build_sections(blocks, tables, [], heading_levels(blocks))
+    assert sbn.get("t1") == secs[0]["id"] and "t1" in secs[0]["content"]   # table attaches, not orphaned
+
+
 def test_apply_heading_levels_prefixes_and_relevels():
     md = "第1章 概要\n\n本文\n\n# （１）現状"
     lines = apply_heading_levels(md, [("第1章 概要", 1), ("（１）現状", 3)]).split("\n")

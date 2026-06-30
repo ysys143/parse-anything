@@ -100,7 +100,11 @@ def build_sections(blocks: list[dict], tables: list[dict], figures: list[dict],
                    level_map: dict[object, int]) -> tuple[list[dict], dict[object, object]]:
     """Nest nodes under headings into a sections[] tree by global reading order; return
     (sections, section_by_node_id). Non-heading nodes attach to the current open section."""
-    nodes = sorted([*blocks, *tables, *figures], key=lambda n: (n.get("page", 0), n.get("order", 0)))
+    # tables carry a `pages` LIST (cross-page), blocks/figures a `page` scalar -- normalise for ordering,
+    # else every table sorts to page 0 (before any heading) and never attaches to its section.
+    def _page(n: dict) -> int:
+        return n.get("page") or (n.get("pages") or [0])[0]
+    nodes = sorted([*blocks, *tables, *figures], key=lambda n: (_page(n), n.get("order", 0)))
     sections: list[dict] = []
     by_id: dict[object, dict] = {}
     section_by_node: dict[object, object] = {}
