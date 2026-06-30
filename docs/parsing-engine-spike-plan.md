@@ -244,6 +244,18 @@ PDF/HWP 슬라이스에선 B(특히 B1 무Java 주입)가 컴팩트하게 이기
 - **det aug guard의 사각**: B-4의 값-oracle guard는 born-digital 텍스트 레이어에 의존하는데 스캔엔 레이어가 없어 **스캔 환각은 guard로 못 막는다**. det_vlm의 우위는 guard가 아니라 "스캔이면 보수적으로 abstain"하는 프롬프트/품질-게이트 전략에서 온다.
 - **정책 결론**: 저품질 스캔 → **사람 검토(T-HUM) 필수**(processing-tiers 경계를 데이터로 입증). precision/fabricated가 이 영역의 핵심 변별 지표 — recall만으론 "안전한 무응답(A)"과 "위험한 환각(B)"을 구분 못 한다.
 
+#### 광폭 표 (18열 이미지-only) + Paddle 측정 공정성 — F22 재현 시도
+
+F22(OmniDocBench, 표 TEDS)는 "이미지에선 PaddleOCR-VL ≫ Gemini, 광폭 표는 Paddle 완전·Gemini 포기"라 결론냈다. 이를 우리 환경에서 재현하려 18열 매트릭스(371 숫자)를 이미지-only로 만들어 측정한 결과, **Paddle을 불리하게 잡는 측정 결함 3종을 연달아 발견**했다:
+
+1. **Paddle 전처리 OFF**: `useDocUnwarping`/`useDocOrientationClassify`를 꺼서 스캔에서 불리(`--paddle-preprocess`로 교정).
+2. **recall이 TEDS를 못 잼**: number_recall은 숫자가 *어디든* 등장하면 hit — 표 구조/셀 위치/완전성을 못 본다(F22가 측정한 축).
+3. **천단위 구분자 미정규화**: Paddle은 천단위를 점(`5.405`)으로 표기하는데 스코어카드가 콤마만 제거해 소수로 오인 → **Paddle의 완벽한 광폭 표 전사를 recall 0.127로 오채점**. 정규화 수정 후 **1.0**.
+
+**교정 후 결과(광폭 이미지 표)**: A / B-1 / B-3(gemini) / B-3(paddle) 모두 **recall 1.0, tbl_cells 414** — number-recall 축에선 Paddle = Gemini(둘 다 완전 전사). **recall은 광폭 표에서 우열을 못 가린다.** F22의 Paddle 우위는 **표 TEDS(셀 구조 정확도)** 척도에서 나오며, 우리 oracle/golden 카드는 `tbl_cells`(완전성=양)까지만 — **셀 구조 정확도(TEDS)는 여전히 미측정**(골든 표 구조 라벨 + apted 필요, §8).
+
+> **교훈(중요)**: 합성 PDF + 단일 지표로 provider 우열을 단정하지 말 것. Paddle을 세 번 연속 과소평가한 건 전부 우리 측정 쪽 결함이었다. provider 비교는 ① 각자 최적 설정 ② 형식차(천단위 점/콤마, HTML/MD 표) 정규화 ③ 적합한 지표(값=recall/precision, 구조=TEDS)가 전제되어야 한다. 신뢰할 결론은 실제 코퍼스(OmniDocBench 류) + TEDS에서 온다(F22).
+
 ## 13. 참고
 - ODL 내부(triage/하이브리드/백엔드): `docs/pdf-parsing-libraries-research.md` 부록 D
 - 연동 옵션/무Java 주입: `docs/odl-engine-rust-python-integration.md`
