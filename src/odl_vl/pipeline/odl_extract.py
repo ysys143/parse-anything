@@ -27,9 +27,11 @@ BBox = tuple[float, float, float, float]
 _TEXT_TYPES = frozenset({"paragraph", "heading", "list item", "text block"})
 _IMAGE_TYPES = frozenset({"image", "figure", "picture"})
 
-# Original printed table/figure numbers ("Table 5-2", "표 5-2", "Figure 12", "그림 3").
-_TABLE_LABEL_RE = re.compile(r"(?i)\b(?:table|표|tab\.?)\s*(\d+(?:[-.]\d+)*)")
-_FIGURE_LABEL_RE = re.compile(r"(?i)\b(?:figure|fig\.?|그림|figs?\.?)\s*(\d+(?:[-.]\d+)*)")
+# Original printed table/figure numbers ("Table 5-2", "표 5-2", "Figure 12", "그림 3", "表146-5",
+# "図147-2"). Includes JP/zh 表/図/圖/图 and the fullwidth/Unicode dashes those documents use.
+_LABEL_NUM = r"\d+(?:[-.‐-―−－]\d+)*"
+_TABLE_LABEL_RE = re.compile(rf"(?i)\b(?:table|tab\.?|表|표)\s*({_LABEL_NUM})")
+_FIGURE_LABEL_RE = re.compile(rf"(?i)\b(?:figure|figs?\.?|fig\.?|図|圖|图|그림)\s*({_LABEL_NUM})")
 
 
 class OdlError(RuntimeError):
@@ -219,6 +221,9 @@ def _label_tables_figures(
     the printed number ("Table 5-2"/"Figure 12") when the caption leads with one."""
     by_table_id = {t.table_id: k for k, t in enumerate(tables) if t.table_id is not None}
     by_image_id = {im.element_id: k for k, im in enumerate(images) if im.element_id is not None}
+    # Process label-bearing captions (the TITLE "表146-5 …") LAST so they win the caption field over a
+    # linked 資料/備考 footnote that would otherwise overwrite the title (later write wins below).
+    captions = sorted(captions, key=lambda c: bool(_TABLE_LABEL_RE.match(c.text) or _FIGURE_LABEL_RE.match(c.text)))
     for cap in captions:
         tlabel = _TABLE_LABEL_RE.search(cap.text)
         flabel = _FIGURE_LABEL_RE.search(cap.text)
@@ -282,6 +287,13 @@ def parse_document(data: dict) -> OdlDocument:
                         int(page) - 1, ntype, box, clean,
                         element_id=node.get("id"), font_size=node.get("font size"),
                         heading_level=node.get("heading level"), level=node.get("level"), order=_next()))
+                    if _TABLE_LABEL_RE.match(clean) or _FIGURE_LABEL_RE.match(clean):
+                        # ODL often labels a table/figure caption as a heading/paragraph, not a
+                        # "caption" node. A block LEADING with 表146-5 / 図147-2 is one -- add it as a
+                        # caption candidate too (kept as body as well: loss-aware) so it binds by bbox.
+                        captions_by_page[int(page) - 1].append(_Caption(  # type: ignore[arg-type]
+                            int(page) - 1, box, clean,
+                            element_id=node.get("id"), linked_content_id=node.get("linked content id")))
             elif ntype in _IMAGE_TYPES and page:
                 images_by_page[int(page) - 1].append(  # type: ignore[arg-type]
                     OdlImage(int(page) - 1, box, node.get("id"), order=_next()))
