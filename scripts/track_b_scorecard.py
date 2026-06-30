@@ -24,11 +24,16 @@ sys.path.insert(0, "src")
 from odl_vl.pipeline.deterministic import number_tokens  # noqa: E402
 from odl_vl.pipeline.render import page_count  # noqa: E402
 
-_NUM_RE = re.compile(r"\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?")
-_MD_TABLE_RE = re.compile(r"^\s*\|.*\|\s*$", re.MULTILINE)
+# Thousands grouping may be comma (5,405) or dot (5.405, European / PaddleOCR style).
+_NUM_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})+|\d+(?:\.\d+)?")
+_GROUPED_RE = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
 
 
 def _norm(s: str) -> str:
+    """Canonical digits. Strips thousands separators -- comma OR dot when the value is in 3-digit
+    groups (5,405 / 5.405 -> 5405), so Paddle's dot-grouping isn't misread as a decimal."""
+    if _GROUPED_RE.match(s):
+        return s.replace(".", "").replace(",", "")
     return s.replace(",", "")
 
 
@@ -43,6 +48,26 @@ def oracle_numbers(pdf_path: str, *, min_value: float | None = None) -> set[str]
 
 def emitted_numbers(markdown: str) -> set[str]:
     return {_norm(m.group(0)) for m in _NUM_RE.finditer(markdown)}
+
+
+def _table_cells(markdown: str) -> int:
+    """Count data cells across Markdown tables (skips delimiter rows). Table-completeness proxy
+    (F22): a VLM that gives up on a wide table emits few cells; a complete one emits many."""
+    n = 0
+    for line in markdown.splitlines():
+        s = line.strip()
+        if not (s.startswith("|") and s.endswith("|")):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if all(set(c) <= set("-: ") for c in cells):  # delimiter row
+            continue
+        n += len(cells)
+    return n
+
+
+def _table_bytes(markdown: str) -> int:
+    """Total chars on Markdown table lines (F22's format-agnostic content-size completeness)."""
+    return sum(len(line) for line in markdown.splitlines() if line.strip().startswith("|"))
 
 
 def score(oracle: set[str], markdown: str) -> dict[str, object]:
@@ -62,7 +87,8 @@ def score(oracle: set[str], markdown: str) -> dict[str, object]:
         "hit": len(hit),
         "golden": len(oracle),
         "fabricated": len(emitted - oracle),
-        "table": bool(_MD_TABLE_RE.search(markdown)),
+        "tbl_cells": _table_cells(markdown),
+        "tbl_bytes": _table_bytes(markdown),
         "chars": len(markdown),
     }
 
@@ -99,7 +125,7 @@ def main(argv: list[str]) -> int:
         print("no readable variant outputs")
         return 1
 
-    cols = ["recall", "precision", "hit", "golden", "fabricated", "table", "chars"]
+    cols = ["recall", "precision", "fabricated", "tbl_cells", "tbl_bytes", "chars"]
     width = max(len(label) for label, _ in variants)
     header = "variant".ljust(width) + "  " + "  ".join(c.rjust(15) for c in cols)
     print(header)
