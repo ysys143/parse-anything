@@ -73,13 +73,28 @@ def test_parse_range() -> None:
 def test_build_docling_document_shape() -> None:
     doc = build_docling_document([PageBlock(3, 595.0, 842.0, "# Title\nbody")])
     assert set(doc) == {"texts", "tables", "pictures", "pages"}
-    (text,) = doc["texts"]
-    assert text["label"] == "text"
-    assert text["text"] == "# Title\nbody"
-    prov = text["prov"][0]
-    assert prov["page_no"] == 3
-    assert prov["bbox"] == {"l": 0.0, "t": 842.0, "r": 595.0, "b": 0.0, "coord_origin": "BOTTOMLEFT"}
+    # "# Title" -> section_header (level 1); "body" -> text paragraph
+    assert [t["label"] for t in doc["texts"]] == ["section_header", "text"]
+    head = doc["texts"][0]
+    assert head["text"] == "Title"
+    assert head["meta"]["level"] == 1
+    assert head["prov"][0]["page_no"] == 3
+    assert head["prov"][0]["bbox"]["coord_origin"] == "BOTTOMLEFT"
     assert doc["pages"]["3"]["page_dimensions"] == {"width": 595.0, "height": 842.0}
+
+
+def test_markdown_table_becomes_structured_table() -> None:
+    md = "# Report\n\n|Region|Q1|\n|---|---|\n|North|123|\n|South|456|"
+    doc = build_docling_document([PageBlock(1, 600.0, 800.0, md)])
+    assert len(doc["tables"]) == 1
+    data = doc["tables"][0]["data"]
+    # header + 2 data rows x 2 cols; grid carries dims, separator row dropped
+    assert data["num_rows"] == 3 and data["num_cols"] == 2
+    assert len(data["grid"]) == 3 and len(data["grid"][0]) == 2
+    cell_texts = {c["text"] for c in data["table_cells"]}
+    assert {"Region", "Q1", "North", "123", "South", "456"} <= cell_texts
+    assert "---" not in cell_texts  # delimiter row not emitted as a cell
+    assert any(t["label"] == "section_header" for t in doc["texts"])  # heading preserved
 
 
 def test_sanitize_str() -> None:
@@ -99,7 +114,8 @@ def test_convert_pdf_success() -> None:
     result = convert_pdf(pdf, "1-2", transcriber=fake)
     assert result["status"] == "success"
     assert result["failed_pages"] == []
-    assert len(result["document"]["json_content"]["texts"]) == 2
+    # "# Page\nvalue 12345" -> section_header + text per page, over 2 pages
+    assert len(result["document"]["json_content"]["texts"]) == 4
     assert len(calls) == 2
 
 
