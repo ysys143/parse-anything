@@ -13,13 +13,12 @@ fig/table labels, bbox, cells). Run artifacts are git-ignored.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
-from .arithmetic import check_table_arithmetic as _check_arithmetic
-from .odl_extract import substantial_tables
+from .reflow import reflow_markdown
 from .run import DocumentResult
+from .structure import build_graph
 
 
 def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
@@ -31,10 +30,104 @@ def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
     return Path(out_root) / meta.source_id / meta.document_id
 
 
-def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None, arithmetic: bool = True) -> None:
+def _anchor_line(norm_lines: list[str], text: str) -> int | None:
+    """Index of the Markdown line carrying the anchor block's text, matching the LONGEST leading
+    word-phrase that appears on a line. ODL joins reading-order text the VLM may re-split across
+    table cells, so a fixed-length prefix breaks: we shrink the phrase word-by-word until it lands
+    (preferring the most specific match), then give up below 4 chars to avoid trivial collisions."""
+    words = " ".join((text or "").split()).split()
+    for n in range(len(words), 0, -1):
+        tok = " ".join(words[:n])
+        if len(tok) < 4:
+            break
+        for i, nl in enumerate(norm_lines):
+            if tok in nl:
+                return i
+    return None
+
+
+def _snap_past_table(lines: list[str], idx: int) -> int:
+    """If the anchor line is part of a Markdown pipe-table, advance to the table's last row. Inserting
+    an image between a table's header and separator (or mid-body) breaks the table, so we place the
+    figure just after the whole contiguous table block instead."""
+    if "|" not in lines[idx]:
+        return idx
+    j = idx
+    while j + 1 < len(lines) and lines[j + 1].strip() and "|" in lines[j + 1]:
+        j += 1
+    return j
+
+
+def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
+    """Insert ODL figure image references into a page's VLM Markdown at reading-order position.
+
+    Our deterministic layer (ODL) detects figure regions -- signatures, stamps, logos -- with a
+    bbox that a pure VLM transcription lacks. So a VLM types a signature out as text and loses the
+    fact it is a mark, not characters. Here we re-attach each figure as ``![label](assets/fNNN.png)``
+    just after the nearest text block above it (top-to-bottom reading order). The VLM's transcription
+    is left in place: loss-aware -- nothing removed, so searchable text AND the original image both
+    survive. This is a born-digital capability a single OCR pass cannot reproduce (no figure channel).
+    """
+    if not figs:
+        return markdown
+    lines = markdown.split("\n")
+    norm = [" ".join(ln.split()) for ln in lines]
+    top_refs: list[str] = []
+    end_refs: list[str] = []
+    placed: list[tuple[int, str]] = []
+    for fig in sorted(figs, key=lambda f: -f["bbox"][3]):  # top of page first (larger y = higher)
+        ref = f'![{fig.get("label") or "figure"}]({fig["file"]})'
+        if not blocks:
+            end_refs.append(ref)
+            continue
+        fy = fig["bbox"][3]
+        above = [b for b in blocks if b.bbox[3] >= fy]
+        if not above:  # figure sits above all text -> page top (e.g. header logo)
+            top_refs.append(ref)
+            continue
+        anchor = min(above, key=lambda b: b.bbox[3])  # closest block above the figure
+        idx = _anchor_line(norm, anchor.text)
+        if idx is None:  # anchor text not found in the VLM output -> append (still present, not lost)
+            end_refs.append(ref)
+        else:
+            placed.append((_snap_past_table(lines, idx), ref))
+    for idx, ref in sorted(placed, key=lambda x: -x[0]):  # bottom-up insert keeps earlier indices valid
+        lines[idx + 1:idx + 1] = ["", ref]
+    if top_refs:
+        prefix: list[str] = []
+        for r in top_refs:
+            prefix += [r, ""]
+        lines[0:0] = prefix
+    out = "\n".join(lines)
+    if end_refs:
+        out = out + "\n\n" + "\n\n".join(end_refs)
+    return out
+
+
+def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
+                  arithmetic: bool = True, inline_figures: bool = True) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collect structure + crop figure assets up front so their references can be interleaved into
+    # the page Markdown at reading-order position (R11 figure fidelity) before the pages are written.
+    pages_meta: dict[int, dict] = {}
+    blocks: list[dict] = []
+    tables: list[dict] = []
+    figures: list[dict] = []
+    figs_by_page: dict[int, list[dict]] = {}
+    blocks_by_page: dict[int, tuple] = {}
+    if result.meta is not None and result.structure is not None:
+        labels_by_page = {p.page_index: p.labels for p in result.pages}
+        pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
+        for t in tables:  # per-table view files are named by the table's graph id
+            t["views"] = {"md": f"tables/{t['id']}.md", "json": f"tables/{t['id']}.json"}
+        _write_assets(out, figures, pdf_path)  # fills each figure["file"]
+        for f in figures:
+            if f.get("file") and f.get("bbox"):  # only ODL figures with a real crop can be inlined
+                figs_by_page.setdefault(f["page"] - 1, []).append(f)
+        blocks_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
 
     results: list[dict] = []
     doc_parts: list[str] = []
@@ -43,23 +136,21 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         if p.route == "folded":
             results.append(record)
             continue
+        markdown = reflow_markdown(p.markdown)  # join column-wrapped lines into flowing paragraphs
+        if inline_figures and p.page_index in figs_by_page:
+            markdown = interleave_figures(markdown, figs_by_page[p.page_index], blocks_by_page.get(p.page_index, ()))
         name = f"page-{p.page_index:03d}.md"
-        (pages_dir / name).write_text(p.markdown, encoding="utf-8")
+        (pages_dir / name).write_text(markdown, encoding="utf-8")
         record["markdown_file"] = f"pages/{name}"
         results.append(record)
-        doc_parts.append(p.markdown)
+        doc_parts.append(markdown)
 
     (out / "document.md").write_text("\n\n---\n\n".join(doc_parts), encoding="utf-8")
     _write_jsonl(out / "ledger.jsonl", result.ledger())
     _write_jsonl(out / "results.jsonl", results)
 
     if result.meta is not None:
-        labels_by_page = {p.page_index: p.labels for p in result.pages}
-        tables, figures, page_tables, page_figures = (
-            _serialize_structure(result.structure, labels_by_page, arithmetic=arithmetic) if result.structure is not None else ([], [], {}, {})
-        )
-        _write_assets(out, figures, pdf_path)  # fills each figure["file"]
-        _write_document_json(out, result, tables, figures, page_tables, page_figures)
+        _write_document_json(out, result, pages_meta, blocks, tables, figures)
         _write_tables(out, tables)
 
 
@@ -73,99 +164,6 @@ def _table_md(cells: list[list[dict]]) -> str:
              "| " + " | ".join("---" for _ in range(width)) + " |"]
     lines += ["| " + " | ".join(c.replace("|", r"\|") for c in r) + " |" for r in rows[1:]]
     return "\n".join(lines)
-
-
-def _rich_cells(cells: tuple, cell_boxes: tuple) -> list[list[dict]]:
-    """Row-major cells as {text, bbox} (per-cell bbox from ODL; None when absent)."""
-    out = []
-    for r, row in enumerate(cells):
-        boxes = cell_boxes[r] if r < len(cell_boxes) else ()
-        out.append([{"text": t, "bbox": list(boxes[i]) if (i < len(boxes) and boxes[i]) else None}
-                    for i, t in enumerate(row)])
-    return out
-
-
-def _table_chains(tables: list) -> list[list]:
-    """Group ODL tables into continuation chains via `previous_table_id` (spanning tables) so a
-    table split across pages becomes one logical table. Tables without an id are their own chain."""
-    by_id = {t.table_id: t for t in tables if t.table_id}
-    next_of = {t.previous_table_id: t for t in tables if t.previous_table_id in by_id}
-    is_continuation = {t.table_id for t in tables if t.previous_table_id in by_id}
-    chains = []
-    for t in tables:
-        if t.table_id in is_continuation:
-            continue  # reached from its chain head
-        chain = [t]
-        cur = t
-        while cur.table_id is not None and cur.table_id in next_of:
-            cur = next_of[cur.table_id]
-            chain.append(cur)
-        chains.append(chain)
-    return chains
-
-
-def _serialize_structure(
-    structure, labels_by_page: dict[int, tuple[dict, ...]], *, arithmetic: bool = True
-) -> tuple[list[dict], list[dict], dict[int, list[str]], dict[int, list[str]]]:
-    """Serialize ODL structure (bbox-grounded): merge page-spanning tables into one logical table
-    (source_pages), emit per-cell bbox, backfill missing labels from VLM-detected captions (R4.3),
-    and add VLM-detected figures ODL missed. Every entry is `source`-tagged."""
-    page_tables: dict[int, list[str]] = defaultdict(list)
-    page_figures: dict[int, list[str]] = defaultdict(list)
-
-    all_tables = [t for page in structure.pages for t in substantial_tables(page)]
-    tables: list[dict] = []
-    for chain in _table_chains(all_tables):
-        head = chain[0]
-        tid = f"t{len(tables) + 1:03d}"
-        source_pages: list[int] = []
-        regions, cells, boxes = [], [], []
-        for seg in chain:
-            p1 = seg.page_index + 1
-            if p1 not in source_pages:
-                source_pages.append(p1)
-            regions.append({"page": p1, "bbox": list(seg.bbox)})
-            cells.extend(seg.cells)
-            boxes.extend(seg.cell_boxes)
-            page_tables[seg.page_index].append(tid)
-        label, caption = head.label, head.caption
-        if label is None:  # ODL missed the caption; use a VLM-read one on the head page
-            vlm_t = [lbl for lbl in labels_by_page.get(head.page_index, ()) if lbl["kind"] == "table"]
-            if vlm_t:
-                label, caption = vlm_t[0]["label"], vlm_t[0]["caption"]
-        arith = _check_arithmetic(cells) if arithmetic else None  # R8.7 invariant guard (None if no total row)
-        tables.append({
-            "table_id": tid, "label": label, "caption": caption, "source": "odl",
-            "source_pages": source_pages,  # start/end = source_pages[0]/[-1]
-            "regions": regions, "n_rows": sum(t.n_rows for t in chain), "n_cols": head.n_cols,
-            "cells": _rich_cells(tuple(cells), tuple(boxes)), "continued": len(chain) > 1,
-            "arithmetic": arith,
-            "views": {"md": f"tables/{tid}.md", "json": f"tables/{tid}.json"},
-        })
-
-    figures: list[dict] = []
-    for page in structure.pages:
-        pi = page.page_index
-        vlm_figures = [lbl for lbl in labels_by_page.get(pi, ()) if lbl["kind"] == "figure"]
-        for image in page.images:
-            fid = f"f{len(figures) + 1:03d}"
-            label, caption = image.label, image.caption
-            if label is None and vlm_figures:
-                vlm = vlm_figures.pop(0)
-                label, caption = vlm["label"], vlm["caption"]
-            figures.append({
-                "figure_id": fid, "label": label, "caption": caption, "source": "odl",
-                "page": pi + 1, "bbox": list(image.bbox), "file": None, "kind": image.kind,
-            })
-            page_figures[pi].append(fid)
-        for vlm in vlm_figures:  # VLM-detected figures ODL missed entirely (no bbox/asset)
-            fid = f"f{len(figures) + 1:03d}"
-            figures.append({
-                "figure_id": fid, "label": vlm["label"], "caption": vlm["caption"], "source": "vlm",
-                "page": pi + 1, "bbox": None, "file": None, "kind": "figure",
-            })
-            page_figures[pi].append(fid)
-    return tables, figures, page_tables, page_figures
 
 
 def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale: float = 2.0) -> None:
@@ -199,30 +197,31 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
             box = (max(0, box[0]), max(0, box[1]), min(img.width, box[2]), min(img.height, box[3]))
             if box[2] <= box[0] or box[3] <= box[1]:
                 continue
-            name = f"{fig['figure_id']}.png"
+            name = f"{fig['id']}.png"
             img.crop(box).save(adir / name)
             fig["file"] = f"assets/{name}"
     finally:
         doc.close()
 
 
-def _write_document_json(out: Path, result: DocumentResult, tables: list[dict], figures: list[dict],
-                         page_tables: dict[int, list[str]], page_figures: dict[int, list[str]]) -> None:
+def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
+                         blocks: list[dict], tables: list[dict], figures: list[dict]) -> None:
+    """Emit the R12 graph: per-page reading-order ``content`` (id stream) + typed id lists, plus
+    document-level ``blocks``/``tables``/``figures`` registries keyed by stable id."""
     doc = result.meta.to_dict()
-    paragraphs_by_page = {}
-    if result.structure is not None:
-        paragraphs_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
     doc["pages"] = [
         {
             "page_index": p.page_index, "page_number": p.page_index + 1, "page_label": None,
             "mode": p.route, "used_vlm": p.used_vlm, "flags": list(p.flags),
             "markdown_file": f"pages/page-{p.page_index:03d}.md",
-            "tables": page_tables.get(p.page_index, []), "figures": page_figures.get(p.page_index, []),
-            "blocks": [{"kind": b.kind, "bbox": list(b.bbox), "text": b.text}
-                       for b in paragraphs_by_page.get(p.page_index, ())],
+            "content": pages_meta.get(p.page_index, {}).get("content", []),
+            "blocks": pages_meta.get(p.page_index, {}).get("blocks", []),
+            "tables": pages_meta.get(p.page_index, {}).get("tables", []),
+            "figures": pages_meta.get(p.page_index, {}).get("figures", []),
         }
         for p in result.pages if p.route != "folded"
     ]
+    doc["blocks"] = blocks
     doc["tables"] = tables
     doc["figures"] = figures
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -234,8 +233,8 @@ def _write_tables(out: Path, tables: list[dict]) -> None:
     tdir = out / "tables"
     tdir.mkdir(exist_ok=True)
     for table in tables:
-        (tdir / f"{table['table_id']}.json").write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
-        (tdir / f"{table['table_id']}.md").write_text(_table_md(table["cells"]), encoding="utf-8")
+        (tdir / f"{table['id']}.json").write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
+        (tdir / f"{table['id']}.md").write_text(_table_md(table["cells"]), encoding="utf-8")
 
 
 def _write_jsonl(path: Path, rows: Iterable[dict]) -> None:

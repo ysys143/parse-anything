@@ -36,21 +36,34 @@ class OdlError(RuntimeError):
     """ODL extraction failure (e.g. java_not_found, odl_convert_failed)."""
 
 
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _clean_text(s: str) -> str:
+    """Some CID-font PDFs encode inter-word gaps as NUL (\\x00) in the ODL text; normalize those
+    (and other C0 controls) to a space and collapse runs, so extracted text is graph/search clean."""
+    return re.sub(r" {2,}", " ", _CONTROL_RE.sub(" ", s)).strip()
+
+
 @dataclass(frozen=True, slots=True)
 class _Caption:
     page_index: int
     bbox: BBox
     text: str
+    element_id: int | None = None
+    linked_content_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class OdlImage:
     page_index: int
     bbox: BBox
-    element_id: str | None = None
+    element_id: int | str | None = None
     label: str | None = None     # original printed number, e.g. "Figure 12"
     caption: str | None = None
     kind: str = "image"
+    order: int = -1              # document DFS reading-order index (R12 content stream)
+    caption_id: int | None = None  # ODL id of the bound caption node (linked content id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +76,11 @@ class OdlTable:
     label: str | None = None     # original printed number, e.g. "표 5-2"
     caption: str | None = None
     cell_boxes: tuple[tuple[BBox | None, ...], ...] = ()  # per-cell bbox, aligned to cells
-    table_id: str | None = None              # ODL element id
-    previous_table_id: str | None = None     # ODL continuation link (spanning tables)
+    table_id: int | str | None = None        # ODL element id
+    previous_table_id: int | str | None = None  # ODL continuation link (spanning tables)
+    order: int = -1              # document DFS reading-order index (R12 content stream)
+    caption_id: int | None = None  # ODL id of the bound caption node (linked content id)
+    cell_spans: tuple[tuple[tuple[int, int] | None, ...], ...] = ()  # (row_span, col_span) per cell
 
     @property
     def width(self) -> float:
@@ -85,6 +101,11 @@ class OdlParagraph:
     kind: str  # paragraph / heading / list item / text block
     bbox: BBox
     text: str
+    element_id: int | None = None      # ODL node id (stable graph node key)
+    font_size: float | None = None     # ODL font size (heading-level signal, R12 Phase B)
+    heading_level: int | None = None   # ODL "heading level" (often 1..N, sometimes noisy)
+    level: str | None = None           # ODL structural role ("Doctitle"/"Subtitle"/...)
+    order: int = -1                    # document DFS reading-order index (R12 content stream)
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,17 +156,23 @@ def _cell_bbox(cell: dict) -> BBox | None:
     return tuple(float(x) for x in box[:4])  # type: ignore[return-value]
 
 
-def _parse_table(node: dict) -> OdlTable | None:
+def _cell_span(cell: dict) -> tuple[int, int]:
+    return (int(cell.get("row span", 1) or 1), int(cell.get("column span", 1) or 1))
+
+
+def _parse_table(node: dict, order: int = -1) -> OdlTable | None:
     page = node.get("page number")
     if not page:
         return None
     bbox = node.get("bounding box") or [0.0, 0.0, 0.0, 0.0]
     grid: list[tuple[str, ...]] = []
     box_grid: list[tuple[BBox | None, ...]] = []
+    span_grid: list[tuple[tuple[int, int] | None, ...]] = []
     for row in node.get("rows", []) or []:
         cells = row.get("cells") or []
-        grid.append(tuple(_collect_text(cell) for cell in cells))
+        grid.append(tuple(_clean_text(_collect_text(cell)) for cell in cells))
         box_grid.append(tuple(_cell_bbox(cell) for cell in cells))
+        span_grid.append(tuple(_cell_span(cell) for cell in cells))
     return OdlTable(
         page_index=int(page) - 1,
         n_rows=int(node.get("number of rows", len(grid))),
@@ -155,6 +182,8 @@ def _parse_table(node: dict) -> OdlTable | None:
         cell_boxes=tuple(box_grid),
         table_id=node.get("id"),
         previous_table_id=node.get("previous table id"),
+        order=order,
+        cell_spans=tuple(span_grid),
     )
 
 
@@ -185,19 +214,31 @@ def _dist(a: BBox, b: BBox) -> float:
 def _label_tables_figures(
     tables: list[OdlTable], images: list[OdlImage], captions: list[_Caption]
 ) -> tuple[tuple[OdlTable, ...], tuple[OdlImage, ...]]:
-    """Attach the original printed number ("Table 5-2", "Figure 12") by matching each ODL caption
-    to the nearest table/figure on its page (bbox proximity) and parsing its leading label."""
+    """Bind each ODL caption to its table/figure -- preferring the explicit ``linked content id``
+    edge, falling back to bbox proximity -- and attach the caption text, the caption node id, and
+    the printed number ("Table 5-2"/"Figure 12") when the caption leads with one."""
+    by_table_id = {t.table_id: k for k, t in enumerate(tables) if t.table_id is not None}
+    by_image_id = {im.element_id: k for k, im in enumerate(images) if im.element_id is not None}
     for cap in captions:
-        tmatch = _TABLE_LABEL_RE.search(cap.text)
-        fmatch = _FIGURE_LABEL_RE.search(cap.text)
-        if tmatch and tables:
-            i = min(range(len(tables)), key=lambda k: _dist(cap.bbox, tables[k].bbox))
-            if tables[i].label is None:
-                tables[i] = replace(tables[i], label=tmatch.group(0).strip(), caption=cap.text)
-        elif fmatch and images:
-            i = min(range(len(images)), key=lambda k: _dist(cap.bbox, images[k].bbox))
-            if images[i].label is None:
-                images[i] = replace(images[i], label=fmatch.group(0).strip(), caption=cap.text, kind="figure")
+        tlabel = _TABLE_LABEL_RE.search(cap.text)
+        flabel = _FIGURE_LABEL_RE.search(cap.text)
+        lk = cap.linked_content_id
+        if lk is not None and lk in by_table_id:  # explicit ODL caption->table link (preferred)
+            k = by_table_id[lk]
+            tables[k] = replace(tables[k], caption=cap.text, caption_id=cap.element_id,
+                                label=tables[k].label or (tlabel.group(0).strip() if tlabel else None))
+        elif lk is not None and lk in by_image_id:  # explicit caption->figure link
+            k = by_image_id[lk]
+            images[k] = replace(images[k], caption=cap.text, caption_id=cap.element_id, kind="figure",
+                                label=images[k].label or (flabel.group(0).strip() if flabel else None))
+        elif tlabel and tables:  # fallback: nearest table to a "Table N" caption
+            k = min(range(len(tables)), key=lambda j: _dist(cap.bbox, tables[j].bbox))
+            if tables[k].label is None:
+                tables[k] = replace(tables[k], label=tlabel.group(0).strip(), caption=cap.text, caption_id=cap.element_id)
+        elif flabel and images:  # fallback: nearest figure to a "Figure N" caption
+            k = min(range(len(images)), key=lambda j: _dist(cap.bbox, images[j].bbox))
+            if images[k].label is None:
+                images[k] = replace(images[k], label=flabel.group(0).strip(), caption=cap.text, caption_id=cap.element_id, kind="figure")
     return tuple(tables), tuple(images)
 
 
@@ -209,13 +250,18 @@ def parse_document(data: dict) -> OdlDocument:
     images_by_page: dict[int, list[OdlImage]] = defaultdict(list)
     captions_by_page: dict[int, list[_Caption]] = defaultdict(list)
     paragraphs_by_page: dict[int, list[OdlParagraph]] = defaultdict(list)
+    order = [0]  # document-global DFS reading-order counter (shared across all element types)
+
+    def _next() -> int:
+        order[0] += 1
+        return order[0]
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
             ntype = str(node.get("type", "")).lower()
             page = node.get("page number")
             if ntype == "table":
-                table = _parse_table(node)
+                table = _parse_table(node, order=_next())
                 if table is not None:
                     tables_by_page[table.page_index].append(table)
                 return  # cells handled inside; don't descend (avoid double-counting as page text)
@@ -224,14 +270,21 @@ def parse_document(data: dict) -> OdlDocument:
             if ntype == "caption" and page:
                 content = node.get("content")
                 if isinstance(content, str) and content.strip():
-                    captions_by_page[int(page) - 1].append(_Caption(int(page) - 1, box, content))  # type: ignore[arg-type]
+                    captions_by_page[int(page) - 1].append(_Caption(  # type: ignore[arg-type]
+                        int(page) - 1, box, _clean_text(content),
+                        element_id=node.get("id"), linked_content_id=node.get("linked content id")))
             elif ntype in _TEXT_TYPES:
                 content = node.get("content")
                 if isinstance(content, str) and content.strip() and page:
-                    text_by_page[int(page) - 1].append(content)
-                    paragraphs_by_page[int(page) - 1].append(OdlParagraph(int(page) - 1, ntype, box, content))  # type: ignore[arg-type]
+                    clean = _clean_text(content)
+                    text_by_page[int(page) - 1].append(clean)
+                    paragraphs_by_page[int(page) - 1].append(OdlParagraph(  # type: ignore[arg-type]
+                        int(page) - 1, ntype, box, clean,
+                        element_id=node.get("id"), font_size=node.get("font size"),
+                        heading_level=node.get("heading level"), level=node.get("level"), order=_next()))
             elif ntype in _IMAGE_TYPES and page:
-                images_by_page[int(page) - 1].append(OdlImage(int(page) - 1, box, node.get("id")))  # type: ignore[arg-type]
+                images_by_page[int(page) - 1].append(  # type: ignore[arg-type]
+                    OdlImage(int(page) - 1, box, node.get("id"), order=_next()))
             for v in node.values():
                 walk(v)
         elif isinstance(node, list):

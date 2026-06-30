@@ -1,7 +1,7 @@
-"""PaddleOCR official API as the det_vlm scan double-pass second provider (R8.6).
+"""PaddleOCR official API as a det_vlm primary transcriber (--primary paddle, R10).
 
 Uploads a rendered page image in local-file (multipart) mode, polls the job, fetches the result
-JSONL, and returns the concatenated Markdown text for number-disagreement comparison. The HTTP
+JSONL, and returns the concatenated Markdown text. The HTTP
 client is injectable (the repo's ProviderHttpClient in real runs, a fake in tests). Credentials
 come from settings (.env PADDLE_BASE_URL / PADDLE_API_KEY) and are NEVER hard-coded.
 """
@@ -80,5 +80,5 @@ def transcribe(
 
 
 def make_transcriber(client: Any, *, base_url: str, token: str, model: str = _DEFAULT_MODEL) -> Callable[[bytes], str]:
-    """A png -> text callable for det_vlm's injectable second_pass (R8.6)."""
+    """A png -> text callable for det_vlm's injectable primary transcriber (--primary paddle, R10)."""
     return lambda png: transcribe(png, client=client, base_url=base_url, token=token, model=model)

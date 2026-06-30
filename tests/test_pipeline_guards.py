@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from odl_vl.pipeline.guards import (
-    dual_pass_disagreements,
     extract_numbers,
     normalize_number,
     ratio_holds,
@@ -42,16 +41,3 @@ def test_ratio_holds_for_vat_like_relationship():
     # derived = base * 1.1 (e.g. VAT-inclusive vs exclusive). Synthetic values, not real data.
     assert ratio_holds(1_000_000.0, 1_100_000.0, 1.1)
     assert not ratio_holds(1_000_000.0, 1_200_000.0, 1.1)
-
-
-def test_dual_pass_disagreements_empty_on_agreement():
-    a = ["12.3", "45.6"]
-    b = ["12.3", "45.6"]
-    assert dual_pass_disagreements(a, b) == set()
-
-
-def test_dual_pass_disagreements_surface_divergent_cells():
-    # F4: when one pass fabricates and the other abstains/differs, the diff is flagged.
-    a = ["12.3", "45.6", "77.7"]   # one extra/fabricated
-    b = ["12.3", "45.6"]
-    assert dual_pass_disagreements(a, b) == {"77.7"}

@@ -2,7 +2,7 @@
 
 Architecture (processing-tiers P7/§2.6): there is NO runtime per-page auto-routing. A source
 profile picks an execution mode and the run is predictable. The per-page assembly lives in
-``assemble.py`` (deterministic = ODL + pypdfium2; det_vlm = + VLM, reconciled). ``triage.py``
+``assemble.py`` (deterministic = ODL + pypdfium2; det_vlm = + VLM, value-oracle gated). ``triage.py``
 / ``signals.py`` survive only as *diagnostic* signals, not runtime gates.
 """
 from __future__ import annotations
@@ -84,7 +84,6 @@ def run_document(
     external_id: str | None = None,
     ingested_from: str | None = None,
     options: Any | None = None,
-    second_pass: Any | None = None,
     primary_transcribe: Any | None = None,
 ) -> DocumentResult:
     """Run a document in a configured mode (no runtime routing). Delegates to assemble."""
@@ -93,5 +92,5 @@ def run_document(
     return assemble_document(
         pdf_path, mode=mode, vlm_client=vlm_client, api_key=api_key, odl_runner=odl_runner,
         source_id=source_id, external_id=external_id, ingested_from=ingested_from,
-        options=options or DetVlmOptions(), second_pass=second_pass, primary_transcribe=primary_transcribe,
+        options=options or DetVlmOptions(), primary_transcribe=primary_transcribe,
     )

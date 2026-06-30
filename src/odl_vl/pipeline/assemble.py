@@ -2,7 +2,7 @@
 
 Two execution modes, both using ODL + pypdfium2 together (processing-tiers §2.6, F17):
 - ``deterministic``: ODL structure/clean-text + pypdfium2 value-completeness backstop. No VLM.
-- ``det_vlm``: + VLM, reconciled, value-oracle gating VLM numbers (R1.3).
+- ``det_vlm``: + VLM, value-oracle gating VLM numbers (R1.3).
 
 Reconciliation precedence (R-M1): values = pypdfium2 (+ value oracle); structure = VLM / ODL;
 clean text = ODL. The mode is chosen by the source profile, not per-page at runtime.
@@ -26,14 +26,13 @@ ExecutionMode = Literal["deterministic", "det_vlm"]
 
 @dataclass(frozen=True, slots=True)
 class DetVlmOptions:
-    """det_vlm behaviour toggles -- all default ON (opt-out), double_pass only fires on scans."""
+    """det_vlm behaviour toggles -- all default ON (opt-out)."""
     ground: bool = True        # R8.3 inject ODL + pypdfium2 deterministic grounding
     spanning: bool = True      # R8.2 reconstruct page-spanning tables via multi-image VLM
-    double_pass: bool = True   # R8.6 dual-provider pass on oracle-less scan pages
     arithmetic: bool = True    # R8.7 arithmetic-invariant guard on totals/subtotals
     prompt: str | None = None  # R8.4 custom base prompt (overrides DEFAULT/SCAN)
     input_quality_min: float = 50.0  # R8.8 Laplacian-variance blur threshold (per-domain tunable)
-    primary: str = "gemini"    # R10 primary VLM: "gemini" | "paddle" | "combined" (reconcile both)
+    primary: str = "gemini"    # R10 primary transcriber: "gemini" (grounded) | "paddle" (doc-specialised)
 
 
 def _table_markdown(table: OdlTable) -> str:
@@ -49,11 +48,15 @@ def _table_markdown(table: OdlTable) -> str:
 
 
 def _page_markdown(odl_page: OdlPage, tables: list[OdlTable]) -> str:
-    parts: list[str] = []
-    if odl_page.text.strip():
-        parts.append(odl_page.text.strip())
-    parts.extend(_table_markdown(t) for t in tables)
-    return "\n\n".join(p for p in parts if p)
+    # Interleave paragraphs and tables by ODL reading order so a table renders in place, not dumped
+    # at the end. Fall back to text + tables when paragraph structure is absent (spanning fallback).
+    if not odl_page.paragraphs:
+        parts = [odl_page.text.strip()] if odl_page.text.strip() else []
+        parts += [_table_markdown(t) for t in tables]
+        return "\n\n".join(p for p in parts if p)
+    items = [(p.order, p.text) for p in odl_page.paragraphs] + [(t.order, _table_markdown(t)) for t in tables]
+    items.sort(key=lambda x: x[0])
+    return "\n\n".join(md for _, md in items if md and md.strip())
 
 
 def _recurring_numbers(pypdf_texts: list[str], *, min_fraction: float = 0.5) -> set[str]:
@@ -90,7 +93,6 @@ def assemble_document(
     external_id: str | None = None,
     ingested_from: str | None = None,
     options: DetVlmOptions = DetVlmOptions(),
-    second_pass: Any | None = None,
     primary_transcribe: Any | None = None,
 ) -> DocumentResult:
     from .docmeta import build_meta
@@ -102,7 +104,7 @@ def assemble_document(
 
     # det_vlm reconstructs page-spanning tables in ONE multi-image VLM request (R8.2, F9); other
     # pages (and all of deterministic mode) are processed singly.
-    spanning = mode == "det_vlm" and options.spanning and options.primary in ("gemini", "combined") and vlm_client is not None
+    spanning = mode == "det_vlm" and options.spanning and options.primary == "gemini" and vlm_client is not None
     groups = _spanning_groups(odl_doc, n) if spanning else [[i] for i in range(n)]
 
     outcomes: list[PageOutcome] = []
@@ -118,8 +120,7 @@ def assemble_document(
         elif mode == "det_vlm":
             outcomes.append(
                 _assemble_det_vlm(pdf_path, i, odl_page, pypdf_texts[i], recurring, vlm_client=vlm_client,
-                                  api_key=api_key, options=options, second_pass=second_pass,
-                                  primary_transcribe=primary_transcribe)
+                                  api_key=api_key, options=options, primary_transcribe=primary_transcribe)
             )
         else:
             raise ValueError(f"unknown mode: {mode!r}")
@@ -165,7 +166,7 @@ def _assemble_spanning(
     start = group[0]
     pngs = [render_page_png(pdf_path, j) for j in group]
     prompt = SPANNING_PROMPT
-    if options.ground:  # ground the spanning prompt with the group's combined text layer
+    if options.ground:  # ground the spanning prompt with the group's joined text layer
         from .grounding import build_grounded_prompt
 
         prompt = build_grounded_prompt(SPANNING_PROMPT, "\n".join(pypdf_texts[j] for j in group), None)
@@ -200,8 +201,7 @@ def _assemble_deterministic(page_index: int, odl_page: OdlPage, pypdf_text: str,
 
 def _assemble_det_vlm(
     pdf_path: str, page_index: int, odl_page: OdlPage, pypdf_text: str, recurring: set[str], *, vlm_client: Any, api_key: str,
-    options: DetVlmOptions = DetVlmOptions(), second_pass: Any | None = None,
-    primary_transcribe: Any | None = None,
+    options: DetVlmOptions = DetVlmOptions(), primary_transcribe: Any | None = None,
 ) -> PageOutcome:
     """Accuracy mode: VLM is the visual-structure source; pypdfium2 is the value authority
     (value oracle gates VLM numbers -- R-M1); ODL structure is available for rich output (R2).
@@ -215,7 +215,7 @@ def _assemble_det_vlm(
     from .run import DEFAULT_PROMPT, LOW_QUALITY_SENTINEL, SCAN_PROMPT
     from .vlm import VlmError, transcribe_image
 
-    needs_gemini = options.primary in ("gemini", "combined")
+    needs_gemini = options.primary == "gemini"
     if needs_gemini and vlm_client is None:
         det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
         return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*det.flags, "vlm_unavailable"))
@@ -243,7 +243,7 @@ def _assemble_det_vlm(
         except Exception:
             det = _assemble_deterministic(page_index, odl_page, pypdf_text, recurring)
             return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, "paddle_failed"))
-    else:  # gemini (grounded) -- optionally reconciled with paddle tables (combined)
+    else:  # gemini (grounded)
         try:
             markdown = transcribe_image(png, prompt, api_key=api_key, client=vlm_client)
         except VlmError as exc:
@@ -251,23 +251,7 @@ def _assemble_det_vlm(
             return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, str(exc)))
         if markdown.strip() == LOW_QUALITY_SENTINEL:
             return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
-        if options.primary == "combined" and primary_transcribe is not None:  # R10 gemini text + paddle tables
-            from .reconcile import merge_outputs
-            try:
-                markdown = merge_outputs(markdown, primary_transcribe(png))
-            except Exception:
-                flags.append("combine_secondary_unavailable")
     source = [t.value for t in number_tokens(pdf_path, page_index, min_value=1000)]
     flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000))
-    # Scans have NO value oracle (no text layer), so a second independent provider pass is the
-    # only consistency check -- flag numbers the two passes disagree on (F4, R8.6). Provider-agnostic.
-    if options.double_pass and second_pass is not None and not pypdf_text.strip():
-        from .guards import dual_pass_disagreements, extract_numbers
-        try:
-            other = second_pass(png)
-            disagree = dual_pass_disagreements(extract_numbers(markdown), extract_numbers(other))
-            flags.extend(f"dual_pass_disagree:{v}" for v in sorted(disagree))
-        except Exception:  # second provider failed -- flag, never drop the page (R-B3)
-            flags.append("double_pass_unavailable")
     labels = extract_caption_labels(markdown)  # VLM reads captions ODL misses (R4.3)
     return PageOutcome(page_index, "det_vlm", True, markdown, 0.0, tuple(flags), labels)

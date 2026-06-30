@@ -84,46 +84,6 @@ def test_det_vlm_primary_paddle_uses_paddle_transcriber(tmp_path):
     assert res.pages[0].route == "det_vlm" and "| H | V |" in res.pages[0].markdown   # Paddle is the primary VLM
 
 
-def test_det_vlm_primary_combined_reconciles_paddle_tables(tmp_path):
-    from odl_vl.pipeline.assemble import DetVlmOptions
-
-    pdf = _pdf(tmp_path / "d.pdf", "text")
-    client = _FakeClient([_gemini_ok("# G\n\nnarrative only, table abandoned")])   # Gemini drops the table
-    paddle = lambda _png: "| x | y |\n| --- | --- |\n| 1 | 2 |"  # noqa: E731
-    res = assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k",
-                            options=DetVlmOptions(primary="combined"), primary_transcribe=paddle,
-                            odl_runner=lambda _p: {"number of pages": 1, "kids": []})
-    md = res.pages[0].markdown
-    assert "# G" in md and "| x | y |" in md   # gemini text spine + paddle table appended
-
-
-def _blank_pdf(path) -> str:
-    c = canvas.Canvas(str(path), pagesize=letter)  # no text -> empty text layer (scan-like)
-    c.showPage()
-    c.save()
-    return str(path)
-
-
-def test_det_vlm_scan_double_pass_flags_disagreements(tmp_path):
-    pdf = _blank_pdf(tmp_path / "scan.pdf")
-    client = _FakeClient([_gemini_ok("recovered value 12345 here")])
-    second = lambda _png: "recovered value 99999 here"  # disagreeing second provider  # noqa: E731
-    res = assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", second_pass=second,
-                            odl_runner=lambda _p: {"number of pages": 1, "kids": []})
-    flags = res.pages[0].flags
-    assert "dual_pass_disagree:12345" in flags and "dual_pass_disagree:99999" in flags
-
-
-def test_det_vlm_no_double_pass_on_born_digital(tmp_path):
-    pdf = _pdf(tmp_path / "d.pdf", "value 12345")  # has a text layer -> oracle exists, no double-pass
-    client = _FakeClient([_gemini_ok("value 12345")])
-    called = []
-    second = lambda _png: called.append(1) or "value 99999"  # noqa: E731
-    assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", second_pass=second,
-                      odl_runner=lambda _p: {"number of pages": 1, "kids": []})
-    assert called == []   # born-digital -> second provider not invoked
-
-
 class _CaptureClient:
     def __init__(self, responses):
         self.responses = list(responses)

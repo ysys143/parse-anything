@@ -29,9 +29,9 @@ def test_assets_crops_figure_image_and_sets_pointer(tmp_path):
     out = document_dir(tmp_path, result)
     write_outputs(result, out, pdf_path=pdf)
 
-    assert (out / "assets" / "f001.png").exists()
+    assert (out / "assets" / "p1_i1.png").exists()   # asset named by the figure's page-namespaced id
     doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
-    assert doc["figures"][0]["file"] == "assets/f001.png"
+    assert doc["figures"][0]["id"] == "p1_i1" and doc["figures"][0]["file"] == "assets/p1_i1.png"
 
 
 def test_rich_output_document_json_and_tables(tmp_path):
@@ -55,9 +55,12 @@ def test_rich_output_document_json_and_tables(tmp_path):
     assert cells[0][0] == {"text": "H", "bbox": [10, 10, 20, 20]}
     assert cells[1][1] == {"text": "1", "bbox": [30, 30, 40, 40]}
     assert doc["figures"][0]["label"] == "Figure 2" and doc["figures"][0]["kind"] == "figure"
-    assert doc["pages"][0]["tables"] == ["t001"] and doc["pages"][0]["figures"] == ["f001"]
-    assert (out / "tables" / "t001.json").exists()
-    assert "| H | V |" in (out / "tables" / "t001.md").read_text(encoding="utf-8")
+    tid, fid = doc["tables"][0]["id"], doc["figures"][0]["id"]
+    # graph: page references its elements by id, and the reading-order content stream holds them
+    assert doc["pages"][0]["tables"] == [tid] and doc["pages"][0]["figures"] == [fid]
+    assert tid in doc["pages"][0]["content"] and fid in doc["pages"][0]["content"]
+    assert (out / "tables" / f"{tid}.json").exists()
+    assert "| H | V |" in (out / "tables" / f"{tid}.md").read_text(encoding="utf-8")
 
 
 def test_spanning_tables_merge_into_one_logical_table(tmp_path):
@@ -74,9 +77,10 @@ def test_spanning_tables_merge_into_one_logical_table(tmp_path):
     doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
     assert len(doc["tables"]) == 1                                  # merged, not two
     merged = doc["tables"][0]
-    assert merged["source_pages"] == [1, 2] and merged["continued"] is True
+    assert merged["pages"] == [1, 2] and merged["continued"] is True
     assert [c["text"] for row in merged["cells"] for c in row] == ["H1", "H2", "a", "1", "b", "2"]
-    assert doc["pages"][0]["tables"] == ["t001"] and doc["pages"][1]["tables"] == ["t001"]  # both pages ref it
+    tid = merged["id"]                                              # one node spanning both pages
+    assert doc["pages"][0]["tables"] == [tid] and doc["pages"][1]["tables"] == [tid]
 
 
 def test_vlm_labels_fill_table_label_and_add_missing_figures(tmp_path):
@@ -91,9 +95,11 @@ def test_vlm_labels_fill_table_label_and_add_missing_figures(tmp_path):
     out = document_dir(tmp_path, result)
     write_outputs(result, out)
     doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
-    assert doc["tables"][0]["label"] == "Table 2" and doc["tables"][0]["source"] == "odl"  # backfilled
+    assert doc["tables"][0]["label"] == "Table 2"                   # ODL label backfilled from VLM caption
     figs = doc["figures"]
-    assert len(figs) == 1 and figs[0]["label"] == "Figure 1" and figs[0]["source"] == "vlm" and figs[0]["bbox"] is None
+    # the VLM-detected figure ODL missed entirely: synthetic id, no bbox
+    assert len(figs) == 1 and figs[0]["label"] == "Figure 1" and figs[0]["bbox"] is None
+    assert "vlm" in str(figs[0]["id"])
 
 
 def _result() -> DocumentResult:

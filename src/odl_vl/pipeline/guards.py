@@ -59,13 +59,3 @@ def ratio_holds(base: float, derived: float, ratio: float, *, rel_tol: float = 5
     proof (F7).
     """
     return abs(derived - base * ratio) <= max(1.0, abs(base * ratio) * rel_tol)
-
-
-def dual_pass_disagreements(pass_a: Iterable[str], pass_b: Iterable[str]) -> set[str]:
-    """Values where two independent passes disagree (symmetric difference, normalized).
-    When the two providers have different failure modes (one fabricates, one abstains),
-    disagreement flags the hallucinated cells (F4). Empty set == full agreement.
-    """
-    a = {normalize_number(v) for v in pass_a}
-    b = {normalize_number(v) for v in pass_b}
-    return a ^ b
