@@ -1,4 +1,4 @@
-# PDF 집중: Track A(ODL 내부 VLM) / Track B(외부 오케스트레이터) 구체 설계
+# PDF 집중: Track B(ODL 하이브리드 활용) / Track A(외부 오케스트레이터) 구체 설계
 
 > **재정향(superseded) — 역사적 참고.** Track A/B 설계와 자동 라우팅 전제는 이후 실측(`measurement-findings.md` F16/F17)으로 **소스 단위 diagnose-then-configure** 아키텍처로 대체됨(`processing-tiers-and-adaptation.md` §2.5–2.6/P7). 외부 오케스트레이터 코드는 제거됨.
 
@@ -44,22 +44,22 @@ JAR 디컴파일 + 로컬 실행으로 확인:
 - **숫자 guard**: born-digital은 결정론 source text를 oracle로 주입한다. VLM 출력 숫자가 source에 없거나 산술 불변식을 깨면 거부/flag한다.
 - **출력 IR**: page md/json + document md/json + logical tables + asset pointers + bbox/provenance/confidence/guard flags + **ledger**(per-page: 경로결정·엔진·토큰·$·지연·guard).
 - **Processing tier / domain adaptation**: DET/VLM/HUM 경계, 사람검토 대상 분리, 도메인별 보정 도구는 `docs/processing-tiers-and-adaptation.md`를 따른다.
-- **골든셋 + 스코어카드** (spike-plan §6).
+- **골든셋 + 스코어카드** (spike-plan §7).
 
 이 요구사항의 상세 계약은 `docs/pdf-pipeline-requirements.md`와 `docs/processing-tiers-and-adaptation.md`가 기준이다. 이 문서는 Track A/B 중 어디서 그 계약을 만족할지 비교한다.
 
 ---
 
-## 2. Track A — ODL 내부 (VLM을 하이브리드 백엔드로)
+## 2. Track B — ODL 내부 (VLM을 하이브리드 백엔드로)
 
 ### 시퀀스
 ```
 opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
-  1) ODL: veraPDF 결정론 파싱 + triage → 복잡 페이지 집합 산출
-  2) ODL → adapter: POST /v1/convert/file  (원본 PDF + page_ranges=복잡페이지)
-  3) adapter: 해당 페이지 렌더/방향보정 → [1차 md/json 필요시 자체 재파싱] → VLM 2-패스
-              → DoclingDocument JSON 으로 성형하여 반환
-  4) ODL: 백엔드 결과를 IObject로 흡수 → 최종 md/json + bbox + 태그
+  1) ODL: veraPDF 결정론 파싱 + triage -> 복잡 페이지 집합 산출
+  2) ODL -> adapter: POST /v1/convert/file  (원본 PDF + page_ranges=복잡페이지)
+  3) adapter: 해당 페이지 렌더/방향보정 -> [1차 md/json 필요시 자체 재파싱] -> VLM 2-패스
+              -> DoclingDocument JSON 으로 성형하여 반환
+  4) ODL: 백엔드 결과를 IObject로 흡수 -> 최종 md/json + bbox + 태그
 ```
 
 ### 구성요소
@@ -68,38 +68,38 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 - VLM 클라이언트(공유 모듈)
 
 ### 코드로 확인된 제약
-- **(a) 1차 grounding 미전달**: 백엔드는 원본 PDF만 받음 → 진짜 2-패스(1차 md 기반)를 하려면 **adapter가 그 페이지를 자체 재파싱**해야 함. 아니면 순수(grounding 없는) VLM.
-- **(b) 동적 프롬프트 불가**: 요청에 prompt 없음 → **adapter 레벨 고정 프롬프트(코퍼스 단위 의도)**만 가능. 문서/쿼리별 동적 의도 ✗.
+- **(a) 1차 grounding 미전달**: 백엔드는 원본 PDF만 받음 -> 진짜 2-패스(1차 md 기반)를 하려면 **adapter가 그 페이지를 자체 재파싱**해야 함. 아니면 순수(grounding 없는) VLM.
+- **(b) 동적 프롬프트 불가**: 요청에 prompt 없음 -> **adapter 레벨 고정 프롬프트(코퍼스 단위 의도)**만 가능. 문서/쿼리별 동적 의도 [X].
 - **(c) 출력 성형**: 결과를 **DoclingDocument 스키마**로 맞춰야 ODL이 흡수.
 - **(d) 대용량 오버헤드**: 매 백엔드 콜에 **전체 PDF 재전송**.
-- **(e) 페이지 걸친 표/멀티이미지 입력**: no-fork Track A는 backend protocol이 page range와 원본 PDF 중심이라, multi-image VLM 요청과 logical table 병합 책임이 adapter에 몰린다.
+- **(e) 페이지 걸친 표/멀티이미지 입력**: no-fork Track B는 backend protocol이 page range와 원본 PDF 중심이라, multi-image VLM 요청과 logical table 병합 책임이 adapter에 몰린다.
 - **(f) 숫자 guard**: VLM 숫자 출력을 신뢰하지 않으려면 adapter가 결정론 source text oracle과 산술 불변식 검증을 별도 구현해야 한다.
 
 ### 단계
-- **A1** 더미 어댑터: page_ranges 수신 로그만 → "triage가 어떤 입자(페이지 단위?)로, 어떤 페이지를 보내는가" 실측 + ODL VLM 주입 가능성 확정.
-- **A2** 실 VLM: 어댑터가 페이지 렌더 + 자체 1차 파싱(grounding 보강) + VLM → DoclingDocument JSON.
-- **A3 (조건부)** 경량 Java: `HybridRequest` 확장(1차 md/prompt 전달) + `SchemaTransformer`로 IObject 직접 매핑. ← (a)(b) 한계를 풀려면 필요.
+- **B1** 더미 어댑터: page_ranges 수신 로그만 -> "triage가 어떤 입자(페이지 단위?)로, 어떤 페이지를 보내는가" 실측 + ODL VLM 주입 가능성 확정.
+- **B2** 실 VLM: 어댑터가 페이지 렌더 + 자체 1차 파싱(grounding 보강) + VLM -> DoclingDocument JSON.
+- **B3 (조건부)** 경량 Java: `HybridRequest` 확장(1차 md/prompt 전달) + `SchemaTransformer`로 IObject 직접 매핑. <- (a)(b) 한계를 풀려면 필요.
 
-### A가 답해야 할 질문
+### B가 답해야 할 질문
 1. page_ranges가 정말 페이지 단위로 오는가(입자)?
 2. 응답에 필요한 **DoclingDocument 최소 스키마**는?
 3. grounding 없는 순수 VLM 품질이 골든셋에서 충분한가(충분하면 (a) 회피)?
 
 ---
 
-## 3. Track B — 외부 오케스트레이터 (VLM을 ODL 밖에서)
+## 3. Track A — 외부 오케스트레이터 (VLM을 ODL 밖에서)
 
 ### 시퀀스
 ```
-  1) ODL 로컬 실행 → JSON (요소 + bbox + 페이지별 1차 md)   # triage 없음
+  1) ODL 로컬 실행 -> JSON (요소 + bbox + 페이지별 1차 md)   # triage 없음
   2) triage 신호 확보 (택1):
         - pdf-inspector --analyze  (권장: 독립, 무 JVM)
         - ODL 캡처-어댑터로 page_ranges 관측 (하이브리드 1회)
         - ODL TriageLogger 로그 파싱
   3) 오케스트레이터(Python): 복잡 페이지만
         페이지 렌더 + 방향보정 + ODL 1차 md/json + 동적 프롬프트
-        + 필요 시 multi-image 묶음 → VLM 2-패스
-  4) 숫자/source guard + 표 병합 → md/json 정규화 + ledger(결정·엔진·토큰·$·지연·guard)
+        + 필요 시 multi-image 묶음 -> VLM 2-패스
+  4) 숫자/source guard + 표 병합 -> md/json 정규화 + ledger(결정·엔진·토큰·$·지연·guard)
 ```
 
 ### 구성요소
@@ -112,18 +112,18 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 - 오케스트레이터 + VLM 클라이언트(공유) + 정규화기 + ledger
 
 ### 장점 (코드로 확인)
-- **1차 md 보유 → 진짜 grounded 2-패스** ✓
-- **1차 JSON/bbox/table 후보 보유 → 숫자 oracle과 source gate 구현 용이** ✓
-- **동적 프롬프트 자유** ✓ (문서/쿼리별 의도)
-- **페이지 걸친 표를 multi-image VLM 요청으로 묶기 쉬움** ✓
-- **ledger 완전 자유** ✓
-- **무 Java** ✓
+- **1차 md 보유 -> 진짜 grounded 2-패스** [O]
+- **1차 JSON/bbox/table 후보 보유 -> 숫자 oracle과 source gate 구현 용이** [O]
+- **동적 프롬프트 자유** [O] (문서/쿼리별 의도)
+- **페이지 걸친 표를 multi-image VLM 요청으로 묶기 쉬움** [O]
+- **ledger 완전 자유** [O]
+- **무 Java** [O]
 
 ### 비용
 - ODL 1회 + (triage) + VLM = 다단 처리.
 - ODL 로컬 JSON의 **페이지별 1차 md/bbox가 2-패스 grounding에 충분한지** 확인 필요(대체로 충분 예상).
 
-### B가 답해야 할 질문
+### A가 답해야 할 질문
 1. pdf-inspector triage 정확도가 ODL triage를 대체할 만한가? (아니면 캡처-어댑터로 ODL triage 차용)
 2. ODL JSON의 페이지별 1차 md/bbox/table 입자가 VLM grounding과 숫자 guard에 충분한가?
 3. 페이지 걸친 표 continuation 판정 기준(bbox 열좌표, header/caption, column signature)의 false positive/negative는 허용 가능한가?
@@ -132,17 +132,17 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 
 ## 4. 구체 비교 (PDF 한정, 코드 확인 반영)
 
-| 항목 | Track A | Track B |
+| 항목 | Track B | Track A |
 |---|---|---|
 | triage | **ODL 내장(공짜, page_ranges)** | 직접 추가(pdf-inspector 등) |
-| 1차 grounding → VLM | ✗ (원본만 전달, adapter 재파싱 필요) | **✓ (ODL 1차 md 보유)** |
-| 동적 프롬프트 | ✗ (요청에 없음, 어댑터 고정) | **✓** |
+| 1차 grounding -> VLM | [X] (원본만 전달, adapter 재파싱 필요) | **[O] (ODL 1차 md 보유)** |
+| 동적 프롬프트 | [X] (요청에 없음, 어댑터 고정) | **[O]** |
 | ledger | 제한(ODL 로그 + 어댑터) | **완전(자체)** |
 | 숫자 guard | adapter 별도 구현 필요 | **결정론 JSON 기반 구현 용이** |
 | 페이지 걸친 표 | adapter 책임 큼 | **orchestrator가 병합 소유** |
 | privacy/provider 제약 | backend별 별도 처리 | route policy에 통합 가능 |
-| Java | A1/A2 없음, A3 필요 | **없음** |
-| 처리 패스 | **1 (ODL 주도)** | 2 (ODL → VLM) |
+| Java | B1/B2 없음, B3 필요 | **없음** |
+| 처리 패스 | **1 (ODL 주도)** | 2 (ODL -> VLM) |
 | 출력 성형 | DoclingDocument JSON 맞춤 | 자체 IR |
 | 대용량 | 매 콜 전체 PDF 재전송 | 1차 1회 |
 | 컴팩트함 | **높음** | 중간 |
@@ -151,22 +151,22 @@ opendataloader-pdf --hybrid=docling-fast --hybrid-url=<adapter>
 
 ## 5. 핵심 통찰 (이게 결정의 축)
 
-당신들의 핵심 요구인 **"결정론 grounding + 이미지/multi-image + 방향보정 + 동적 의도 프롬프트 + 숫자 guard"** 는 **코드상 Track A 프로토콜 경로(A1/A2)로는 충족 불가**다 — ODL이 백엔드에 1차 md/json도 프롬프트도 안 넘기기 때문이다. A에서 그걸 원하면 **A3(Java)로 HybridRequest를 확장**하거나 **adapter가 자체 재파싱, 표 병합, 숫자 guard**를 맡아야 한다.
+당신들의 핵심 요구인 **"결정론 grounding + 이미지/multi-image + 방향보정 + 동적 의도 프롬프트 + 숫자 guard"** 는 **코드상 Track B 프로토콜 경로(B1/B2)로는 충족 불가**다 — ODL이 백엔드에 1차 md/json도 프롬프트도 안 넘기기 때문이다. B에서 그걸 원하면 **B3(Java)로 HybridRequest를 확장**하거나 **adapter가 자체 재파싱, 표 병합, 숫자 guard**를 맡아야 한다.
 
-반면 **Track B는 그 요구를 자연스럽게 충족**한다(ODL 1차 md/json 보유 + multi-image 구성 + 자유 프롬프트 + ledger + guard). 대신 B는 **triage/processing-depth와 page-spanning assembler를 직접 붙여야** 한다.
+반면 **Track A는 그 요구를 자연스럽게 충족**한다(ODL 1차 md/json 보유 + multi-image 구성 + 자유 프롬프트 + ledger + guard). 대신 A는 **triage/processing-depth와 page-spanning assembler를 직접 붙여야** 한다.
 
 > 정리: PDF만 봐도 갈림이 분명하다.
-> - **grounded·프롬프트형 2-패스가 핵심 → Track B** (또는 A3-Java).
-> - **ODL triage를 그대로 + 순수/고정프롬프트 VLM이면 충분 → Track A1/A2** (가장 컴팩트).
+> - **grounded·프롬프트형 2-패스가 핵심 -> Track A** (또는 B3-Java).
+> - **ODL triage를 그대로 + 순수/고정프롬프트 VLM이면 충분 -> Track B1/B2** (가장 컴팩트).
 
 ---
 
 ## 6. 최소 PoC 순서 (PDF 한정)
 
-1. **A1** — 더미 어댑터로 ODL triage의 page_ranges 입자·라우팅 실측 (+ grounding/prompt 한계 체감). *ODL VLM 주입 가능성 자체 판정.*
-2. **B1** — ODL 로컬 JSON의 페이지별 1차 md/bbox 충분성 확인 + pdf-inspector triage 정확도 측정.
+1. **B1** — 더미 어댑터로 ODL triage의 page_ranges 입자·라우팅 실측 (+ grounding/prompt 한계 체감). *ODL VLM 주입 가능성 자체 판정.*
+2. **A1** — ODL 로컬 JSON의 페이지별 1차 md/bbox 충분성 확인 + pdf-inspector triage 정확도 측정.
 3. **공유 VLM 2-패스 모듈** 작성.
-4. **A2 / B2** 실 VLM 연결 → 동일 코퍼스로 스코어카드 채점 → spike-plan §7 결정 게이트 적용.
+4. **B2 / A2** 실 VLM 연결 -> 동일 코퍼스로 스코어카드 채점 -> spike-plan §8 결정 게이트 적용.
 
 ---
 

@@ -48,7 +48,7 @@ PADDLE_MODEL=<optional paddle model override>
 6. 결과는 markdown, json element, bbox, table HTML, image/asset pointer, confidence, guard flag, ledger field를 포함하는 비교 가능한 형태로 남긴다.
 7. Ledger에는 provider, model alias, route reason, latency, cost estimate, status, guard flag, fallback 여부를 기록한다. 비밀값은 기록하지 않는다.
 
-ODL 내부 Track A는 현재 hybrid protocol의 한계를 갖는다. 기존 문서에 따르면 backend는 원본 PDF와 page range를 받고, ODL의 1차 markdown이나 prompt field를 받지 않는다. 참고: `docs/parsing-engine-tracks-pdf.md:14`, `docs/parsing-engine-tracks-pdf.md:16`. 그래서 no-fork Track A에서는 adapter가 자체 렌더링과 필요 시 adapter-side 1차 pass를 맡는다. 반대로 외부 orchestration Track B는 ODL local output, prompt policy, VLM call, merge, ledger를 더 자연스럽게 소유한다.
+ODL 내부 Track B는 현재 hybrid protocol의 한계를 갖는다. 기존 문서에 따르면 backend는 원본 PDF와 page range를 받고, ODL의 1차 markdown이나 prompt field를 받지 않는다. 참고: `docs/parsing-engine-tracks-pdf.md:14`, `docs/parsing-engine-tracks-pdf.md:16`. 그래서 no-fork Track B에서는 adapter가 자체 렌더링과 필요 시 adapter-side 1차 pass를 맡는다. 반대로 외부 orchestration Track A는 ODL local output, prompt policy, VLM call, merge, ledger를 더 자연스럽게 소유한다.
 
 공유 VLM 2-pass 계약은 `page_image` 또는 multi-image, 선택적 `first_pass_md`, 결정론 JSON/bbox/table 후보, orientation metadata, 선택적 `intent_prompt`, guard policy를 받아 markdown/json/table/image description/confidence/guard flags를 돌려주는 형태로 둔다. 참고: `docs/parsing-engine-tracks-pdf.md:26`.
 

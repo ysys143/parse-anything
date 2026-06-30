@@ -134,6 +134,7 @@ The fixture work is metadata-only in this slice. The initial eight fixture famil
 ## Design Notes
 
 - [Measurement findings](docs/measurement-findings.md): prototype evidence (renderer, layer choice, hallucination, oracle, cross-page, triage, orientation, table structure) behind the pipeline design.
+- [Relative performance validation plan](docs/relative-performance-validation-plan.md): benchmark plan for proving ODL-VL improvements against PyMuPDF/PyMuPDF4LLM, ODL, Tesseract, PaddleOCR official API, and Gemini direct.
 - [External orchestrator architecture](docs/orchestrator-architecture.md): historical -- the design of the removed page-level scaffold, superseded by the PDF pipeline.
 - [PDF pipeline requirements](docs/pdf-pipeline-requirements.md): mandatory full-pipeline behavior for rendering, processing-depth routing, complex/page-spanning tables, VLM inputs, numeric guards, outputs, validation, and provider/privacy constraints.
 - [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md): deterministic/VLM/human boundaries, escalation policy, and domain calibration tooling.

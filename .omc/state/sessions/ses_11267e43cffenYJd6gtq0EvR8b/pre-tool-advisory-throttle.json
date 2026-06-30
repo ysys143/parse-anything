@@ -1,26 +1,34 @@
 {
   "version": 1,
   "entries": {
-    "4f7a67fba0a8473e9883d9e8dffbb2d72e00a4a1eeb4fa80cb14213b167dc90f": {
-      "last_emitted_at_ms": 1782107552669,
-      "message": "Mark todos in_progress BEFORE starting, completed IMMEDIATELY after finishing."
+    "1bb6914bc42b891c26d46c8ae2fd4f44071f59862e89dc550f4c82877b700216": {
+      "last_emitted_at_ms": 1782117131370,
+      "message": "The boulder never stops. Continue until all tasks complete."
+    },
+    "8e7f21ffe3a260cc4198a91fa006bb27926d3b64485ef35ec1f0c39d2a8d61a8": {
+      "last_emitted_at_ms": 1782117080178,
+      "message": "Spawning agent: oracle (inherit) | Task: Verify handoff scope"
     },
     "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
-      "last_emitted_at_ms": 1782107519054,
+      "last_emitted_at_ms": 1782117042675,
       "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
     },
-    "91c3a87b2dbe85c62f705279713add07483453b4460e4dd40e5d9e4488422b7d": {
-      "last_emitted_at_ms": 1782107445543,
-      "message": "Spawning agent: oracle (inherit) | Task: Verify documentation"
-    },
-    "1d8446fc0df1985fdd9964850e50c4737c9cd9b9104084b37b820f66890f4555": {
-      "last_emitted_at_ms": 1782107217083,
-      "message": "Spawning agent: unknown (inherit) | Task: Write VLM fixture doc"
-    },
     "466399dafa2d20f60587180bad0a07358eb7f2bce724df0ff682f038ad33f5ad": {
-      "last_emitted_at_ms": 1782107177078,
+      "last_emitted_at_ms": 1782117042665,
       "message": "Read multiple files in parallel when possible for faster analysis."
+    },
+    "4f7a67fba0a8473e9883d9e8dffbb2d72e00a4a1eeb4fa80cb14213b167dc90f": {
+      "last_emitted_at_ms": 1782117029792,
+      "message": "Mark todos in_progress BEFORE starting, completed IMMEDIATELY after finishing."
+    },
+    "81e9883ec2ded05b54af997ecb0b7070f8ac5736386e62e709d68d928af36b4e": {
+      "last_emitted_at_ms": 1782116913316,
+      "message": "Spawning agent: unknown (inherit) | Task: Draft roadmap handoff"
+    },
+    "9fa0787ad2770f9f7756c0a86ba205f472c6af11b91b03499755d8f5a4d577aa": {
+      "last_emitted_at_ms": 1782115368267,
+      "message": "Spawning agent: momus (inherit) | Task: Review external plan"
     }
   },
-  "updated_at": "2026-06-22T05:52:32.669Z"
+  "updated_at": "2026-06-22T08:32:11.370Z"
 }
