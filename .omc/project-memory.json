@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl/tests\nuv run --no-sync python -m pytest -q 2>&1 | tail -3",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl/tests\nuv run --no-sync python -m pytest test_pipeline_docassembly.py -q 2>&1 | tail -4",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -150,8 +150,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 21,
-      "lastAccessed": 1782891347848,
+      "accessCount": 24,
+      "lastAccessed": 1782892983396,
       "type": "file"
     },
     {
@@ -174,8 +174,8 @@
     },
     {
       "path": "tests/test_pipeline_docassembly.py",
-      "accessCount": 3,
-      "lastAccessed": 1782887845921,
+      "accessCount": 4,
+      "lastAccessed": 1782893057321,
       "type": "file"
     },
     {
