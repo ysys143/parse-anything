@@ -103,18 +103,22 @@ def test_vlm_headed_table_figure_caption_is_de_headed():
 
 
 def test_strip_page_furniture_removes_running_headers_and_pagenum_leak():
-    p0 = "# 第1章 概要\n\n## 第4節 課題\n\n本文A\n\n## 6 セメント産業\n\n128"
-    p1 = "# 第1章 概要\n\n## 第4節 課題\n\nもっと本文\n\n129"
-    out = strip_page_furniture({0: p0, 1: p1}, {0: "128", 1: "129"})
+    from odl_vl.pipeline.textalign import norm_block
+    p0 = "# 第1章 概要\n\n## 第4節 課題\n\n本文A これは十分に長い本文です\n\n## 6 セメント産業の現状\n\n128"
+    p1 = "# 第1章 概要\n\n## 第4節 課題\n\nもっと本文 これも十分に長い本文です\n\n129"
+    # ODL keeps the body + the one-off section, filters the running headers (第1章/第4節) -> they are absent
+    odl = {0: [norm_block("本文A これは十分に長い本文です"), norm_block("6 セメント産業の現状")],
+           1: [norm_block("もっと本文 これも十分に長い本文です")]}
+    out = strip_page_furniture({0: p0, 1: p1}, {0: "128", 1: "129"}, odl)
     assert "第1章 概要" not in out[0] and "第4節 課題" not in out[0]   # running headers (on both pages) gone
-    assert "## 6 セメント産業" in out[0]                              # one-off section kept
+    assert "## 6 セメント産業の現状" in out[0]                        # one-off section (in ODL) kept
     assert "128" not in out[0].split("\n") and "129" not in out[1].split("\n")  # page-number leak gone
 
 
 def test_strip_page_furniture_matches_by_number_despite_text_variation():
     p0 = "# 第1章 我が国製造業第４節 主要製造業の課題"   # VLM merged two running headers onto one line
     p1 = "# 第1章 我が国製造業の特徴"                      # same header, different transcription
-    out = strip_page_furniture({0: p0, 1: p1}, {})
+    out = strip_page_furniture({0: p0, 1: p1}, {}, {0: [], 1: []})  # ODL filtered these headers -> absent
     assert "第1章" not in out[0] and "第1章" not in out[1]   # keyed by the leading 第1章 token, both gone
 
 

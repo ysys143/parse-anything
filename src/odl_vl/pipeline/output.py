@@ -23,6 +23,7 @@ from .reflow import _is_cjk, _no_fold_into, _starts_unit, reflow_markdown
 from .run import DocumentResult
 from .sections import _assign_heading_levels, apply_heading_levels, build_sections, strip_page_furniture
 from .structure import build_graph
+from .textalign import norm_block
 
 
 def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
@@ -298,7 +299,9 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         rendered.append((p.page_index, name))
 
     if headings:  # document-level: drop running headers + printed-page-number leaks (page furniture)
-        md_by_index = strip_page_furniture(md_by_index, page_labels)
+        # ODL already filters running headers/footers -> a VLM line matching no ODL block is furniture.
+        odl_norms_by_page = {pi: [norm_block(p.text) for p in paras] for pi, paras in blocks_by_page.items()}
+        md_by_index = strip_page_furniture(md_by_index, page_labels, odl_norms_by_page)
     md_by_index = {pi: _normalize_captions(md) for pi, md in md_by_index.items()}  # uniform caption bold
 
     for page_index, name in rendered:

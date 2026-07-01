@@ -14,6 +14,7 @@ from collections import Counter
 
 from .numbering import NumberClass, classify_numbering, level_for
 from .outline import HeadingAuthority
+from .textalign import common_prefix_len, norm_block
 
 _TERMINATORS = "。．.!?！？"          # a numbered line ending here is a sentence (body), not a heading
 _CAPTION_LEAD = re.compile(r"(?i)^\s*(?:table|figure|fig\.?|表|図|그림|표)\s*\d")
@@ -246,44 +247,53 @@ def _furniture_candidate(line: str) -> bool:
     return bool(s) and not s.startswith(("#", "|", ">", "![", "<!--"))
 
 
-def strip_page_furniture(markdowns: dict[int, str], page_labels: dict[int, str | None]) -> dict[int, str]:
-    """Drop page furniture the VLM transcribed as content: (1) a chapter/section heading (``#``/``##``)
-    whose leading number recurs on >=2 pages (a running header faking a chapter break each page);
-    (2) a bare line equal to a page's printed number (footer leak); (3) any non-heading, non-table
-    line whose digit-masked form recurs on a large fraction of pages -- a running journal header/footer
-    ('PLOS Biology | … | 30 / 32'). The genuine hierarchy still lives in ``sections[]``; subsection/
-    item headings (``###``+) and one-off lines are never touched."""
-    n = len(markdowns)
+def _absent_from_odl(line: str, odl_norms: list[str], min_lcp: int = 10) -> bool:
+    """True when the line shares NO long prefix with any ODL block on the page -- i.e. ODL did not keep
+    it as content. ODL filters running headers/footers upstream, so furniture is ODL-absent while genuine
+    body always has a matching ODL block."""
+    ln = norm_block(line)
+    return not any(common_prefix_len(ln, on) >= min_lcp for on in odl_norms if len(on) >= 8)
+
+
+def strip_page_furniture(markdowns: dict[int, str], page_labels: dict[int, str | None],
+                         odl_norms_by_page: dict[int, list[str]] | None = None) -> dict[int, str]:
+    """Drop page furniture the VLM re-typed as content, using ODL's own header/footer filtering as the
+    signal rather than a tuned recurrence fraction. ODL excludes running headers/footers from its blocks,
+    so a line that (a) matches NO ODL block on its page (ODL-ABSENT) and (b) recurs on >=2 pages is a
+    running header/footer -- removed. Genuine body always has a matching ODL block, so it is never a
+    candidate; the recurrence floor is thus the minimal 2, with no page-fraction threshold. A ``#``/``##``
+    heading is dropped only when it is ALSO ODL-absent (so a real recurring subsection like ``## 7 工作機械``
+    that ODL kept is protected by construction). A bare printed-page-number line is dropped via the label.
+    Without ODL (``odl_norms_by_page`` empty) only the page-number line is touched -- conservative, since
+    no furniture signal is available. Subsection/item headings (``###``+) and one-off lines are untouched."""
+    odl_norms_by_page = odl_norms_by_page or {}
+
+    def absent(line: str, idx: int) -> bool:
+        return bool(odl_norms_by_page) and _absent_from_odl(line, odl_norms_by_page.get(idx, []))
+
     head_counts: Counter[str] = Counter()
     line_counts: Counter[str] = Counter()
-    for md in markdowns.values():
+    for idx, md in markdowns.items():
         heads, lines = set(), set()
         for ln in md.split("\n"):
-            if m := _HEADING_LINE.match(ln):
+            if (m := _HEADING_LINE.match(ln)) and absent(ln, idx):
                 heads.add(_num_key(m.group(2)))
-            elif _furniture_candidate(ln):
+            elif _furniture_candidate(ln) and absent(ln, idx):
                 lines.add(_line_key(ln))
         head_counts.update(heads)
         line_counts.update(lines)
-    running_heads = {k for k, c in head_counts.items() if c >= 2}
-    running_lines = {k for k, c in line_counts.items() if c >= max(3, n // 4)}  # recurs on >=~1/4 of pages
-    # split-header fragments: the VLM sometimes breaks one running header into two short lines, each
-    # below threshold ('PLOS BIOLOGY' + 'Corrective feedback…'). A repeated candidate whose key is a
-    # whole token-run inside a confirmed furniture key is the same header, split -> also furniture.
-    fragments = {k for k, c in line_counts.items()
-                 if c >= 2 and len(k) >= 10 and k not in running_lines
-                 and any(f" {k} " in f" {f} " for f in running_lines)}
-    running_lines |= fragments
+    running_heads = {k for k, c in head_counts.items() if c >= 2}  # ODL-absent heading recurring = running header
+    running_lines = {k for k, c in line_counts.items() if c >= 2}  # ODL-absent line recurring = furniture
     out: dict[int, str] = {}
     for idx, md in markdowns.items():
         label = page_labels.get(idx)
         kept: list[str] = []
         for ln in md.split("\n"):
-            if (m := _HEADING_LINE.match(ln)) and _num_key(m.group(2)) in running_heads:
+            if (m := _HEADING_LINE.match(ln)) and _num_key(m.group(2)) in running_heads and absent(ln, idx):
                 continue
             if label is not None and ln.strip() == label:
                 continue
-            if _furniture_candidate(ln) and _line_key(ln) in running_lines:
+            if _furniture_candidate(ln) and _line_key(ln) in running_lines and absent(ln, idx):
                 continue
             kept.append(ln)
         out[idx] = re.sub(r"\n{3,}", "\n\n", "\n".join(kept))  # collapse the blanks a removed line leaves
