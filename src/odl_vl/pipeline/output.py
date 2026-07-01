@@ -255,13 +255,13 @@ def _consolidate_figure_units(markdown: str) -> str:
                     remove.add(j)
                 break
         cap = " ".join(blocks[k].strip() for k in cap_parts)
+        if source is not None:                                   # the Source line IS part of the caption ->
+            cap = f"{cap} {blocks[source].strip()}"              # attach it to the caption, no blank line
         cap = re.sub(r"\s*<!-- page[^>]*-->\s*", " ", cap)     # drop page markers merged into the caption
         cap = re.sub(r"\s{2,}", " ", cap).strip()
         unit = b.strip()
         if cap:
             unit += "\n\n" + cap
-        if source is not None:
-            unit += "\n\n" + blocks[source].strip()
         result[i] = unit
     return "\n\n".join(result[k] for k in range(len(result)) if k not in remove)
 

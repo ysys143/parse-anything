@@ -61,7 +61,7 @@ def test_consolidate_merges_split_caption_and_source_into_figure_unit():
     blocks = _consolidate_figure_units(md).split("\n\n")
     assert blocks[0].startswith("![Fig 2]")                  # image first
     assert "**Fig 2. Title.**" in blocks[1] and "tail part here." in blocks[1] and "<!-- page" not in blocks[1]
-    assert blocks[2].startswith("Source:")                   # source attached under the caption
+    assert "Source: https://doi.org/x.g002" in blocks[1]     # source attached to the caption (no blank line)
     assert "Body paragraph after the figure." in "\n\n".join(blocks)
 
 
