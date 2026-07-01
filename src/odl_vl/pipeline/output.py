@@ -604,7 +604,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
 
     if result.meta is not None:
         _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels, onto)
-        _write_semantic_json(out, result, pages_meta, blocks, tables, figures, sections, onto)  # clean layered view
+        _write_semantic_json(out, result, pages_meta, blocks, tables, figures, sections, onto, md_by_index)  # clean layered view
         _write_tables(out, tables)
 
 
@@ -796,11 +796,30 @@ def _zones_summary(blocks: list[dict], tables: list[dict], figures: list[dict]) 
     return [{"zone": z, "pages": sorted(p)} for z, p in sorted(zpages.items(), key=lambda kv: min(kv[1]))]
 
 
+_DISPLAY_EQ = re.compile(r"\$\$(.+?)\$\$", re.S)   # a display equation in the VLM markdown
+
+
+def _display_equations_by_page(page_markdown: dict[int, str]) -> dict[int, list[str]]:
+    """page_index -> [latex, ...] for each $$...$$ display equation in that page's VLM markdown."""
+    out: dict[int, list[str]] = {}
+    for pi, md in page_markdown.items():
+        eqs = [m.group(1).strip() for m in _DISPLAY_EQ.finditer(md) if m.group(1).strip()]
+        if eqs:
+            out[pi] = eqs
+    return out
+
+
 def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict], sections: list[dict],
-                    reading_order: list, meta: dict, ontology: "Ontology") -> tuple[dict, dict]:
+                    pages_content: list, meta: dict, ontology: "Ontology",
+                    page_markdown: dict[int, str] | None = None) -> tuple[dict, dict]:
     """Pure builder: (semantic_doc, provenance) from the graph. The semantic view is agent-clean -- each
-    node carries only id/type(role)/zone/level?/text|label/caption/... with NO geometry; bbox/order/
-    font_size/regions are demoted into the provenance map keyed by the same node id."""
+    node carries only id/type(role)/zone/level?/text|latex|label/... with NO geometry; bbox/order/font_size/
+    regions go to the provenance map keyed by node id. Captions are promoted to first-class ``caption``
+    nodes (``caption_of`` -> its figure/table, which gets a ``caption_ref``); display equations from the
+    VLM markdown become ``equation`` nodes (``latex``), placed at page granularity.
+
+    pages_content: list[(page_index, [node_id, ...])] in reading order per page.
+    """
     prov: dict[object, dict] = {}
 
     def demote(nid: object, n: dict, keys: tuple) -> None:
@@ -825,7 +844,7 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
         if t.get("regions"):
             prov.setdefault(t["id"], {})["regions"] = t["regions"]
         node = {"id": t["id"], "type": t.get("role", "table"), "zone": t.get("zone"), "label": t.get("label"),
-                "caption": t.get("caption"), "n_rows": t.get("n_rows"), "n_cols": t.get("n_cols"),
+                "n_rows": t.get("n_rows"), "n_cols": t.get("n_cols"),
                 "cells": [[{k: v for k, v in c.items() if k != "bbox"} for c in row] for row in t.get("cells", [])],
                 "views": t.get("views")}
         for k in ("section", "refs"):
@@ -835,11 +854,55 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
     for f in figures:
         demote(f["id"], f, ("page", "order", "bbox"))
         node = {"id": f["id"], "type": f.get("role", "figure"), "zone": f.get("zone"), "label": f.get("label"),
-                "caption": f.get("caption"), "kind": f.get("kind"), "file": f.get("file")}
+                "kind": f.get("kind"), "file": f.get("file")}
         for k in ("source", "description", "section", "refs"):
             if f.get(k):
                 node[k] = f[k]
         nodes.append(node)
+
+    # Caption promotion: a figure/table's caption becomes a `caption` node (re-typed existing caption block,
+    # else synthesized); the figure/table references it via `caption_ref` (no duplicated caption text).
+    node_by_id = {n["id"]: n for n in nodes}
+    for src in (*figures, *tables):
+        fid, cid, cap = src["id"], src.get("caption_id"), src.get("caption")
+        host = node_by_id.get(fid)
+        if cid and cid in node_by_id:                             # caption is already a block node -> re-type
+            cnode = node_by_id[cid]
+            cnode["type"] = "caption"
+            cnode["caption_of"] = fid
+            if host is not None:
+                host["caption_ref"] = cid
+        elif cap:                                                 # caption lived only as a field -> synthesize
+            cnid = f"{fid}_cap"
+            nodes.append({"id": cnid, "type": "caption", "zone": src.get("zone"), "caption_of": fid,
+                          "label": src.get("label"), "text": cap})
+            if host is not None:
+                host["caption_ref"] = cnid
+
+    # Equation promotion: extract display equations from the VLM markdown as `equation` nodes, woven into
+    # the reading order at page granularity (per-node placement needs the Phase-3 prose bridge).
+    from collections import Counter
+    page_zone: dict[int, str] = {}
+    for b in blocks:
+        page_zone.setdefault(b.get("page"), []).append(b.get("zone"))  # type: ignore[arg-type]
+    page_zone = {pg: (Counter(z for z in zs if z).most_common(1)[0][0] if any(zs) else ontology.default_zone)
+                 for pg, zs in page_zone.items()}
+    eqs_by_page = _display_equations_by_page(page_markdown) if page_markdown else {}
+    eq_ids_by_page: dict[int, list[str]] = {}
+    for pi, latexes in eqs_by_page.items():
+        ids = []
+        for k, latex in enumerate(latexes):
+            nid = f"eq_p{pi + 1}_{k}"
+            nodes.append({"id": nid, "type": "equation", "zone": page_zone.get(pi + 1, ontology.default_zone),
+                          "display": True, "latex": latex})
+            ids.append(nid)
+        eq_ids_by_page[pi] = ids
+
+    reading_order: list = []
+    for pi, content in pages_content:
+        reading_order.extend(content)
+        reading_order.extend(eq_ids_by_page.get(pi, []))
+
     sec_clean = [{"id": s["id"], "heading": s["heading"], "level": s["level"], "zone": s.get("zone"),
                   "heading_ref": s["block_id"], "parent": s["parent"], "children": s["children"],
                   "content": s["content"]} for s in sections]
@@ -859,13 +922,13 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
 
 def _write_semantic_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
-                         sections: list[dict], ontology: "Ontology") -> None:
+                         sections: list[dict], ontology: "Ontology",
+                         page_markdown: dict[int, str] | None = None) -> None:
     """Emit the agent-clean layered artifacts: document.semantic.json (no geometry) + a provenance sidecar."""
-    reading_order: list = []
-    for p in result.pages:
-        if p.route != "folded":
-            reading_order.extend(pages_meta.get(p.page_index, {}).get("content", []))
-    doc, prov = _build_semantic(blocks, tables, figures, sections, reading_order, result.meta.to_dict(), ontology)
+    pages_content = [(p.page_index, pages_meta.get(p.page_index, {}).get("content", []))
+                     for p in result.pages if p.route != "folded"]
+    doc, prov = _build_semantic(blocks, tables, figures, sections, pages_content, result.meta.to_dict(),
+                                ontology, page_markdown)
     (out / "document.semantic.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "document.provenance.json").write_text(
         json.dumps({"profile": ontology.profile_stamp(), "prov": prov}, ensure_ascii=False, indent=2), encoding="utf-8")

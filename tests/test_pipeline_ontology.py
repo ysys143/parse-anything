@@ -193,18 +193,29 @@ def test_build_semantic_separates_geometry_into_a_provenance_sidecar():
                  "page": 1, "parent": None, "children": [], "content": ["p1"]}]
     meta = {"document_id": "d1", "content_sha256": "x", "original_filename": "f.pdf", "source": {},
             "n_pages": 1, "mode": "det_vlm", "producer": {"title": "prod"}}
-    doc, prov = _build_semantic(blocks, tables, figures, sections, ["t1", "h1", "p1", "fig1", "tb1"], meta, onto)
+    pages_content = [(0, ["t1", "h1", "p1", "fig1", "tb1"])]
+    page_md = {0: "Some text with a display equation $$E = mc^2$$ and more prose."}
+    doc, prov = _build_semantic(blocks, tables, figures, sections, pages_content, meta, onto, page_md)
+    nodes = {n["id"]: n for n in doc["nodes"]}
 
     for n in doc["nodes"]:                                       # semantic nodes carry NO geometry
         assert not ({"bbox", "order", "font_size"} & set(n)), n
     assert prov["p1"]["bbox"] == [0, 0, 5, 5] and prov["p1"]["font_size"] == 10.0   # geometry -> sidecar
     assert prov["fig1"]["bbox"] == [1, 2, 3, 4] and "regions" in prov["tb1"]
-    hnode = next(n for n in doc["nodes"] if n["id"] == "h1")
-    assert hnode["level"] == 1 and hnode["type"] == "heading"    # heading shows its section level + role
-    assert doc["metadata"]["title"] == "A Title"                 # title extracted from the role=title node
-    assert next(n for n in doc["nodes"] if n["id"] == "p1")["refs"] == ["fig1"]     # cross-refs preserved
-    assert next(n for n in doc["nodes"] if n["id"] == "tb1")["cells"] == [[{"text": "a"}, {"text": "b"}]]  # cell bbox stripped
-    assert doc["profile"]["id"] == onto.id and doc["reading_order"][0] == "t1"
+    assert nodes["h1"]["level"] == 1 and nodes["h1"]["type"] == "heading"           # heading shows section level
+    assert doc["metadata"]["title"] == "A Title"                # title from the role=title node
+    assert nodes["p1"]["refs"] == ["fig1"]                      # cross-refs preserved
+    assert nodes["tb1"]["cells"] == [[{"text": "a"}, {"text": "b"}]]                # cell bbox stripped
+
+    # caption promotion: fig1/tb1 captions become caption nodes; the host references them, no dup text
+    assert nodes["fig1"]["caption_ref"] == "fig1_cap" and "caption" not in nodes["fig1"]
+    assert nodes["fig1_cap"]["type"] == "caption" and nodes["fig1_cap"]["caption_of"] == "fig1"
+    assert nodes["fig1_cap"]["text"] == "cap" and nodes["tb1_cap"]["caption_of"] == "tb1"
+
+    # equation promotion: the display equation from the markdown becomes an equation node in reading order
+    assert nodes["eq_p1_0"]["type"] == "equation" and nodes["eq_p1_0"]["latex"] == "E = mc^2"
+    assert nodes["eq_p1_0"]["display"] is True and nodes["eq_p1_0"]["zone"] == "body"
+    assert "eq_p1_0" in doc["reading_order"] and doc["reading_order"][0] == "t1"
 
 
 def test_injecting_a_different_ontology_changes_the_tagging():
