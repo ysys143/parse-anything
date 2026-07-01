@@ -541,12 +541,13 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
         from .ontology import compute_font_ranks, tag_nodes
         font_ranks = compute_font_ranks(blocks)
-        tag_nodes(blocks, tables, figures, onto, font_ranks, is_landscape=bool(slide_images))  # role + zone axes
+        npages = result.meta.n_pages
+        tag_nodes(blocks, tables, figures, onto, font_ranks, is_landscape=bool(slide_images), n_pages=npages)  # role + zone
         if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
             page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
             authority = resolve_heading_authority(pdf_path, result.structure)
             level_map, style_levels = _assign_heading_levels(blocks, authority, printed_to_index(page_labels),
-                                                             onto, font_ranks)   # + unnumbered-heading admission
+                                                             onto, font_ranks, npages)   # + unnumbered admission
             sections, section_by_node = build_sections(blocks, tables, figures, level_map)
             for node in (*blocks, *tables, *figures):
                 if node["id"] in section_by_node:

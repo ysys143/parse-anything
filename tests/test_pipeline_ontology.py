@@ -33,9 +33,11 @@ def test_classify_axes_for_common_nodes():
         return v.role, v.zone, v.opens_zone
 
     assert role_zone({"page_index": 0, "odl_role": "Doctitle", "odl_type": "heading", "text": "A Title"}) == ("title", "cover", False)
-    assert role_zone({"odl_type": "heading", "text": "References"})[1:] == ("references", True)
-    assert role_zone({"odl_type": "heading", "text": "6. References"})[1:] == ("references", True)   # numbered ref heading
-    assert role_zone({"odl_type": "heading", "text": "Contents"})[1:] == ("toc", True)
+    # references/appendix are back-matter: they open only in the document tail (page_frac gate)
+    assert role_zone({"odl_type": "heading", "text": "References", "page_frac": 0.9})[1:] == ("references", True)
+    assert role_zone({"odl_type": "heading", "text": "6. References", "page_frac": 0.95})[1:] == ("references", True)
+    assert role_zone({"odl_type": "heading", "text": "References", "page_frac": 0.1})[1:] == (None, False)  # early TOC mention -> no open
+    assert role_zone({"odl_type": "heading", "text": "Contents"})[1:] == ("toc", True)   # toc is early, not gated
     assert o.classify({"odl_type": "paragraph", "text": "1.2 Method details"}).role == "heading"    # numbered
     assert o.classify({"odl_type": "heading", "text": "Introduction"}).role == "heading"            # prose
     assert o.classify({"odl_type": "paragraph", "text": "We present a pipeline."}).role == "paragraph"
@@ -133,6 +135,22 @@ def test_numbered_headings_are_unchanged_by_the_ontology():
     base, _ = _assign_heading_levels(blocks)
     withont, _ = _assign_heading_levels(blocks, ontology=_load(), font_ranks=fr)
     assert base == withont == {"n1": 1, "n3": 2, "n4": 1}
+
+
+def test_backmatter_zone_opens_only_in_the_document_tail():
+    # a 'References' MENTION early in the document (a table-of-contents entry) must NOT open the references
+    # zone; the real heading in the tail does. Fixes the labchip over-extension (TOC on p2 swept the body).
+    onto = _load()
+    blocks = [
+        {"id": "toc", "type": "heading", "page": 2, "order": 1, "text": "7. 참고문헌"},        # TOC entry, early
+        {"id": "b1", "type": "paragraph", "page": 2, "order": 2, "text": "서론 본문이 이어진다."},
+        {"id": "ref", "type": "heading", "page": 21, "order": 3, "text": "7. 참고문헌"},        # the real one, tail
+        {"id": "e1", "type": "paragraph", "page": 21, "order": 4, "text": "1. Gold JI. A paper. 2020."},
+    ]
+    tag_nodes(blocks, [], [], onto, n_pages=22)
+    z = {b["id"]: b["zone"] for b in blocks}
+    assert z["toc"] == "body" and z["b1"] == "body"            # early TOC mention did NOT open references
+    assert z["ref"] == "references" and z["e1"] == "references"  # the tail heading does
 
 
 def test_tag_nodes_zone_spans_from_a_references_heading():

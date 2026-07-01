@@ -268,10 +268,12 @@ def test_compute_font_ranks_percentile_and_none():
 
 
 def test_node_signals_shape():
-    s = node_signals({"id": "b", "type": "heading", "odl_role": "Subtitle", "heading_level": 2,
-                      "font_size": 12.0, "page": 3, "text": "Hi"}, {"b": 0.9}, is_landscape=True)
-    assert s == {"page_index": 2, "odl_type": "heading", "odl_role": "Subtitle", "odl_heading_level": 2,
-                 "font_size": 12.0, "font_rank": 0.9, "is_landscape": True, "text": "Hi"}
+    blk = {"id": "b", "type": "heading", "odl_role": "Subtitle", "heading_level": 2,
+           "font_size": 12.0, "page": 3, "text": "Hi"}
+    s = node_signals(blk, {"b": 0.9}, is_landscape=True)
+    assert s == {"page_index": 2, "page_frac": 1.0, "odl_type": "heading", "odl_role": "Subtitle",
+                 "odl_heading_level": 2, "font_size": 12.0, "font_rank": 0.9, "is_landscape": True, "text": "Hi"}
+    assert node_signals(blk, n_pages=6)["page_frac"] == 0.5     # page 3 of 6 -> mid-document
 
 
 def test_tag_nodes_roles_zones_and_spanning():

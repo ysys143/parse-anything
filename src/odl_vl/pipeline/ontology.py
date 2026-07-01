@@ -195,7 +195,7 @@ def _match(clause: Any, signals: dict[str, Any]) -> bool:
 
 # signals a rule may test directly (combinators + classify_numbering + text_matches handled above)
 _SIGNAL_KEYS = frozenset({
-    "page_index", "odl_type", "odl_role", "odl_heading_level", "font_size", "font_rank",
+    "page_index", "page_frac", "odl_type", "odl_role", "odl_heading_level", "font_size", "font_rank",
     "is_landscape", "bbox_area_frac", "centered", "text",
 })
 
@@ -424,10 +424,14 @@ def compute_font_ranks(blocks: list[dict]) -> dict[object, float | None]:
 
 
 def node_signals(block: dict, font_ranks: dict[object, float | None] | None = None, *,
-                 is_landscape: bool = False) -> dict[str, Any]:
-    """The signal bundle a rule's ``when`` predicate sees for one block node."""
+                 is_landscape: bool = False, n_pages: int | None = None) -> dict[str, Any]:
+    """The signal bundle a rule's ``when`` predicate sees for one block node. ``page_frac`` is the node's
+    fractional position in the document (last page -> 1.0); it lets a rule confine a back-matter zone
+    (references/appendix) to the document tail so a table-of-contents mention never opens it early. When
+    ``n_pages`` is unknown it defaults to 1.0 (permissive), so callers that omit it are unaffected."""
     return {
         "page_index": (block.get("page") or 1) - 1,
+        "page_frac": ((block.get("page") or 1) / n_pages) if n_pages else 1.0,
         "odl_type": block.get("type"),
         "odl_role": block.get("odl_role"),
         "odl_heading_level": block.get("heading_level"),
@@ -439,7 +443,8 @@ def node_signals(block: dict, font_ranks: dict[object, float | None] | None = No
 
 
 def tag_nodes(blocks: list[dict], tables: list[dict], figures: list[dict], ontology: Ontology,
-              font_ranks: dict[object, float | None] | None = None, *, is_landscape: bool = False) -> None:
+              font_ranks: dict[object, float | None] | None = None, *, is_landscape: bool = False,
+              n_pages: int | None = None) -> None:
     """Stamp ``role`` (ontology node type) + ``zone`` onto every graph node, in reading order so a
     zone-opening heading (references/appendix/toc) carries its zone to the nodes that follow. Tables and
     figures inherit the current zone and keep their own role. Mutates the node dicts in place."""
@@ -453,7 +458,7 @@ def tag_nodes(blocks: list[dict], tables: list[dict], figures: list[dict], ontol
             n["role"] = t
             n["zone"] = current_zone
             continue
-        v = ontology.classify(node_signals(n, font_ranks, is_landscape=is_landscape))
+        v = ontology.classify(node_signals(n, font_ranks, is_landscape=is_landscape, n_pages=n_pages))
         if v.zone is not None:
             n["zone"] = v.zone
             if v.opens_zone:

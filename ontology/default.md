@@ -17,8 +17,8 @@ zones: [cover, metadata, toc, body, references, appendix, furniture]
 figure_kinds: [chart, plot, diagram, photo, map, screenshot, logo, icon, full_page_image, decoration]
 rules:
   - {id: doc-title, when: {all: [{page_index: {eq: 0}}, {odl_role: {in: [Doctitle, Title]}}]}, then: {type: title, zone: cover}}
-  - {id: references-zone, when: {text_matches: '(?i)^\s*(?:\d+\.?\s+)?(?:references|bibliography|works\s+cited|literature\s+cited|참고\s*문헌|参考文献)\s*$'}, then: {zone: references, opens_zone: true}}
-  - {id: appendix-zone, when: {text_matches: '(?i)^\s*(?:\d+\.?\s+|appendix\s+)?(?:appendix|supplementary|supporting\s+information|부록|附録)\b'}, then: {zone: appendix, opens_zone: true}}
+  - {id: references-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+)?(?:references|bibliography|works\s+cited|literature\s+cited|참고\s*문헌|参考文献)\s*$'}]}, then: {zone: references, opens_zone: true}}
+  - {id: appendix-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+|appendix\s+)?(?:appendix|supplementary|supporting\s+information|부록|附録)\b'}]}, then: {zone: appendix, opens_zone: true}}
   - {id: toc-zone, when: {text_matches: '(?i)^\s*(?:contents|table\s+of\s+contents|목차|目次)\s*$'}, then: {zone: toc, opens_zone: true}}
   - {id: numbered-heading, when: {classify_numbering: not_null}, then: {type: heading, level: from_numbering}}
   - {id: prose-heading, when: {any: [{odl_type: {eq: heading}}, {odl_role: {in: [Subtitle, Sectiontitle, Sectionheader]}}, {odl_heading_level: {gte: 1}}]}, then: {type: heading, level: from_font_rank}}

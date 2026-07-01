@@ -105,7 +105,8 @@ def _authority_level(text: str, page: int | None, authority: HeadingAuthority, p
 
 def _assign_heading_levels(blocks: list[dict], authority: HeadingAuthority | None = None,
                            printed_to_pdf: dict[str, int] | None = None, ontology: "Ontology | None" = None,
-                           font_ranks: dict[object, float | None] | None = None) -> tuple[dict[object, int], dict[str, int]]:
+                           font_ranks: dict[object, float | None] | None = None,
+                           n_pages: int | None = None) -> tuple[dict[object, int], dict[str, int]]:
     """(block id -> level, style -> first level). Levels are DOCUMENT-RELATIVE: detection/abstain/
     run-demote are unchanged (they key on rank); a reading-order nesting stack owns the level."""
     printed_to_pdf = printed_to_pdf or {}
@@ -183,7 +184,7 @@ def _assign_heading_levels(blocks: list[dict], authority: HeadingAuthority | Non
                     or _CAPTION_LEAD.match(text) or b.get("figure") or _looks_like_equation(text)
                     or _AUTHOR_AFFIL.search(text) or b.get("zone") in _NON_SECTION_ZONES):
                 continue         # chart label / equation / author-affiliation line / non-body zone
-            if getattr(ontology.classify(_node_signals(b, font_ranks)), "role", None) != "heading":
+            if getattr(ontology.classify(_node_signals(b, font_ranks, n_pages=n_pages)), "role", None) != "heading":
                 continue
             if not _followed_by_body(bid):   # structural corroboration -- a real section is followed by prose
                 continue
