@@ -125,9 +125,9 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
 _CAP_LABEL_TITLE = re.compile(
     r"^("
     r"(?:S\d+\s+(?:Fig(?:ure)?|Table)|(?:Fig(?:ure)?|Table|図|表|그림|표)\s*\d+)"  # label: 'S1 Fig' or 'Figure 3'
-    r"[.:]?\s+"                    # separator after the label: '.', ':' or none, then whitespace
-    r"[^.．]*[.．]?"                # title: up to & including the first period (the whole line if none)
-    r")(.*)$",
+    r"[.:]?\s+"                            # separator after the label: '.', ':' or none, then whitespace
+    r"(?:[^.．]|[.．](?!\s|$))*[.．]?"       # title: up to the first SENTENCE period (period + space/end);
+    r")(.*)$",                             #   a mid-token period (a URL's 'www.', a decimal) is kept
     re.IGNORECASE)
 
 

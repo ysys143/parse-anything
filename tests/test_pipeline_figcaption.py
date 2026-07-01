@@ -50,6 +50,10 @@ def test_caption_bold_is_normalized_consistently():
     # an all-caps label with no separator ('FIGURE 1 Title.')
     assert _normalize_captions("FIGURE 1 Two dimensional subspaces. Panel a shows.").startswith(
         "**FIGURE 1 Two dimensional subspaces.**")
+    # a title ends at a SENTENCE period, not a mid-token one: an inline URL is not split by the bold
+    url = "http://www." + "example.com/x"
+    out = _normalize_captions("Fig 8. Overview (" + url + ")")
+    assert out.count("**") == 2 and url in out   # exactly one bold span, URL intact (no ** mid-token)
     # ordinary prose is untouched (label not at line start)
     assert _normalize_captions("The figure 2 shows a trend.") == "The figure 2 shows a trend."
 
