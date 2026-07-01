@@ -51,3 +51,10 @@ def test_labels_a_bare_figure_source_doi():
         "Source: https://doi.org/10.1371/journal.pbio.3002373.g007")
     # a DOI embedded in prose (not a bare source line) is left untouched
     assert _label_figure_sources("see https://doi.org/x.g007 here") == "see https://doi.org/x.g007 here"
+
+
+def test_restores_misread_panel_label_but_keeps_copyright():
+    from odl_vl.pipeline.output import _restore_panel_labels
+    assert _restore_panel_labels("as in (B) and ©.") == "as in (B) and (C)."
+    assert _restore_panel_labels("black cube. © The 3D state") == "black cube. (C) The 3D state"
+    assert _restore_panel_labels("**Copyright:** © 2023 Lee et al.") == "**Copyright:** © 2023 Lee et al."

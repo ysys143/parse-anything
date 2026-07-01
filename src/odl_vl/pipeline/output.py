@@ -136,6 +136,12 @@ def _label_figure_sources(markdown: str) -> str:
                       for ln in markdown.split("\n"))
 
 
+def _restore_panel_labels(markdown: str) -> str:
+    """The VLM sometimes reads a figure panel label '(C)' as the copyright glyph '©'. Restore it to
+    '(C)', but keep a genuine copyright notice ('© 2023 …' -- a digit/year follows) untouched."""
+    return re.sub(r"©(?!\s*\d)", "(C)", markdown)
+
+
 def _normalize_captions(markdown: str) -> str:
     """Bold every caption's label+title sentence uniformly ('**Fig 7. Title.** rest…'). The VLM renders
     some captions bold and some plain (F/S figures alike); this makes them consistent. Inline emphasis
@@ -417,7 +423,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         # ODL already filters running headers/footers -> a VLM line matching no ODL block is furniture.
         odl_norms_by_page = {pi: [norm_block(p.text) for p in paras] for pi, paras in blocks_by_page.items()}
         md_by_index = strip_page_furniture(md_by_index, page_labels, odl_norms_by_page)
-    md_by_index = {pi: _normalize_captions(md) for pi, md in md_by_index.items()}  # uniform caption bold
+    md_by_index = {pi: _restore_panel_labels(_normalize_captions(md)) for pi, md in md_by_index.items()}  # caption bold + (C) glyph
     md_by_index = {pi: _label_figure_sources(md) for pi, md in md_by_index.items()}  # label figure DOIs
 
     for page_index, name in rendered:
