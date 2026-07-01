@@ -444,6 +444,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     figs_by_page: dict[int, list[dict]] = {}
     blocks_by_page: dict[int, tuple] = {}
     chart_noise: dict[int, set[str]] = {}
+    slide_images: dict[int, str] = {}   # slide-deck mode: one rendered page image per page
     if result.meta is not None and result.structure is not None:
         labels_by_page = {p.page_index: p.labels for p in result.pages}
         pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
@@ -462,6 +463,25 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                                     "caption": None, "label": None})
                     meta["figures"].append(fid)
                     meta["content"].append(fid)
+        # A slide deck (landscape pages) is a graphic layout: keep ONE rendered image per page for a
+        # consistent visual, with the VLM's text transcription alongside for search. Clearing per-figure
+        # crops also means no chart-internal-text suppression, so the slide's own text survives too.
+        if pdf_path and result.pages:
+            import pypdfium2 as _pdfium
+
+            from .render import render_page_png
+            _doc = _pdfium.PdfDocument(pdf_path)
+            try:
+                sizes = [_doc[pi].get_size() for pi in range(len(_doc))]
+                if sizes and sum(1 for w, h in sizes if w > h) * 2 > len(sizes):   # majority landscape
+                    (out / "assets").mkdir(exist_ok=True)
+                    for pi in range(len(_doc)):
+                        (out / "assets" / f"slide-{pi:03d}.png").write_bytes(render_page_png(pdf_path, pi, scale=2.0))
+                        slide_images[pi] = f"assets/slide-{pi:03d}.png"
+            finally:
+                _doc.close()
+        if slide_images:
+            figures = []   # the page image carries every graphic -> skip crops, classification, suppression
         # drop hairline icons/logos, and display-equation strips ODL mis-detects as raster figures. The
         # equation case is gated on the page ACTUALLY containing display math (not height alone), so a
         # thin real figure on a non-math page is never dropped -- the VLM's LaTeX already carries the math.
@@ -528,6 +548,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         if inline_figures and p.page_index in figs_by_page:
             markdown = interleave_figures(markdown, figs_by_page[p.page_index], blocks_by_page.get(p.page_index, ()))
         markdown = _PLACEHOLDER_RE.sub("", markdown)  # drop bare VLM [figure]/[image] placeholders
+        if p.page_index in slide_images:  # slide deck: the rendered page image heads the page, text follows
+            markdown = f"![slide {p.page_index + 1}]({slide_images[p.page_index]})\n\n{markdown.lstrip()}"
         name = f"page-{p.page_index:03d}.md"
         md_by_index[p.page_index] = markdown
         record["markdown_file"] = f"pages/{name}"

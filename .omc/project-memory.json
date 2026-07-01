@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -c \"import odl_vl.pipeline.output; import ast; ast.parse(open('scripts/pdf_to_markdown.py').read()); print('imports/syntax OK')\"\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -2 )",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -c \"import odl_vl.pipeline.output; print('import OK')\"\ngrep -n \"def render_page_png\" src/odl_vl/pipeline/render.py\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -2 )",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -150,8 +150,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 26,
-      "lastAccessed": 1782895655349,
+      "accessCount": 32,
+      "lastAccessed": 1782897778585,
       "type": "file"
     },
     {
@@ -230,6 +230,24 @@
       "path": "src/odl_vl/pipeline/reflow.py",
       "accessCount": 1,
       "lastAccessed": 1782892399330,
+      "type": "file"
+    },
+    {
+      "path": ".local/workspace/gen/agentic/e85f5192acfbd07a/assets/p9_512.png",
+      "accessCount": 1,
+      "lastAccessed": 1782896663995,
+      "type": "file"
+    },
+    {
+      "path": ".local/workspace/gen/agentic/e85f5192acfbd07a/assets/p7_286.png",
+      "accessCount": 1,
+      "lastAccessed": 1782896717145,
+      "type": "file"
+    },
+    {
+      "path": ".local/workspace/gen/agentic/e85f5192acfbd07a/assets/p8_vec0.png",
+      "accessCount": 1,
+      "lastAccessed": 1782896783520,
       "type": "file"
     }
   ],
