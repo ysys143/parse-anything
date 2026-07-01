@@ -235,6 +235,22 @@
 - **반영(R10):** ① det_vlm `primary` 일반화 — Paddle을 1차 transcriber로(`--primary paddle`), 표-중심 소스에 적합. ② `reconcile.py` — **대칭 best-of-both**: 텍스트 spine = 더 완전한 쪽, 표 = 컴포넌트별 더 완전한 쪽(replace/**append**). **버그 2개 라이브로 잡음:** (a) 표 완전성 척도를 셀-수→*콘텐츠 크기*(포맷-무관) — combined가 Gemini 압축표(2KB)를 Paddle 완전표(25KB)보다 우선하던 오류(2KB→26KB 복구); (b) 초기엔 텍스트를 Gemini로 *고정* spine → combined 텍스트가 Paddle보다 낮았음(0.78<0.82) → 대칭화로 강한 쪽 텍스트 보존.
 - **결론(정직):** 단일-페이지 텍스트/표 정확도(TEDS)는 **Paddle이 우리 Gemini-기반 파이프라인을 이긴다** → 이미지/표-중심 소스엔 `--primary paddle\|combined`(R10)가 정답. 우리가 *측정으로* Paddle을 이기는 곳은 ① **cross-page 표 재구성**(공정 입력에서도 Paddle은 분절, 우리는 병합 — 능력 차이) ② **born-digital 조작-숫자 0 보장**(정확도 우위가 아니라 *보장*). 골든급 정밀 검증(소스-PDF, numeric accuracy·guard P/R)은 여전히 §8 과제.
 
+## F23. Triage 스캔 오라우팅 — 소스 근본원인 확정 + 수정 (Track C, → F16 심화)
+
+- **방법:** ODL hybrid triage 소스(`TriageProcessor.classifyPage`/`hasLargeImage`, `.local/workspace/opendataloader-pdf`) 정독 + A4 세로 스캔 `scan.pdf`를 결정론(hybrid off)으로 실투입.
+- **결과 — 근본원인:** `hasLargeImage()`(L464)가 면적 게이트 외에 **aspect 게이트 `width/height >= 1.75`(MIN_IMAGE_ASPECT_RATIO)**를 AND로 요구. 이 값은 Experiment 005의 *광폭 표 이미지* 전용 튜닝인데, **일반 문서 스캔 전 종류를 부수적으로 배제**한다 — portrait A4 aspect 0.707, landscape 1.414 모두 < 1.75. 전면 스캔은 이미지 aspect(=페이지 aspect)가 이 문턱을 못 넘어 Signal 3.5 미발동 → 텍스트레이어 0이라 다른 신호(TableBorder/vector/text-pattern)도 전부 미발동 → **Default JAVA(L706)**.
+- **재현:** `scan.pdf`(596×842) 결정론 출력 = **35바이트**, 본문 전체 `![](scan_images/imageFile1.png)` — 이미지 링크뿐, **스캔 내 텍스트·표 100% 소실**. hybrid `auto`였어도 triage가 JAVA로 확정 → VLM이 페이지를 안 봄(영구 소실).
+- **결론:** F16(런타임 per-page 라우팅 = 오탐 도박)의 **소스-레벨 확증**. 단 성격은 F16의 "구조 오탐"과 별개 — **"전면 스캔을 아예 놓침"(데이터 소실)**이라 우리 가치모델 무관하게 upstream 버그. **수정(브랜치 `feat/triage-scan-routing`, fork `ysys143/opendataloader-pdf`):** `hasLargeImage()`에 `largeImageRatio >= 0.5 && textChunkCount == 0`(전면 이미지 + 텍스트레이어 0 = 스캔)이면 aspect 무관 backend를 선행 조건으로 추가. born-digital 텍스트 페이지(textChunkCount>0)·광폭 표 경로는 불변(회귀 최소). upstream엔 이슈만 제기, PR은 `bench.sh` 회귀(NID/TEDS/F1) 확인 후.
+- **대조 실측(mock backend triage 라우팅, `--hybrid-mode auto`):** 수정 전 baseline vs 수정본.
+  | PDF | 수정 전 | 수정 후 | |
+  |---|---|---|---|
+  | scan(세로 스캔) | JAVA(빈 출력) | **BACKEND** | 버그 해결 |
+  | wscan(가로 스캔) | JAVA(빈 출력) | **BACKEND** | 버그 해결 |
+  | hard(born-digital 표) | BACKEND | BACKEND | 회귀 없음 |
+  | wide(born-digital 광폭표) | BACKEND | BACKEND | 회귀 없음 |
+  수정이 **스캔만 전환**하고 born-digital 경로는 불변 — `textChunkCount==0` 가드의 정밀성 실증.
+- **bench.sh 회귀(정직한 한계):** `./scripts/bench.sh --skip-build --check-regression`(200 docs) → **All thresholds met**(NID 0.902/TEDS 0.489/MHS 0.740). 단 bench는 **deterministic 엔진**(hybrid 서버 없이)을 재고, 우리 수정은 `HybridDocumentProcessor` 전용이라 이 경로를 안 탄다 → 수정 전후 동일(자명한 무회귀). **hybrid triage 회귀의 직접 증거는 위 대조표**이며, 정량 hybrid bench(백엔드 서버 필요)는 PR 단계 과제.
+
 ---
 
 ## 측정 안 된 것 (코퍼스급 = #14)
