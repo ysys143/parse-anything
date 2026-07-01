@@ -336,6 +336,29 @@ Track C(C1)를 **실제 구현**했다: ODL Java를 수정해 hybrid 요청에 1
 - **결론**: Track C는 작동하고 B-4와 동등 — 가치는 정확도 축에서 honest-null. 드러날 영역은 (a) 재파싱
   비용이 지배적인 대규모 배치 (b) F22의 cross-page·조작숫자-0-보장(별도 축, 미측정).
 
+#### Triage 실측 — ODL 자체 라우팅은 실사용에서 신뢰 불가 (F16 재현)
+
+지금껏 `--hybrid-mode full`(triage 건너뜀)로만 측정해와서 ODL triage 자체를 검증한 적이 없다. `auto`
+모드로 다양한 입력을 라우팅시켜 본 결과:
+
+| 입력 | triage 결정 | 출력 | 판정 |
+|---|---|---|---|
+| born-digital 텍스트-only | JAVA | 316b | 정상(결정론 충분) |
+| born-digital 텍스트+표(2p) | JAVA=1 / BACKEND=1 | 193b | 페이지별 분리(텍스트→Java, 표→backend) |
+| born-digital 표(hard/wide) | BACKEND | 1131/2655b | VLM 정상이나 결정론으로 무료 처리 가능 → 낭비 |
+| 스캔(scan/mild/dirty) | **JAVA** | **35b** | **완전 실패** — `![](image)`만 |
+| **실제 문서 이미지(OmniDocBench)** | **JAVA** | **36b** | **완전 실패** |
+
+- triage 로직 = "표/구조 감지 → backend, 아니면 Java". born-digital엔 그럭저럭 맞지만, **이미지-only 문서
+  (실제 스캔의 대다수)는 구조 감지가 0이라 "쉬운 빈 페이지=Java"로 오판** → 결정론이 텍스트레이어 0에서
+  빈 출력(35~36b). **VLM이 가장 필요한 문서를 정확히 VLM에 안 보낸다.**
+- **F16의 직접 재현**: "결정론 구조검출 triage는 문서종류마다 오탐 → per-page auto-routing은 false-positive
+  gamble → source-level diagnose-then-configure로 전환". 이번 실측이 그 근거를 재현.
+- **Track B/C 평가 함의**: Track B의 명분 중 하나가 "ODL triage를 공짜로 얻는다"였으나, 실측하니 실사용
+  (스캔 문서)에서 **부채**다. `--hybrid-mode full` 강제가 정답이었다. grounding 정확도 이점 0(위) + triage
+  실사용 실패 → **ODL이 주체가 되는 Track B/C의 고유 자산(grounding·triage)이 실측에서 이점을 못 준다.**
+  표-중심 이미지엔 Paddle 직접 + source-level 진단이 정답.
+
 ### 측정 자산 (재현용)
 - `scripts/track_b_scorecard.py` — 값 정확도(recall/precision, oracle/golden, 천단위 점·콤마 정규화, 표 완전성 tbl_cells/bytes).
 - `scripts/track_b_teds.py` — 표 TEDS(apted) + 텍스트 1-NED, OmniDocBench GT 대비.
