@@ -1,6 +1,6 @@
 # Upstream 이슈 초안 (미발행) — triage 스캔 오라우팅
 
-**상태**: 초안, **발행 보류** (사용자 결정). fork 브랜치만 존재, upstream엔 미제출.
+**상태**: **발행됨** → https://github.com/opendataloader-project/opendataloader-pdf/issues/619
 **대상**: `opendataloader-project/opendataloader-pdf` (Issues)
 **관련 fork 브랜치**: `ysys143/opendataloader-pdf` → `feat/triage-scan-routing` (수정+patch)
 **근거 문서**: `worktree-b/docs/measurement-findings.md` F23 (근본원인·재현·baseline 대조표)
