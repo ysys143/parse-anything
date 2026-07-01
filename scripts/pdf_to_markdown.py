@@ -139,7 +139,7 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     ontology = load_ontology(args.ontology or "default", _REPO / "ontology")
     write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic,
                   inline_figures=not args.no_inline_figures, headings=not args.no_headings,
-                  describe_figure=describe_figure, ontology=ontology)
+                  describe_figure=describe_figure, ontology=ontology, chunk=not args.no_chunks)
     if args.review:
         from odl_vl.pipeline.review import write_review
 
@@ -183,6 +183,8 @@ def _parse_args(argv):
                         help="skip the chapter/section/subsection hierarchy (sections[] tree + #/##/### in Markdown)")
     parser.add_argument("--no-describe-figures", action="store_true",
                         help="det_vlm: skip the VLM text description generated for each cropped vector chart")
+    parser.add_argument("--no-chunks", action="store_true",
+                        help="skip building document.chunks.jsonl (the small-to-big parent/child retrieval chunks)")
     parser.add_argument("--primary", choices=["gemini", "paddle"], default="gemini",
                         help="det_vlm primary transcriber: gemini (grounded) or paddle (doc-specialised)")
     parser.add_argument("--prompt", default=None, help="det_vlm: custom base prompt (overrides default)")

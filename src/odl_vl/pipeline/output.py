@@ -28,7 +28,7 @@ from .structure import build_graph
 from .textalign import common_prefix_len, norm_block
 
 if TYPE_CHECKING:
-    from .ontology import Ontology
+    from .ontology import ChunkPolicy, Ontology
 
 
 def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
@@ -446,7 +446,7 @@ def _default_ontology():
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
                   arithmetic: bool = True, inline_figures: bool = True, headings: bool = True,
                   describe_figure: "Callable[[bytes, str | None], str] | None" = None,
-                  ontology: "Ontology | None" = None) -> None:
+                  ontology: "Ontology | None" = None, chunk: bool = True) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -605,7 +605,10 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
 
     if result.meta is not None:
         _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels, onto)
-        _write_semantic_json(out, result, pages_meta, blocks, tables, figures, sections, onto, md_by_index)  # clean layered view
+        sem, provmap = _write_semantic_json(out, result, pages_meta, blocks, tables, figures, sections,
+                                            onto, md_by_index)   # clean layered view (semantic + provenance)
+        if chunk:            # R16: build-time small-to-big chunks (index children, return the section parent)
+            _write_chunks(out, build_chunks(sem, provmap, sem["document_id"], onto.chunking))
         _write_tables(out, tables)
 
 
@@ -942,8 +945,9 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
 def _write_semantic_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
                          sections: list[dict], ontology: "Ontology",
-                         page_markdown: dict[int, str] | None = None) -> None:
-    """Emit the agent-clean layered artifacts: document.semantic.json (no geometry) + a provenance sidecar."""
+                         page_markdown: dict[int, str] | None = None) -> tuple[dict, dict]:
+    """Emit the agent-clean layered artifacts: document.semantic.json (no geometry) + a provenance sidecar;
+    return the (semantic doc, provenance) so the chunker can consume them without a re-read."""
     pages_content = [(p.page_index, pages_meta.get(p.page_index, {}).get("content", []))
                      for p in result.pages if p.route != "folded"]
     doc, prov = _build_semantic(blocks, tables, figures, sections, pages_content, result.meta.to_dict(),
@@ -951,6 +955,177 @@ def _write_semantic_json(out: Path, result: DocumentResult, pages_meta: dict[int
     (out / "document.semantic.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "document.provenance.json").write_text(
         json.dumps({"profile": ontology.profile_stamp(), "prov": prov}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return doc, prov
+
+
+# --------------------------------------------------------------------------------------------------
+# Built-in chunking (R16, Phase 3): small-to-big, structure-first
+# --------------------------------------------------------------------------------------------------
+_CJK_TOK = re.compile(r"[぀-ヿ㐀-鿿가-힣]")   # CJK: ~1 token per char
+_EQ_PAGE = re.compile(r"eq_p(\d+)_")
+_SENTENCE = re.compile(r"(?<=[.!?。！？])\s+")   # sentence boundary for splitting an oversized paragraph
+
+
+def _approx_tokens(text: str) -> int:
+    """A tokenizer-free size estimate for chunk boundaries: CJK chars count ~1 token each; other text
+    ~1.3 tokens/word. The exact tokenizer name is stored on each chunk so a consumer can re-count."""
+    cjk = len(_CJK_TOK.findall(text))
+    words = len(_CJK_TOK.sub(" ", text).split())
+    return int(cjk + round(words * 1.3))
+
+
+def _chunk_node_text(n: dict) -> str:
+    """The embeddable/display text for a node: equations render their LaTeX, atomics a labelled stub."""
+    t = n.get("type")
+    if t == "equation":
+        return n.get("latex", "")
+    if t == "table":
+        return f"[{n.get('label') or 'Table'}]"
+    if t == "figure":
+        return f"[{n.get('label') or 'Figure'}] {n.get('caption') or n.get('description') or ''}".strip()
+    return n.get("text", "")
+
+
+def build_chunks(sem: dict, prov: dict, doc_id: str, policy: "ChunkPolicy") -> list[dict]:
+    """Small-to-big chunks from the semantic view. A PARENT chunk = one section (its heading + own
+    content) or, for section-less content, a page group. CHILD chunks token-pack the parent's prose on
+    node boundaries (never mid-node); atomics (table/figure/equation) are kept whole as their own child.
+    Children carry the heading breadcrumb (``embedding_text``) and prev/next links; index the children,
+    return the parent. Pure: (semantic doc, provenance, doc id, policy) -> chunk list."""
+    from collections import Counter
+
+    nodes = {n["id"]: n for n in sem.get("nodes", [])}
+    sections = sem.get("sections", [])
+    sec_by_id = {s["id"]: s for s in sections}
+
+    node_page: dict[object, int] = {}                        # node -> page (from provenance / synthesised id)
+    for nid, p in prov.items():
+        pg = p.get("page") or (p["regions"][0]["page"] if p.get("regions") else None)
+        if pg is not None:
+            node_page[nid] = pg
+    for n in sem.get("nodes", []):
+        nid = n["id"]
+        if nid in node_page:
+            continue
+        m = _EQ_PAGE.match(str(nid))
+        if m:
+            node_page[nid] = int(m.group(1))
+        elif n.get("caption_of") in node_page:
+            node_page[nid] = node_page[n["caption_of"]]
+
+    node_section: dict[object, object] = {}
+    for s in sections:
+        node_section[s["heading_ref"]] = s["id"]
+        for nid in s.get("content", []):
+            node_section[nid] = s["id"]
+
+    def breadcrumb(sid: object) -> list:
+        out, seen = [], set()
+        while sid and sid not in seen:
+            seen.add(sid)
+            s = sec_by_id.get(sid)
+            if not s:
+                break
+            out.append(s["heading"])
+            sid = s.get("parent")
+        return list(reversed(out))
+
+    def span(ids: list) -> list:
+        ps = [node_page[i] for i in ids if i in node_page]
+        return [min(ps), max(ps)] if ps else [None, None]
+
+    def disp(ids: list) -> str:
+        return "\n".join(t for t in (_chunk_node_text(nodes[i]) for i in ids) if t)
+
+    # partition reading order into parent units (consecutive same-section, or a page group of orphans)
+    units: list[tuple] = []
+    for nid in sem.get("reading_order", []):
+        if nid not in nodes:
+            continue
+        sid = node_section.get(nid)
+        key = ("sec", sid) if sid else ("page", node_page.get(nid))
+        if not units or units[-1][0] != key:
+            units.append((key, []))
+        units[-1][1].append(nid)
+
+    chunks: list[dict] = []
+    child_order: list[str] = []
+    keep_atomic = set(policy.keep_atomic)
+    for seq, (key, ids) in enumerate(units, 1):
+        sid = key[1] if key[0] == "sec" else None
+        crumb = breadcrumb(sid) if sid else []
+        zc = Counter(nodes[i].get("zone") for i in ids if nodes[i].get("zone"))
+        zone = zc.most_common(1)[0][0] if zc else "body"
+        pid = f"c{seq:04d}p"
+        pdisp = disp(ids)
+        parent = {"chunk_id": pid, "level": "parent", "doc_id": doc_id, "type": "section" if sid else "page",
+                  "zone": zone, "section_path": crumb, "display_text": pdisp, "node_ids": list(ids),
+                  "page_span": span(ids), "token_count": _approx_tokens(pdisp), "tokenizer": policy.tokenizer,
+                  "children": []}
+        chunks.append(parent)
+        buf: list = []
+        cnum = 0
+        prev_was_text = False
+
+        def emit(node_ids: list, ctype: str, text: str | None = None) -> None:
+            nonlocal cnum, prev_was_text
+            cnum += 1
+            cid = f"c{seq:04d}_{cnum}"
+            t = disp(node_ids) if text is None else text
+            child = {"chunk_id": cid, "level": "child", "doc_id": doc_id, "parent_id": pid, "type": ctype,
+                     "zone": zone, "section_path": crumb, "display_text": t,
+                     "embedding_text": (" > ".join(crumb) + "\n" + t).strip() if crumb else t,
+                     "node_ids": list(node_ids), "node_types": [nodes[i]["type"] for i in node_ids],
+                     "page_span": span(node_ids), "token_count": _approx_tokens(t), "tokenizer": policy.tokenizer,
+                     "prev": None, "next": None, "is_continuation": ctype == "text" and prev_was_text}
+            if ctype == "table":
+                child["table_ref"] = node_ids[0]
+            elif ctype == "figure":
+                child["figure_refs"] = list(node_ids)
+            elif ctype == "equation":
+                child["equation_refs"] = list(node_ids)
+            chunks.append(child)
+            parent["children"].append(cid)
+            child_order.append(cid)
+            prev_was_text = ctype == "text"
+
+        def emit_oversized(nid: object) -> None:                 # one paragraph over budget -> sentence windows
+            win: list[str] = []
+            for s in _SENTENCE.split(_chunk_node_text(nodes[nid])):
+                win.append(s)
+                if _approx_tokens(" ".join(win)) >= policy.child_tokens:
+                    emit([nid], "text", " ".join(win))
+                    win = []
+            if win:
+                emit([nid], "text", " ".join(win))
+
+        for i in ids:
+            if nodes[i]["type"] in keep_atomic:
+                if buf:
+                    emit(buf, "text")
+                    buf = []
+                emit([i], nodes[i]["type"])
+            elif not buf and _approx_tokens(_chunk_node_text(nodes[i])) >= policy.child_tokens:
+                emit_oversized(i)                                # a single paragraph exceeds the budget alone
+            else:
+                buf.append(i)
+                if _approx_tokens(disp(buf)) >= policy.child_tokens:
+                    emit(buf, "text")
+                    buf = []
+        if buf:
+            emit(buf, "text")
+
+    by_id = {c["chunk_id"]: c for c in chunks}               # link leaves in reading order (prev/next)
+    for a, b in zip(child_order, child_order[1:]):
+        by_id[a]["next"] = b
+        by_id[b]["prev"] = a
+    return chunks
+
+
+def _write_chunks(out: Path, chunks: list[dict]) -> None:
+    with (out / "document.chunks.jsonl").open("w", encoding="utf-8") as f:
+        for c in chunks:
+            f.write(json.dumps(c, ensure_ascii=False) + "\n")
 
 
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
