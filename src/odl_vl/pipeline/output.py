@@ -604,6 +604,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
 
     if result.meta is not None:
         _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels, onto)
+        _write_semantic_json(out, result, pages_meta, blocks, tables, figures, sections, onto)  # clean layered view
         _write_tables(out, tables)
 
 
@@ -781,6 +782,95 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
         doc.close()
 
 
+_SEMANTIC_CONTEXT = {"doco": "http://purl.org/spar/doco/", "deo": "http://purl.org/spar/deo/"}
+
+
+def _zones_summary(blocks: list[dict], tables: list[dict], figures: list[dict]) -> list[dict]:
+    """zone -> the pages it covers, ordered by first appearance (min page)."""
+    zpages: dict[str, list[int]] = {}
+    for n in (*blocks, *tables, *figures):
+        z = n.get("zone")
+        pg = n.get("page") or (n.get("pages") or [None])[0]
+        if z and pg is not None and pg not in zpages.setdefault(z, []):
+            zpages[z].append(pg)
+    return [{"zone": z, "pages": sorted(p)} for z, p in sorted(zpages.items(), key=lambda kv: min(kv[1]))]
+
+
+def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict], sections: list[dict],
+                    reading_order: list, meta: dict, ontology: "Ontology") -> tuple[dict, dict]:
+    """Pure builder: (semantic_doc, provenance) from the graph. The semantic view is agent-clean -- each
+    node carries only id/type(role)/zone/level?/text|label/caption/... with NO geometry; bbox/order/
+    font_size/regions are demoted into the provenance map keyed by the same node id."""
+    prov: dict[object, dict] = {}
+
+    def demote(nid: object, n: dict, keys: tuple) -> None:
+        p = {k: n[k] for k in keys if n.get(k) is not None}
+        if p:
+            prov[nid] = {**prov.get(nid, {}), **p}
+
+    sec_level = {s["block_id"]: s["level"] for s in sections}      # a heading node shows its section level
+    nodes: list[dict] = []
+    for b in blocks:
+        demote(b["id"], b, ("page", "order", "bbox", "font_size"))
+        node = {"id": b["id"], "type": b.get("role") or b.get("type"), "zone": b.get("zone"),
+                "text": b.get("text", "")}
+        if b["id"] in sec_level:
+            node["level"] = sec_level[b["id"]]
+        for k in ("refs", "section"):
+            if b.get(k):
+                node[k] = b[k]
+        nodes.append(node)
+    for t in tables:
+        demote(t["id"], t, ("order",))
+        if t.get("regions"):
+            prov.setdefault(t["id"], {})["regions"] = t["regions"]
+        node = {"id": t["id"], "type": t.get("role", "table"), "zone": t.get("zone"), "label": t.get("label"),
+                "caption": t.get("caption"), "n_rows": t.get("n_rows"), "n_cols": t.get("n_cols"),
+                "cells": [[{k: v for k, v in c.items() if k != "bbox"} for c in row] for row in t.get("cells", [])],
+                "views": t.get("views")}
+        for k in ("section", "refs"):
+            if t.get(k):
+                node[k] = t[k]
+        nodes.append(node)
+    for f in figures:
+        demote(f["id"], f, ("page", "order", "bbox"))
+        node = {"id": f["id"], "type": f.get("role", "figure"), "zone": f.get("zone"), "label": f.get("label"),
+                "caption": f.get("caption"), "kind": f.get("kind"), "file": f.get("file")}
+        for k in ("source", "description", "section", "refs"):
+            if f.get(k):
+                node[k] = f[k]
+        nodes.append(node)
+    sec_clean = [{"id": s["id"], "heading": s["heading"], "level": s["level"], "zone": s.get("zone"),
+                  "heading_ref": s["block_id"], "parent": s["parent"], "children": s["children"],
+                  "content": s["content"]} for s in sections]
+    title = next((b.get("text") for b in blocks if b.get("role") == "title"), None) \
+        or (meta.get("producer") or {}).get("title")
+    doc = {
+        "document_id": meta.get("document_id"), "content_sha256": meta.get("content_sha256"),
+        "original_filename": meta.get("original_filename"), "source": meta.get("source"),
+        "n_pages": meta.get("n_pages"), "mode": meta.get("mode"),
+        "@context": _SEMANTIC_CONTEXT, "profile": ontology.profile_stamp(),
+        "metadata": {"title": title},
+        "zones": _zones_summary(blocks, tables, figures),
+        "sections": sec_clean, "nodes": nodes, "reading_order": reading_order,
+    }
+    return doc, prov
+
+
+def _write_semantic_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
+                         blocks: list[dict], tables: list[dict], figures: list[dict],
+                         sections: list[dict], ontology: "Ontology") -> None:
+    """Emit the agent-clean layered artifacts: document.semantic.json (no geometry) + a provenance sidecar."""
+    reading_order: list = []
+    for p in result.pages:
+        if p.route != "folded":
+            reading_order.extend(pages_meta.get(p.page_index, {}).get("content", []))
+    doc, prov = _build_semantic(blocks, tables, figures, sections, reading_order, result.meta.to_dict(), ontology)
+    (out / "document.semantic.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "document.provenance.json").write_text(
+        json.dumps({"profile": ontology.profile_stamp(), "prov": prov}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
                          sections: list[dict], page_labels: dict[int, str | None],
@@ -807,15 +897,9 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
     doc["tables"] = tables
     doc["figures"] = figures
     if ontology is not None:   # declare which injected ontology + version produced this tagging (R15)
-        doc["@context"] = {"doco": "http://purl.org/spar/doco/", "deo": "http://purl.org/spar/deo/"}
+        doc["@context"] = _SEMANTIC_CONTEXT
         doc["ontology"] = ontology.profile_stamp()
-        zpages: dict[str, list[int]] = {}   # zones[] summary: zone -> pages it covers (reading order)
-        for n in (*blocks, *tables, *figures):
-            z = n.get("zone")
-            pg = n.get("page") or (n.get("pages") or [None])[0]
-            if z and pg is not None and pg not in zpages.setdefault(z, []):
-                zpages[z].append(pg)
-        doc["zones"] = [{"zone": z, "pages": sorted(p)} for z, p in sorted(zpages.items(), key=lambda kv: min(kv[1]))]
+        doc["zones"] = _zones_summary(blocks, tables, figures)
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

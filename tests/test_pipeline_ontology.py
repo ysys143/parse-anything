@@ -171,6 +171,42 @@ def test_bare_paren_number_is_never_a_section_heading():
     assert not _is_prose_not_heading("(2) Results follow from the fitted model")  # a real numbered heading is fine
 
 
+def test_build_semantic_separates_geometry_into_a_provenance_sidecar():
+    from odl_vl.pipeline.output import _build_semantic
+    onto = _load()
+    blocks = [
+        {"id": "t1", "role": "title", "zone": "cover", "type": "heading", "text": "A Title",
+         "page": 1, "order": 1, "bbox": [0, 0, 10, 10], "font_size": 18.0},
+        {"id": "h1", "role": "heading", "zone": "body", "type": "heading", "text": "Introduction",
+         "page": 1, "order": 2, "bbox": [0, 0, 5, 5], "font_size": 13.0},
+        {"id": "p1", "role": "paragraph", "zone": "body", "type": "paragraph", "text": "Body text.",
+         "page": 1, "order": 3, "bbox": [0, 0, 5, 5], "font_size": 10.0, "refs": ["fig1"]},
+    ]
+    figures = [{"id": "fig1", "role": "figure", "zone": "body", "type": "figure", "label": "Figure 1",
+                "caption": "cap", "kind": "chart", "file": "assets/fig1.png", "page": 1, "order": 4,
+                "bbox": [1, 2, 3, 4], "source": "vector", "description": "a chart"}]
+    tables = [{"id": "tb1", "role": "table", "zone": "body", "type": "table", "label": "Table 1",
+               "caption": "tc", "n_rows": 1, "n_cols": 2, "views": {"md": "tables/tb1.md"},
+               "cells": [[{"text": "a", "bbox": [0, 0, 1, 1]}, {"text": "b"}]],
+               "regions": [{"page": 1, "bbox": [0, 0, 9, 9]}], "order": 5}]
+    sections = [{"id": "sec1", "heading": "Introduction", "level": 1, "zone": "body", "block_id": "h1",
+                 "page": 1, "parent": None, "children": [], "content": ["p1"]}]
+    meta = {"document_id": "d1", "content_sha256": "x", "original_filename": "f.pdf", "source": {},
+            "n_pages": 1, "mode": "det_vlm", "producer": {"title": "prod"}}
+    doc, prov = _build_semantic(blocks, tables, figures, sections, ["t1", "h1", "p1", "fig1", "tb1"], meta, onto)
+
+    for n in doc["nodes"]:                                       # semantic nodes carry NO geometry
+        assert not ({"bbox", "order", "font_size"} & set(n)), n
+    assert prov["p1"]["bbox"] == [0, 0, 5, 5] and prov["p1"]["font_size"] == 10.0   # geometry -> sidecar
+    assert prov["fig1"]["bbox"] == [1, 2, 3, 4] and "regions" in prov["tb1"]
+    hnode = next(n for n in doc["nodes"] if n["id"] == "h1")
+    assert hnode["level"] == 1 and hnode["type"] == "heading"    # heading shows its section level + role
+    assert doc["metadata"]["title"] == "A Title"                 # title extracted from the role=title node
+    assert next(n for n in doc["nodes"] if n["id"] == "p1")["refs"] == ["fig1"]     # cross-refs preserved
+    assert next(n for n in doc["nodes"] if n["id"] == "tb1")["cells"] == [[{"text": "a"}, {"text": "b"}]]  # cell bbox stripped
+    assert doc["profile"]["id"] == onto.id and doc["reading_order"][0] == "t1"
+
+
 def test_injecting_a_different_ontology_changes_the_tagging():
     # the exact same node tags differently under 'default' vs 'paper' -- proving runtime injection, no code change.
     sig = {"page_index": 0, "odl_type": "paragraph", "text": "Abstract  We present a deterministic pipeline."}
