@@ -32,3 +32,14 @@ def test_bold_vlm_caption_suppresses_the_recovered_one():
     md = "**Fig 7. Ex post simulation results.** (A-C) content that is sufficiently long here."
     out = interleave_figures(md, [_fig("Fig 7", "Fig 7. Ex post simulation results. (A-C) content")], ())
     assert out.count("Fig 7. Ex post simulation results") == 1
+
+
+def test_caption_bold_is_normalized_consistently():
+    from odl_vl.pipeline.output import _normalize_captions
+    assert _normalize_captions("Fig 2. Title here. (A) panel.").startswith("**Fig 2. Title here.**")
+    # already-bold stays bold; inline italics in the body survive
+    out = _normalize_captions("**Fig 7. Results.** (A-C) across *toi* episodes.")
+    assert out.startswith("**Fig 7. Results.**") and "*toi*" in out
+    assert _normalize_captions("S1 Fig. Schematic of BMBU. (A) x.").startswith("**S1 Fig. Schematic of BMBU.**")
+    # ordinary prose is untouched
+    assert _normalize_captions("The figure 2 shows a trend.") == "The figure 2 shows a trend."

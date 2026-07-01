@@ -125,6 +125,23 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     return out
 
 
+_CAP_LABEL_TITLE = re.compile(
+    r"^((?:S\d+\s+(?:Fig|Table)|Fig(?:ure)?\s*\d+|Table\s*\d+|図\s*\d+|表\s*\d+|그림\s*\d+|표\s*\d+)\.?\s+.*?[.．])(\s.*|)$",
+    re.IGNORECASE)
+
+
+def _normalize_captions(markdown: str) -> str:
+    """Bold every caption's label+title sentence uniformly ('**Fig 7. Title.** rest…'). The VLM renders
+    some captions bold and some plain (F/S figures alike); this makes them consistent. Inline emphasis
+    inside the caption body (``*toi*``) is preserved -- only the label-bold is normalized."""
+    out = []
+    for line in markdown.split("\n"):
+        body = re.sub(r"\*\*", "", line).strip()   # drop any existing bold marks, keep single-* italics
+        m = _CAP_LABEL_TITLE.match(body)
+        out.append(f"**{m.group(1)}**{m.group(2)}" if m else line)
+    return "\n".join(out)
+
+
 _PAGE_TERMINATORS = "。．.!?！？"  # a page ending here finished its sentence; absence => mid-sentence cut
 _URL_END = re.compile(r"https?://\S+$")            # a line whose tail is a URL (possibly cut mid-URL)
 _URL_CONT = re.compile(r"^[A-Za-z0-9]+[./]\S*")    # a block that opens as a URL path/domain fragment
@@ -282,6 +299,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
 
     if headings:  # document-level: drop running headers + printed-page-number leaks (page furniture)
         md_by_index = strip_page_furniture(md_by_index, page_labels)
+    md_by_index = {pi: _normalize_captions(md) for pi, md in md_by_index.items()}  # uniform caption bold
 
     for page_index, name in rendered:
         (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")  # per-page keeps the split
