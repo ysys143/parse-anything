@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\ncat >> tests/test_pipeline_docassembly.py <<'PY'\n\n\ndef test_caption_opening_a_page_is_not_folded_into_prior_prose():\n    # a caption is the first block of a full-page-figure page; it must stay its own block, not glue to\n    # the previous page's unfinished sentence\n    out = _assemble_document([(\"1\", \"we quantified the effect in both directions as follows\"),\n                              (\"2\", \"Fig 2. Experimental design and definition. (A) A chain of episodes.\")])\n    assert \"follows Fig 2. Experimental\" not in \" \".join(out.split())\n    assert \"Fig 2. Experimental design and definition.\" in out\nPY\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -114,8 +114,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 84,
-      "lastAccessed": 1782868589881,
+      "accessCount": 86,
+      "lastAccessed": 1782869103646,
       "type": "file"
     },
     {
