@@ -249,7 +249,14 @@
   | hard(born-digital 표) | BACKEND | BACKEND | 회귀 없음 |
   | wide(born-digital 광폭표) | BACKEND | BACKEND | 회귀 없음 |
   수정이 **스캔만 전환**하고 born-digital 경로는 불변 — `textChunkCount==0` 가드의 정밀성 실증.
-- **bench.sh 회귀(정직한 한계):** `./scripts/bench.sh --skip-build --check-regression`(200 docs) → **All thresholds met**(NID 0.902/TEDS 0.489/MHS 0.740). 단 bench는 **deterministic 엔진**(hybrid 서버 없이)을 재고, 우리 수정은 `HybridDocumentProcessor` 전용이라 이 경로를 안 탄다 → 수정 전후 동일(자명한 무회귀). **hybrid triage 회귀의 직접 증거는 위 대조표**이며, 정량 hybrid bench(백엔드 서버 필요)는 PR 단계 과제.
+- **hybrid bench 회귀(정량, docling-fast 백엔드):** `opendataloader-bench`를 `--engine opendataloader-hybrid`로 **baseline JAR vs 수정본 JAR** 각 200 docs 실행(내장 JAR 교체, docling 백엔드 자동 기동).
+  | | NID | TEDS | MHS |
+  |---|---|---|---|
+  | baseline | 0.9301 | 0.8735 | 0.8192 |
+  | 수정본 | 0.9301 | 0.8735 | 0.8192 |
+  **200 docs 문서별 overall까지 완전 동일 → 회귀 0.** 코퍼스가 born-digital 전용(텍스트레이어 없는 전면 스캔 부재)이라 우리 가드(`textChunkCount==0`)가 한 페이지도 안 걸림 = 라우팅 불변 확증. 단 같은 이유로 이 bench는 **개선을 못 보임**(스캔이 없으니) — 개선 증거는 위 국소 대조표.
+- **deterministic bench(참고):** `--check-regression`(200 docs) All thresholds met(NID 0.902/TEDS 0.489/MHS 0.740); triage 미경유 경로라 자명한 무회귀.
+- **upstream 반영:** 이슈 [#619](https://github.com/opendataloader-project/opendataloader-pdf/issues/619) + PR [#620](https://github.com/opendataloader-project/opendataloader-pdf/pull/620) (fork `ysys143:feat/triage-scan-routing`).
 
 ---
 
