@@ -130,6 +130,15 @@ _URL_END = re.compile(r"https?://\S+$")            # a line whose tail is a URL 
 _URL_CONT = re.compile(r"^[A-Za-z0-9]+[./]\S*")    # a block that opens as a URL path/domain fragment
 
 
+_FIG_UNIT = re.compile(r"^\s*(?:!\[|(?:\*\*)?\s*(?:Fig(?:ure)?|Table|표|그림|表|図|圖)\.?\s*\d)", re.IGNORECASE)
+
+
+def _starts_figure_unit(first: str) -> bool:
+    """The block opens with a figure image or a caption ('Fig 2.', 'Table 1', '図3') -- a self-contained
+    unit that must not be folded into the previous page's prose."""
+    return bool(_FIG_UNIT.match(first))
+
+
 def _ends_with_url(line: str) -> bool:
     return bool(_URL_END.search(line.rstrip()))
 
@@ -168,7 +177,8 @@ def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
             continue
         stitch = bool(last) and last.rstrip()[-1:] not in _PAGE_TERMINATORS \
             and "|" not in last and "|" not in first \
-            and not _no_fold_into(last) and not _starts_unit(first)
+            and not _no_fold_into(last) and not _starts_unit(first) \
+            and not _starts_figure_unit(first)  # a caption/image opening a page is its own block
         if stitch:  # mid-sentence wrap -> join the fragments, marker invisibly between them
             sep = "" if (_is_cjk(last[-1:]) or _is_cjk(first.lstrip()[:1])) else " "
             out = f"{out}{marker}{sep}{first.lstrip()}{rest}"

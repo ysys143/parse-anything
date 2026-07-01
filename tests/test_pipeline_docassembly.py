@@ -37,3 +37,12 @@ def test_complete_doi_line_is_not_merged_into_the_next_body():
                               ("2", "value becomes low as evidence weakens.")])
     assert ".g001\n\n" in out.replace("<!-- page 2 -->", "").replace("\n\n\n", "\n\n")
     assert "g001 value becomes low" not in " ".join(out.split())
+
+
+def test_caption_opening_a_page_is_not_folded_into_prior_prose():
+    # a caption is the first block of a full-page-figure page; it must stay its own block, not glue to
+    # the previous page's unfinished sentence
+    out = _assemble_document([("1", "we quantified the effect in both directions as follows"),
+                              ("2", "Fig 2. Experimental design and definition. (A) A chain of episodes.")])
+    assert "follows Fig 2. Experimental" not in " ".join(out.split())
+    assert "Fig 2. Experimental design and definition." in out
