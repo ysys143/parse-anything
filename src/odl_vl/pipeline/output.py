@@ -471,15 +471,26 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                    and not (_text_line_strip(f.get("bbox")) and (f.get("page") or 0) - 1 in math_pages)]
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
         _bind_vector_captions(figures, blocks)  # 図N label + caption text (both modes)
-        if describe_figure is not None:  # R14: VLM text description per cropped vector chart (det_vlm)
+        if describe_figure is not None:  # VLM figure judgement (det_vlm): whether a crop is meaningful
+            # CONTENT (chart/diagram/photo/table) or DECORATION (icon/logo/divider/background) is a
+            # semantic call, not a size one -- two same-size crops can differ -- so let the VLM decide.
+            # One call per crop returns 'DECORATION' (drop it) or a description (keep; used for a vector
+            # chart, which has no raster to fall back on). _tiny_figure already removed hairline noise.
+            kept: list[dict] = []
             for f in figures:
-                if f.get("source") == "vector" and f.get("file"):
-                    try:
-                        desc = describe_figure((out / f["file"]).read_bytes(), f.get("caption"))
-                    except Exception:  # noqa: BLE001 -- a failed description must not abort the run
-                        desc = ""
-                    if desc and desc.strip():
-                        f["description"] = desc.strip()
+                if not f.get("file"):
+                    kept.append(f)
+                    continue
+                try:
+                    verdict = describe_figure((out / f["file"]).read_bytes(), f.get("caption")).strip()
+                except Exception:  # noqa: BLE001 -- a failed call must not abort the run; keep the figure
+                    verdict = ""
+                if verdict.upper().startswith("DECORATION"):
+                    continue                                  # ornamental crop -> drop, it carries no info
+                if f.get("source") == "vector" and verdict:
+                    f["description"] = verdict
+                kept.append(f)
+            figures = kept
         for f in figures:
             if f.get("file") and f.get("bbox"):  # only figures with a real crop can be inlined
                 figs_by_page.setdefault(f["page"] - 1, []).append(f)

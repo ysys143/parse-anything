@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl/tests\nuv run --no-sync python -m pytest test_pipeline_docassembly.py -q 2>&1 | tail -4",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -c \"import odl_vl.pipeline.output; import ast; ast.parse(open('scripts/pdf_to_markdown.py').read()); print('imports/syntax OK')\"\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -2 )",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -150,8 +150,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 24,
-      "lastAccessed": 1782892983396,
+      "accessCount": 26,
+      "lastAccessed": 1782895655349,
       "type": "file"
     },
     {
@@ -182,6 +182,12 @@
       "path": "src/odl_vl/pipeline/vecfig.py",
       "accessCount": 3,
       "lastAccessed": 1782892163376,
+      "type": "file"
+    },
+    {
+      "path": "scripts/pdf_to_markdown.py",
+      "accessCount": 3,
+      "lastAccessed": 1782895671344,
       "type": "file"
     },
     {
@@ -224,12 +230,6 @@
       "path": "src/odl_vl/pipeline/reflow.py",
       "accessCount": 1,
       "lastAccessed": 1782892399330,
-      "type": "file"
-    },
-    {
-      "path": "scripts/pdf_to_markdown.py",
-      "accessCount": 1,
-      "lastAccessed": 1782895015731,
       "type": "file"
     }
   ],

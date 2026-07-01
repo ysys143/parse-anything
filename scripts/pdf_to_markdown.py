@@ -25,10 +25,15 @@ from odl_vl.pipeline.output import document_dir, write_outputs  # noqa: E402
 from odl_vl.pipeline.run import run_document  # noqa: E402
 
 _FIG_DESCRIBE_PROMPT = (
-    "You are describing a figure/chart for a reader who cannot see it. In 2-4 sentences, state what "
-    "the figure depicts, its axes and their units, and the main trend or the most important values. "
-    "Respond in the SAME language as the figure's own labels. Output only the description -- no "
-    "preamble, no markdown, no heading."
+    "You are shown a small image cropped from a document page. Decide what it is.\n"
+    "If it is DECORATION -- an icon, bullet or marker, logo, divider or rule line, background "
+    "texture/gradient, page-number badge, or a purely ornamental graphic that carries no information "
+    "-- reply with exactly the single word: DECORATION\n"
+    "Otherwise it is CONTENT -- a chart, plot, diagram, photograph, illustration, screenshot, map, or "
+    "table. Describe it for a reader who cannot see it, in 2-4 sentences: what it depicts, its axes and "
+    "units if any, and the main trend or the most important values. Respond in the SAME language as the "
+    "figure's own labels. Output only the description -- no preamble, no markdown, no heading, and do "
+    "NOT use the word DECORATION."
 )
 
 
