@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\ncat >> tests/test_pipeline_figcaption.py <<'PY'\n\n\ndef test_caption_bold_is_normalized_consistently():\n    from odl_vl.pipeline.output import _normalize_captions\n    assert _normalize_captions(\"Fig 2. Title here. (A) panel.\").startswith(\"**Fig 2. Title here.**\")\n    # already-bold stays bold; inline italics in the body survive\n    out = _normalize_captions(\"**Fig 7. Results.** (A-C) across *toi* episodes.\")\n    assert out.startswith(\"**Fig 7. Results.**\") and \"*toi*\" in out\n    assert _normalize_captions(\"S1 Fig. Schematic of BMBU. (A) x.\").startswith(\"**S1 Fig. Schematic of BMBU.**\")\n    # ordinary prose is untouched\n    assert _normalize_captions(\"The figure 2 shows a trend.\") == \"The figure 2 shows a trend.\"\nPY\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nxattr -c tests/test_pipeline_figcaption.py 2>/dev/null\ncat >> tests/test_pipeline_figcaption.py <<'PY'\n\n\ndef test_labels_a_bare_figure_source_doi():\n    from odl_vl.pipeline.output import _label_figure_sources\n    assert _label_figure_sources(\"https://doi.org/10.1371/journal.pbio.3002373.g007\").startswith(\n        \"Source: https://doi.org/10.1371/journal.pbio.3002373.g007\")\n    # a DOI embedded in prose (not a bare source line) is left untouched\n    assert _label_figure_sources(\"see https://doi.org/x.g007 here\") == \"see https://doi.org/x.g007 here\"\nPY\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -3",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -114,32 +114,32 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 92,
-      "lastAccessed": 1782870382121,
+      "accessCount": 96,
+      "lastAccessed": 1782871985034,
       "type": "file"
     },
     {
       "path": "src/odl_vl/pipeline/assemble.py",
-      "accessCount": 30,
-      "lastAccessed": 1782870383211,
+      "accessCount": 34,
+      "lastAccessed": 1782871662066,
       "type": "file"
     },
     {
       "path": "src/odl_vl/pipeline/odl_extract.py",
-      "accessCount": 28,
-      "lastAccessed": 1782870375538,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/run.py",
-      "accessCount": 16,
-      "lastAccessed": 1782829524551,
+      "accessCount": 29,
+      "lastAccessed": 1782870713613,
       "type": "file"
     },
     {
       "path": "src/odl_vl/pipeline/structure.py",
-      "accessCount": 16,
-      "lastAccessed": 1782870375865,
+      "accessCount": 17,
+      "lastAccessed": 1782870717875,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/run.py",
+      "accessCount": 17,
+      "lastAccessed": 1782870723830,
       "type": "file"
     },
     {
@@ -161,15 +161,15 @@
       "type": "file"
     },
     {
-      "path": "src/odl_vl/pipeline/reflow.py",
-      "accessCount": 7,
-      "lastAccessed": 1782821447782,
+      "path": "src/odl_vl/pipeline/grounding.py",
+      "accessCount": 8,
+      "lastAccessed": 1782870717667,
       "type": "file"
     },
     {
-      "path": "src/odl_vl/pipeline/grounding.py",
-      "accessCount": 7,
-      "lastAccessed": 1782870361596,
+      "path": "src/odl_vl/pipeline/reflow.py",
+      "accessCount": 8,
+      "lastAccessed": 1782870724748,
       "type": "file"
     },
     {
@@ -204,8 +204,8 @@
     },
     {
       "path": "tests/test_output_interleave_figures.py",
-      "accessCount": 3,
-      "lastAccessed": 1782796444227,
+      "accessCount": 4,
+      "lastAccessed": 1782870743639,
       "type": "file"
     },
     {
