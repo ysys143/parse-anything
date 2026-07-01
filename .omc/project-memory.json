@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1782787858878,
+  "lastScanned": 1782874369963,
   "projectRoot": "/Users/jaesolshin/Documents/GitHub/odl-vl",
   "techStack": {
     "languages": [
@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nxattr -c tests/test_pipeline_figcaption.py 2>/dev/null\ncat >> tests/test_pipeline_figcaption.py <<'PY'\n\n\ndef test_labels_a_bare_figure_source_doi():\n    from odl_vl.pipeline.output import _label_figure_sources\n    assert _label_figure_sources(\"https://doi.org/10.1371/journal.pbio.3002373.g007\").startswith(\n        \"Source: https://doi.org/10.1371/journal.pbio.3002373.g007\")\n    # a DOI embedded in prose (not a bare source line) is left untouched\n    assert _label_figure_sources(\"see https://doi.org/x.g007 here\") == \"see https://doi.org/x.g007 here\"\nPY\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -3",
+    "testCommand": "pytest",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -57,7 +57,7 @@
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 12,
-      "lastAccessed": 1782787858870,
+      "lastAccessed": 1782874369864,
       "keyFiles": [
         "diagnostic-d2.md",
         "measurement-findings.md",
@@ -70,7 +70,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 5,
-      "lastAccessed": 1782787858870,
+      "lastAccessed": 1782874369875,
       "keyFiles": [
         "diagnose_prepare.py",
         "diagnose_source.py",
@@ -83,14 +83,14 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 1,
-      "lastAccessed": 1782787858870,
+      "lastAccessed": 1782874369895,
       "keyFiles": []
     },
     "tests": {
       "path": "tests",
       "purpose": "Test files",
-      "fileCount": 33,
-      "lastAccessed": 1782787858871,
+      "fileCount": 48,
+      "lastAccessed": 1782874369906,
       "keyFiles": [
         "test_config.py",
         "test_diagnose_prepare_cli.py",
@@ -99,319 +99,54 @@
         "test_normalizers.py"
       ]
     },
+    "worktree-b": {
+      "path": "worktree-b",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1782874369919,
+      "keyFiles": [
+        "README.md",
+        "pyproject.toml",
+        "requirements-dev.txt",
+        "requirements.txt",
+        "uv.lock"
+      ]
+    },
+    "worktree-c": {
+      "path": "worktree-c",
+      "purpose": null,
+      "fileCount": 8,
+      "lastAccessed": 1782874369930,
+      "keyFiles": [
+        "README.md",
+        "pyproject.toml",
+        "requirements-dev.txt",
+        "requirements.txt"
+      ]
+    },
     "tests/fixtures": {
       "path": "tests/fixtures",
       "purpose": "Test fixtures",
-      "fileCount": 4,
-      "lastAccessed": 1782787858871,
+      "fileCount": 8,
+      "lastAccessed": 1782874369939,
       "keyFiles": [
         "README.md",
-        "golden_schema.json",
-        "manifest.json"
+        "__init__.py",
+        "figure_cases.py"
+      ]
+    },
+    "worktree-c/docs": {
+      "path": "worktree-c/docs",
+      "purpose": "Documentation",
+      "fileCount": 12,
+      "lastAccessed": 1782874369944,
+      "keyFiles": [
+        "diagnostic-d2.md",
+        "measurement-findings.md",
+        "odl-engine-rust-python-integration.md"
       ]
     }
   },
-  "hotPaths": [
-    {
-      "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 96,
-      "lastAccessed": 1782871985034,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/assemble.py",
-      "accessCount": 34,
-      "lastAccessed": 1782871662066,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/odl_extract.py",
-      "accessCount": 29,
-      "lastAccessed": 1782870713613,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/structure.py",
-      "accessCount": 17,
-      "lastAccessed": 1782870717875,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/run.py",
-      "accessCount": 17,
-      "lastAccessed": 1782870723830,
-      "type": "file"
-    },
-    {
-      "path": "scripts/pdf_to_markdown.py",
-      "accessCount": 14,
-      "lastAccessed": 1782820958301,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_pipeline_structure.py",
-      "accessCount": 8,
-      "lastAccessed": 1782807365114,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_pipeline_output.py",
-      "accessCount": 8,
-      "lastAccessed": 1782807421839,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/grounding.py",
-      "accessCount": 8,
-      "lastAccessed": 1782870717667,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/reflow.py",
-      "accessCount": 8,
-      "lastAccessed": 1782870724748,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/deterministic.py",
-      "accessCount": 5,
-      "lastAccessed": 1782808270966,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/guards.py",
-      "accessCount": 5,
-      "lastAccessed": 1782811812149,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/paddle_vlm.py",
-      "accessCount": 5,
-      "lastAccessed": 1782829791053,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_pipeline_reflow.py",
-      "accessCount": 4,
-      "lastAccessed": 1782799861273,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/render.py",
-      "accessCount": 4,
-      "lastAccessed": 1782811806668,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_output_interleave_figures.py",
-      "accessCount": 4,
-      "lastAccessed": 1782870743639,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_pipeline_assemble.py",
-      "accessCount": 3,
-      "lastAccessed": 1782798448165,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_pipeline_guards.py",
-      "accessCount": 3,
-      "lastAccessed": 1782798494787,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/docmeta.py",
-      "accessCount": 3,
-      "lastAccessed": 1782807344834,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/providers.py",
-      "accessCount": 3,
-      "lastAccessed": 1782822048382,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/teardown/teardown/5dde0b598b8d951b/document.md",
-      "accessCount": 2,
-      "lastAccessed": 1782799100713,
-      "type": "file"
-    },
-    {
-      "path": "README.md",
-      "accessCount": 2,
-      "lastAccessed": 1782807882494,
-      "type": "file"
-    },
-    {
-      "path": "tests/fixtures/golden_schema.json",
-      "accessCount": 2,
-      "lastAccessed": 1782811494084,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/oracle.py",
-      "accessCount": 2,
-      "lastAccessed": 1782811799227,
-      "type": "file"
-    },
-    {
-      "path": "src/odl_vl/pipeline/vlm.py",
-      "accessCount": 2,
-      "lastAccessed": 1782811818140,
-      "type": "file"
-    },
-    {
-      "path": ".local/scripts/exp_grounding.py",
-      "accessCount": 1,
-      "lastAccessed": 1782793779446,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/contract-view/p0.png",
-      "accessCount": 1,
-      "lastAccessed": 1782795314514,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/contract-run/default/354438a6f2c30e4c/assets/f002.png",
-      "accessCount": 1,
-      "lastAccessed": 1782795545388,
-      "type": "file"
-    },
-    {
-      "path": ".local/scripts/scan_complex_tables.py",
-      "accessCount": 1,
-      "lastAccessed": 1782796638111,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/whitepapers/mono_p11.png",
-      "accessCount": 1,
-      "lastAccessed": 1782796919468,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/whitepapers/tsusho_p33.png",
-      "accessCount": 1,
-      "lastAccessed": 1782796942803,
-      "type": "file"
-    },
-    {
-      "path": ".local/scripts/exp_whitepaper.py",
-      "accessCount": 1,
-      "lastAccessed": 1782796985496,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/insurance/p5.png",
-      "accessCount": 1,
-      "lastAccessed": 1782797174739,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/insurance/p6.png",
-      "accessCount": 1,
-      "lastAccessed": 1782797186798,
-      "type": "file"
-    },
-    {
-      "path": ".local/scripts/scan_tsusho.py",
-      "accessCount": 1,
-      "lastAccessed": 1782797410838,
-      "type": "file"
-    },
-    {
-      "path": ".local/scripts/exp_insurance_crosspage.py",
-      "accessCount": 1,
-      "lastAccessed": 1782797485390,
-      "type": "file"
-    },
-    {
-      "path": ".local/scripts/exp_japanese_combine.py",
-      "accessCount": 1,
-      "lastAccessed": 1782797809343,
-      "type": "file"
-    },
-    {
-      "path": ".local/scripts/teardown_page.py",
-      "accessCount": 1,
-      "lastAccessed": 1782798696728,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/teardown/teardown/5dde0b598b8d951b/document.json",
-      "accessCount": 1,
-      "lastAccessed": 1782798727629,
-      "type": "file"
-    },
-    {
-      "path": "requirements.txt",
-      "accessCount": 1,
-      "lastAccessed": 1782807839547,
-      "type": "file"
-    },
-    {
-      "path": "pyproject.toml",
-      "accessCount": 1,
-      "lastAccessed": 1782807839779,
-      "type": "file"
-    },
-    {
-      "path": "docs/orchestrator-architecture.md",
-      "accessCount": 1,
-      "lastAccessed": 1782807841772,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/opendataloader-pdf/python/opendataloader-pdf/src/opendataloader_pdf/__init__.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807853340,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/opendataloader-pdf/python/opendataloader-pdf/src/opendataloader_pdf/wrapper.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807854026,
-      "type": "file"
-    },
-    {
-      "path": "docs/pdf-pipeline-requirements.md",
-      "accessCount": 1,
-      "lastAccessed": 1782807854729,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/opendataloader-pdf/python/opendataloader-pdf/src/opendataloader_pdf/convert_generated.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807857458,
-      "type": "file"
-    },
-    {
-      "path": ".local/workspace/opendataloader-pdf/python/opendataloader-pdf/src/opendataloader_pdf/runner.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807857823,
-      "type": "file"
-    },
-    {
-      "path": "docs/processing-tiers-and-adaptation.md",
-      "accessCount": 1,
-      "lastAccessed": 1782807858260,
-      "type": "file"
-    },
-    {
-      "path": ".omo/plans/odl-vl-external-orchestrator.md",
-      "accessCount": 1,
-      "lastAccessed": 1782807872973,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_pipeline_odl_extract.py",
-      "accessCount": 1,
-      "lastAccessed": 1782807878391,
-      "type": "file"
-    }
-  ],
+  "hotPaths": [],
   "userDirectives": []
 }
