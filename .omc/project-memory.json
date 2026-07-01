@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nxattr -c tests/test_pipeline_docassembly.py 2>/dev/null\npython3 - <<'PY'\np=\"tests/test_pipeline_docassembly.py\"\ns=open(p).read()\nold='''    blocks = _consolidate_figure_units(md).split(\"\\\\n\\\\n\")\n    assert blocks[0].startswith(\"![Fig 2]\")                  # image first\n    assert \"**Fig 2. Title.**\" in blocks[1] and \"tail part here.\" in blocks[1] and \"<!-- page\" not in blocks[1]\n    assert blocks[2].startswith(\"Source:\")                   # source attached under the caption\n    assert \"Body paragraph after the figure.\" in \"\\\\n\\\\n\".join(blocks)'''\nnew='''    blocks = _consolidate_figure_units(md).split(\"\\\\n\\\\n\")\n    assert blocks[0].startswith(\"![Fig 2]\")                  # image first\n    assert \"**Fig 2. Title.**\" in blocks[1] and \"tail part here.\" in blocks[1] and \"<!-- page\" not in blocks[1]\n    assert \"Source: https://doi.org/x.g002\" in blocks[1]     # source attached to the caption (no blank line)\n    assert \"Body paragraph after the figure.\" in \"\\\\n\\\\n\".join(blocks)'''\nassert s.count(old)==1, \"test block\"\nopen(p,\"w\").write(s.replace(old,new)); print(\"test updated\")\nPY\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\necho \"=== log (clean single commit on 68f933b) ===\"\ngit --no-pager log --oneline -2\necho \"=== final full suite ===\"\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -3 )",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -149,9 +149,51 @@
   },
   "hotPaths": [
     {
+      "path": "src/odl_vl/pipeline/frontmatter.py",
+      "accessCount": 20,
+      "lastAccessed": 1782885185882,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/output.py",
+      "accessCount": 13,
+      "lastAccessed": 1782887807743,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_pipeline_frontmatter.py",
+      "accessCount": 11,
+      "lastAccessed": 1782885205063,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_pipeline_docassembly.py",
+      "accessCount": 3,
+      "lastAccessed": 1782887845921,
+      "type": "file"
+    },
+    {
       "path": ".local/workspace/opendataloader-pdf/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/TriageProcessor.java",
       "accessCount": 2,
       "lastAccessed": 1782877163878,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/odl_extract.py",
+      "accessCount": 2,
+      "lastAccessed": 1782883389220,
+      "type": "file"
+    },
+    {
+      "path": ".local/workspace/csnl-v2/csnlv2/e35b5cc378e8759e/document.md",
+      "accessCount": 1,
+      "lastAccessed": 1782881532412,
+      "type": "file"
+    },
+    {
+      "path": "src/odl_vl/pipeline/textalign.py",
+      "accessCount": 1,
+      "lastAccessed": 1782883326941,
       "type": "file"
     }
   ],
