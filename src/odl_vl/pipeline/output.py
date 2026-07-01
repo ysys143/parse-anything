@@ -797,6 +797,9 @@ def _zones_summary(blocks: list[dict], tables: list[dict], figures: list[dict]) 
 
 
 _DISPLAY_EQ = re.compile(r"\$\$(.+?)\$\$", re.S)   # a display equation in the VLM markdown
+# a bibliographic entry marker at the head of a reference: '[12]' / '12.' / '(12)' / '12)' / a circled digit.
+# Numeric/circled markers are language-neutral, so the split works for EN/KR/JP reference lists alike.
+_REF_MARKER = re.compile(r"^\s*(?:\[(\d+)\]|\((\d+)\)|(\d+)[.)]|([①-⑳]))\s+")
 
 
 def _display_equations_by_page(page_markdown: dict[int, str]) -> dict[int, list[str]]:
@@ -853,9 +856,11 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
         nodes.append(node)
     for f in figures:
         demote(f["id"], f, ("page", "order", "bbox"))
+        fid = str(f["id"])                                        # unify the 3 figure origins into one source tag
+        source = f.get("source") or ("vlm" if "_vlm" in fid else "vector" if "_vec" in fid else "odl_image")
         node = {"id": f["id"], "type": f.get("role", "figure"), "zone": f.get("zone"), "label": f.get("label"),
-                "kind": f.get("kind"), "file": f.get("file")}
-        for k in ("source", "description", "section", "refs"):
+                "kind": f.get("kind"), "source": source, "file": f.get("file")}
+        for k in ("description", "section", "refs"):
             if f.get(k):
                 node[k] = f[k]
         nodes.append(node)
@@ -878,6 +883,19 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
                           "label": src.get("label"), "text": cap})
             if host is not None:
                 host["caption_ref"] = cnid
+
+    # References parsing: inside the references zone, each entry is one bibliographic reference -> re-type
+    # it `reference`, lifting the leading marker ([12]/12./①) when present. Entries that begin '12.' are
+    # tagged `heading` by the numbering rule, so headings are included here too; only the zone's own
+    # section heading ('References'/'참고문헌') is spared. Numeric/circled markers -> language-neutral.
+    section_block_ids = {s["block_id"] for s in sections}
+    for n in nodes:
+        if (n.get("zone") == "references" and n["id"] not in section_block_ids
+                and n.get("type") in ("paragraph", "list_item", "heading")):
+            n["type"] = "reference"
+            m = _REF_MARKER.match(n.get("text", ""))
+            if m:
+                n["marker"] = next(g for g in m.groups() if g)
 
     # Equation promotion: extract display equations from the VLM markdown as `equation` nodes, woven into
     # the reading order at page granularity (per-node placement needs the Phase-3 prose bridge).
