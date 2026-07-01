@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\necho \"=== log (clean single commit on 68f933b) ===\"\ngit --no-pager log --oneline -2\necho \"=== final full suite ===\"\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -3 )",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\ngit reset --soft e98960e >/dev/null 2>&1\ngit restore --staged . 2>/dev/null\ngit add src/odl_vl/pipeline/output.py tests/test_pipeline_figcaption.py\ngit commit -F - -- src/odl_vl/pipeline/output.py tests/test_pipeline_figcaption.py <<'MSG'\nfix(figures): consistent caption-title bold and drop equation strips mis-detected as figures\n\nFound while generalizing to other papers (arXiv preprint, thesis):\n\n- Caption bold: the label+title bold normalization only matched a period\n  separator with a terminal-period title, so colon-labelled captions\n  ('Figure 3: Title.') and period-less titles ('Table 1. Range of methods')\n  fell through and kept the VLM's inconsistent bold. Widen the pattern to accept\n  '.', ':' or no separator, and a title ending at the first period OR line end.\n\n- Equation images: ODL flags some display equations as raster figures, so the\n  same math rendered inconsistently -- some as LaTeX, some as a cropped image.\n  Drop a thin horizontal figure strip (h < 40 and w > 3h) ONLY when its page\n  actually contains display math, so height is never the sole basis for removing\n  a figure: a thin real graphic on a non-math page is kept (e.g. CSNL's 'Check\n  for updates' logo, which the height-only rule wrongly dropped). The VLM's LaTeX\n  carries the equation, so nothing is lost (RATS drops 14 equation strips on\n  math pages and keeps 5 figures; CSNL and Latimer drop 0).\n\nTests: figcaption caption-format + equation-strip shape + page-math gate.\nMSG\necho \"=== result: one figures commit, no dup ===\"\ngit --no-pager log --oneline -4\necho \"--- files ---\"\ngit --no-pager show --stat --oneline HEAD | head -5\necho \"=== final full suite ===\"\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -2 )",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -156,14 +156,20 @@
     },
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 13,
-      "lastAccessed": 1782887807743,
+      "accessCount": 20,
+      "lastAccessed": 1782890170916,
       "type": "file"
     },
     {
       "path": "tests/test_pipeline_frontmatter.py",
       "accessCount": 11,
       "lastAccessed": 1782885205063,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_pipeline_figcaption.py",
+      "accessCount": 4,
+      "lastAccessed": 1782890189635,
       "type": "file"
     },
     {
