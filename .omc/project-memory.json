@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nDIR=$(dirname \"$(find .local/workspace/csnl-full -name document.md 2>/dev/null | head -1)\")\nuv run --no-sync python - \"$DIR\" <<'PY' 2>&1 | grep -ivE \"SLF4J|picked\"\nimport re,sys; sys.path.insert(0,\"src\")\nfrom odl_vl.pipeline.output import _escape_currency\nDIR=sys.argv[1]; md=open(f\"{DIR}/document.md\").read()\nout=_escape_currency(md); open(f\"{DIR}/document.md\",\"w\").write(out)\nblocks=re.split(r\"\\n\\n+\", out)\nprint(\"홀수 $ 블록 (0이어야):\", [k for k,b in enumerate(blocks) if b.count('$')%2])\nprint(\"'\\\\$10/h' 이스케이프됨:\", \"\\\\$10/h\" in out, \"| 수식 '$5 \\\\times' 보존:\", \"$5 \\\\times\" in out)\nPY\n# 테스트 추가\nxattr -c tests/test_pipeline_figcaption.py 2>/dev/null\ncat >> tests/test_pipeline_figcaption.py <<'PY'\n\n\ndef test_escapes_currency_dollar_but_not_math():\n    from odl_vl.pipeline.output import _escape_currency\n    assert _escape_currency(\"paid $10/h.\") == \"paid \\\\$10/h.\"\n    assert _escape_currency(\"cost $1,000.50 total\") == \"cost \\\\$1,000.50 total\"\n    assert _escape_currency(\"was $5 \\\\times 2\") == \"was $5 \\\\times 2\"      # math token kept\n    assert _escape_currency(\"$B_t$ and $m'_t$\") == \"$B_t$ and $m'_t$\"       # math kept\nPY\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nxattr -c tests/test_pipeline_docassembly.py 2>/dev/null\npython3 - <<'PY'\np=\"tests/test_pipeline_docassembly.py\"\ns=open(p).read()\nold='''    blocks = _consolidate_figure_units(md).split(\"\\\\n\\\\n\")\n    assert blocks[0].startswith(\"![Fig 2]\")                  # image first\n    assert \"**Fig 2. Title.**\" in blocks[1] and \"tail part here.\" in blocks[1] and \"<!-- page\" not in blocks[1]\n    assert blocks[2].startswith(\"Source:\")                   # source attached under the caption\n    assert \"Body paragraph after the figure.\" in \"\\\\n\\\\n\".join(blocks)'''\nnew='''    blocks = _consolidate_figure_units(md).split(\"\\\\n\\\\n\")\n    assert blocks[0].startswith(\"![Fig 2]\")                  # image first\n    assert \"**Fig 2. Title.**\" in blocks[1] and \"tail part here.\" in blocks[1] and \"<!-- page\" not in blocks[1]\n    assert \"Source: https://doi.org/x.g002\" in blocks[1]     # source attached to the caption (no blank line)\n    assert \"Body paragraph after the figure.\" in \"\\\\n\\\\n\".join(blocks)'''\nassert s.count(old)==1, \"test block\"\nopen(p,\"w\").write(s.replace(old,new)); print(\"test updated\")\nPY\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -147,6 +147,13 @@
       ]
     }
   },
-  "hotPaths": [],
+  "hotPaths": [
+    {
+      "path": ".local/workspace/opendataloader-pdf/java/opendataloader-pdf-core/src/main/java/org/opendataloader/pdf/hybrid/TriageProcessor.java",
+      "accessCount": 2,
+      "lastAccessed": 1782877163878,
+      "type": "file"
+    }
+  ],
   "userDirectives": []
 }
