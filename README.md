@@ -133,6 +133,7 @@ The fixture work is metadata-only in this slice. The initial eight fixture famil
 
 ## Design Notes
 
+- [Agent-ready schema and chunking](docs/agent-ready-schema-and-chunking.md): design proposal for a clean agent/RAG-ready layer over the loss-aware `document.json`, a runtime-injectable document ontology (semantic roles), and in-module structure/semantic-aware hierarchical chunking.
 - [Measurement findings](docs/measurement-findings.md): prototype evidence (renderer, layer choice, hallucination, oracle, cross-page, triage, orientation, table structure) behind the pipeline design.
 - [Relative performance validation plan](docs/relative-performance-validation-plan.md): benchmark plan for proving ODL-VL improvements against PyMuPDF/PyMuPDF4LLM, ODL, Tesseract, PaddleOCR official API, and Gemini direct.
 - [External orchestrator architecture](docs/orchestrator-architecture.md): historical -- the design of the removed page-level scaffold, superseded by the PDF pipeline.
