@@ -58,6 +58,24 @@ def test_caption_bold_is_normalized_consistently():
     assert _normalize_captions("The figure 2 shows a trend.") == "The figure 2 shows a trend."
 
 
+def test_caption_title_keeps_a_cross_reference_abbreviation_period():
+    from odl_vl.pipeline.output import _normalize_captions
+    # 'Fig.' mid-title is a cross-reference abbreviation, not a sentence end -> the bold title spans past it
+    cap = "FIGURE 13 The dependency of the dPCs for the LIP data in Fig. 12A-D on regularization strength."
+    assert _normalize_captions(cap) == f"**{cap}**"
+    # 'et al.' likewise: the period after the abbreviation stays inside the title
+    cap2 = "Fig 4. Reproduced from Latimer et al. 2015 with permission."
+    assert _normalize_captions(cap2) == f"**{cap2}**"
+
+
+def test_caption_title_still_ends_at_a_real_sentence_after_an_abbreviation():
+    from odl_vl.pipeline.output import _normalize_captions
+    # 'Fig. 3.' is absorbed, but the genuine sentence that follows stays out of the bold title
+    out = _normalize_captions("Fig 2. Effects shown in Fig. 3. The trend is clear.")
+    assert out.startswith("**Fig 2. Effects shown in Fig. 3.**")
+    assert out.endswith(" The trend is clear.") and "clear.**" not in out
+
+
 def test_display_equation_strips_are_dropped_but_real_figures_kept():
     from odl_vl.pipeline.output import _text_line_strip, _tiny_figure
     # a thin horizontal band a text line or two tall = a display equation ODL mis-detected as a figure

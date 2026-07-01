@@ -122,12 +122,18 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     return out
 
 
+# Cross-reference abbreviations whose trailing '.' is NOT a sentence end ('Fig. 12', 'et al. 2020',
+# 'e.g. panels'): the period must be absorbed into the caption title, not treated as its terminator.
+# Standard-re lookbehind must be fixed-width, so each abbreviation contributes its own (\b is zero-width).
+_CAP_ABBREV = ("Fig", "Figs", "Figure", "Figures", "Eq", "Eqs", "Eqn", "Ref", "Refs",
+               "Sec", "Tab", "al", "vs", "cf", "e.g", "i.e")
+_ABBR_DOT = "|".join(rf"(?<=\b{re.escape(a)})[.．]" for a in _CAP_ABBREV)
 _CAP_LABEL_TITLE = re.compile(
     r"^("
     r"(?:S\d+\s+(?:Fig(?:ure)?|Table)|(?:Fig(?:ure)?|Table|図|表|그림|표)\s*\d+)"  # label: 'S1 Fig' or 'Figure 3'
     r"[.:]?\s+"                            # separator after the label: '.', ':' or none, then whitespace
-    r"(?:[^.．]|[.．](?!\s|$))*[.．]?"       # title: up to the first SENTENCE period (period + space/end);
-    r")(.*)$",                             #   a mid-token period (a URL's 'www.', a decimal) is kept
+    rf"(?:[^.．]|[.．](?!\s|$)|{_ABBR_DOT})*[.．]?"  # title: up to the first SENTENCE period; a mid-token
+    r")(.*)$",                             #   period (URL/decimal) or a known abbreviation ('Fig.') is kept
     re.IGNORECASE)
 
 

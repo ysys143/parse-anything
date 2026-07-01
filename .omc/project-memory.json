@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -c \"import odl_vl.pipeline.output; print('import OK')\"\ngrep -n \"def render_page_png\" src/odl_vl/pipeline/render.py\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -2 )",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\n( cd tests && uv run --no-sync python -m pytest -q 2>&1 | tail -5 )",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
@@ -150,8 +150,8 @@
   "hotPaths": [
     {
       "path": "src/odl_vl/pipeline/output.py",
-      "accessCount": 33,
-      "lastAccessed": 1782898032358,
+      "accessCount": 35,
+      "lastAccessed": 1782898794170,
       "type": "file"
     },
     {
@@ -168,8 +168,8 @@
     },
     {
       "path": "tests/test_pipeline_figcaption.py",
-      "accessCount": 6,
-      "lastAccessed": 1782891372062,
+      "accessCount": 8,
+      "lastAccessed": 1782898818500,
       "type": "file"
     },
     {
