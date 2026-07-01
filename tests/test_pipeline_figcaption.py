@@ -25,3 +25,10 @@ def test_skips_a_caption_mis_bound_to_a_body_paragraph():
     out = interleave_figures("body text", [_fig("Fig 6", "Having confirmed the distinct predictions.")], ())
     assert "Having confirmed" not in out
     assert "![Fig 6]" in out
+
+
+def test_bold_vlm_caption_suppresses_the_recovered_one():
+    # the VLM renders the caption bold; the recovery must recognise it (markdown-insensitive) -> no dup
+    md = "**Fig 7. Ex post simulation results.** (A-C) content that is sufficiently long here."
+    out = interleave_figures(md, [_fig("Fig 7", "Fig 7. Ex post simulation results. (A-C) content")], ())
+    assert out.count("Fig 7. Ex post simulation results") == 1

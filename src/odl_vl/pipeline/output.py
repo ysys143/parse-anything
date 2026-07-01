@@ -63,7 +63,10 @@ def _snap_past_table(lines: list[str], idx: int) -> int:
 
 
 def _norm_cap(text: str) -> str:
-    return " ".join(text.split()).lower()
+    """Markdown-insensitive form: the VLM often renders a caption bold/italic ('**Fig 7…**'), so the
+    emphasis marks must be stripped before comparing against a bound caption, or the same caption is
+    emitted twice."""
+    return " ".join(re.sub(r"[*_`#]", "", text).split()).lower()
 
 
 def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
@@ -83,7 +86,7 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     top_refs: list[str] = []
     end_refs: list[str] = []
     placed: list[tuple[int, str]] = []
-    joined = " ".join(norm).lower()
+    joined = _norm_cap(markdown)  # markdown-insensitive, so a bold VLM caption still suppresses the recovery
     for fig in sorted(figs, key=lambda f: -f["bbox"][3]):  # top of page first (larger y = higher)
         ref = f'![{fig.get("label") or "figure"}]({fig["file"]})'
         cap, label = (fig.get("caption") or "").strip(), (fig.get("label") or "").strip()
@@ -123,6 +126,19 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
 
 
 _PAGE_TERMINATORS = "。．.!?！？"  # a page ending here finished its sentence; absence => mid-sentence cut
+_URL_END = re.compile(r"https?://\S+$")            # a line whose tail is a URL (possibly cut mid-URL)
+_URL_CONT = re.compile(r"^[A-Za-z0-9]+[./]\S*")    # a block that opens as a URL path/domain fragment
+
+
+def _ends_with_url(line: str) -> bool:
+    return bool(_URL_END.search(line.rstrip()))
+
+
+def _is_url_continuation(first: str) -> bool:
+    """The block opens as a bare URL fragment ('org/10.5281/zenodo…') -- i.e. a URL that wrapped across
+    the page break, not prose."""
+    tok = first.lstrip().split(" ", 1)[0]
+    return bool(_URL_CONT.match(tok)) and ("/" in tok or "." in tok)
 
 
 def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
@@ -144,6 +160,12 @@ def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
         last = out.rsplit("\n", 1)[-1]
         first = md.split("\n", 1)[0]
         rest = md[len(first):]
+        if _ends_with_url(last):  # last line ends with a URL -> handle by URL structure, not sentence rules
+            if _is_url_continuation(first):  # the URL was split across the page break -> rejoin, no space
+                out = f"{out}{first.lstrip()}{rest}"
+            else:  # a complete URL/DOI (e.g. a figure-source line) -> keep the next block separate
+                out = f"{out}\n\n{marker}\n\n{md}" if marker else f"{out}\n\n{md}"
+            continue
         stitch = bool(last) and last.rstrip()[-1:] not in _PAGE_TERMINATORS \
             and "|" not in last and "|" not in first \
             and not _no_fold_into(last) and not _starts_unit(first)
