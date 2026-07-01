@@ -266,7 +266,7 @@ def strip_page_furniture(markdowns: dict[int, str], page_labels: dict[int, str |
         head_counts.update(heads)
         line_counts.update(lines)
     running_heads = {k for k, c in head_counts.items() if c >= 2}
-    running_lines = {k for k, c in line_counts.items() if c >= max(3, n // 3)}  # recurs on many pages
+    running_lines = {k for k, c in line_counts.items() if c >= max(3, n // 4)}  # recurs on >=~1/4 of pages
     # split-header fragments: the VLM sometimes breaks one running header into two short lines, each
     # below threshold ('PLOS BIOLOGY' + 'Corrective feedback…'). A repeated candidate whose key is a
     # whole token-run inside a confirmed furniture key is the same header, split -> also furniture.
