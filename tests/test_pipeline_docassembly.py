@@ -83,3 +83,66 @@ def test_stitch_does_not_merge_an_equation_or_a_new_paragraph():
     assert _stitch_broken_paragraphs(md1) == md1
     md2 = "This sentence is complete.\n\nThe next paragraph begins here."  # capital start -> new paragraph
     assert _stitch_broken_paragraphs(md2) == md2
+
+
+def test_consolidate_below_merges_a_wrapped_caption_tail_and_source():
+    # a caption BELOW the image that wraps (head ends mid-sentence, a lower-case tail follows) with a
+    # Source after it -> head + tail + source fold into one caption unit (the Fig 1 arrangement).
+    from odl_vl.pipeline.output import _consolidate_figure_units
+    md = "\n\n".join([
+        "![Fig 1](a.png)",                                   # image first
+        "**Fig 1. Title.** the black arrows depict, where a decision-maker",   # caption head, mid-sentence
+        "computes its expected value and makes a choice C.",  # caption tail, wraps in lower case
+        "Source: https://doi.org/x.g001",                    # source -> proof this is a caption unit
+    ])
+    cap = next(b for b in _consolidate_figure_units(md).split("\n\n") if b.startswith("**Fig 1."))
+    assert "computes its expected value" in cap and "g001" in cap   # tail + source folded into the caption
+
+
+def test_figure_unit_floats_out_of_a_paragraph_it_splits():
+    # a body paragraph split around a floating figure (marker + image + caption run between its halves) is
+    # completed across the run, and the figure re-emerges AFTER the finished paragraph (the Fig 2 case).
+    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    md = "\n\n".join([
+        "the PSEs of the retrospective",                     # body head, ends mid-sentence
+        "<!-- page 10 -->",                                  # page marker, part of the float run
+        "![Fig 2](f.png)",                                  # image
+        "**Fig 2. Title.** caption text. Source: https://doi.org/x.g002",  # caption + inline source
+        "and prospective trials quantify the biases.",       # body tail, continues in lower case
+        "# Next Section",
+    ])
+    blocks = _stitch_broken_paragraphs(md).split("\n\n")
+    assert any("the PSEs of the retrospective and prospective trials quantify the biases." in b for b in blocks)
+    para_i = next(i for i, b in enumerate(blocks) if "the PSEs of the retrospective and prospective" in b)
+    img_i = next(i for i, b in enumerate(blocks) if b.startswith("![Fig 2]"))
+    assert para_i < img_i                                    # the figure floats after the completed paragraph
+    assert "g002 and prospective" not in "\n\n".join(blocks)  # caption keeps its own source, no body glued
+
+
+def test_stitch_never_glues_body_onto_a_figure_unit():
+    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    md = "![Fig 3](f.png)\n\n**Fig 3. Title.** caption. Source: https://doi.org/x.g003\n\nand more body text here"
+    out = _stitch_broken_paragraphs(md)
+    assert "g003 and more body" not in out                   # a figure unit never absorbs a body block
+    assert "and more body text here" in out                  # body survives as its own block
+
+
+def test_image_glued_to_trailing_body_is_detached_and_paragraph_reflows():
+    # interleave glues an image to the body block just below it (the paragraph above the figure, which
+    # wraps around it). Detach the image (text above the figure comes first), then the reflow completes the
+    # paragraph across the figure and floats the figure after it -- the Fig 6 arrangement.
+    from odl_vl.pipeline.output import (_detach_image_from_trailing_text,
+                                        _consolidate_figure_units, _stitch_broken_paragraphs)
+    md = "\n\n".join([
+        "# Section",
+        "![Fig 6](f.png)\nHaving confirmed the results, the model sets the boundary at the",  # image + body head
+        "**Fig 6. Title.** caption text. Source: https://doi.org/x.g006",
+        "unbiased value and does not update.",               # body tail, continues in lower case
+    ])
+    out = _stitch_broken_paragraphs(_consolidate_figure_units(_detach_image_from_trailing_text(md)))
+    assert "sets the boundary at the unbiased value and does not update." in out   # paragraph reflowed whole
+    assert "![Fig 6](f.png)\nHaving confirmed" not in out                          # image detached from body
+    blocks = out.split("\n\n")
+    para_i = next(i for i, b in enumerate(blocks) if "sets the boundary at the unbiased value" in b)
+    img_i = next(i for i, b in enumerate(blocks) if b.startswith("![Fig 6]"))
+    assert para_i < img_i                                                          # figure floats after the paragraph

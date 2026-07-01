@@ -17,6 +17,7 @@ import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from .frontmatter import consolidate_front_matter
 from .outline import resolve_heading_authority
 from .pageno import extract_printed_page_numbers, printed_to_index
 from .reflow import _is_cjk, _no_fold_into, _starts_unit, reflow_markdown
@@ -195,6 +196,26 @@ def _is_figure_caption(block: str, label: str) -> bool:
     return re.match(rf"^\*?\*?\s*{re.escape(label)}\.", block.strip(), re.I) is not None
 
 
+_IMG_WITH_TAIL = re.compile(r"^(!\[[^\]]*\]\([^)]*\))\n(?!\n)(.+)$", re.S)
+
+
+def _detach_image_from_trailing_text(markdown: str) -> str:
+    """interleave_figures inserts an image with a blank line before but NOT after, so the image glues to
+    the text block just below it (the body paragraph that sits above the figure, between the anchor and
+    the figure). Split them into separate blocks, placing that text BEFORE the image -- it belongs above
+    the figure -- so the image becomes its own block and the surrounding paragraph can reflow around it."""
+    blocks = re.split(r"\n\n+", markdown)
+    out: list[str] = []
+    for b in blocks:
+        m = _IMG_WITH_TAIL.match(b)
+        if m and not m.group(2).lstrip().startswith(("![", "#", "**")):
+            out.append(m.group(2).strip())      # body text above the figure -> before the image
+            out.append(m.group(1))              # the image, now its own block
+        else:
+            out.append(b)
+    return "\n\n".join(out)
+
+
 def _consolidate_figure_units(markdown: str) -> str:
     """Regroup each figure into one contiguous unit: image, then its caption, then its Source line. The
     pieces already sit in reading order but a multi-page caption straddles the image (a head above, a
@@ -244,16 +265,37 @@ def _consolidate_figure_units(markdown: str) -> str:
                 continue
             cap_parts.append(cap_idx)
             remove.add(cap_idx)
-            j = cap_idx + 1                                     # attach the Source line, skipping page markers
-            while j < len(blocks) and j - cap_idx <= 3 and j not in remove:
-                if _PAGE_MARKER.match(blocks[j].strip()):
-                    remove.add(j)
+            # Scan forward for the Source, gathering any wrapped caption tail (and page markers) on the
+            # way, but COMMIT them only if a Source is actually found. A caption tail wraps when the prior
+            # caption part ends mid-sentence and this block opens lower case; requiring the Source as proof
+            # keeps a source-less figure from eating a following body paragraph.
+            scan: list[int] = []
+            src: int | None = None
+            last_cap = cap_idx
+            j = cap_idx + 1
+            while j < len(blocks) and j - cap_idx <= 5 and j not in remove:
+                bs = blocks[j].strip()
+                if _SOURCE_LINE.match(bs):
+                    src = j
+                    break
+                if _PAGE_MARKER.match(bs):
+                    scan.append(j)
                     j += 1
                     continue
-                if _SOURCE_LINE.match(blocks[j].strip()):
-                    source = j
-                    remove.add(j)
+                prev = blocks[last_cap].rstrip()
+                if (prev[-1:] not in _PAGE_TERMINATORS and bs[:1].islower()
+                        and not bs.startswith(("![", "#"))):
+                    scan.append(j)
+                    last_cap = j
+                    j += 1
+                    continue
                 break
+            if src is not None:                                # proof it is a figure unit -> commit tail+source
+                for k in scan:
+                    cap_parts.append(k)
+                    remove.add(k)
+                source = src
+                remove.add(src)
         cap = " ".join(blocks[k].strip() for k in cap_parts)
         if source is not None:                                   # the Source line IS part of the caption ->
             cap = f"{cap} {blocks[source].strip()}"              # attach it to the caption, no blank line
@@ -266,33 +308,73 @@ def _consolidate_figure_units(markdown: str) -> str:
     return "\n\n".join(result[k] for k in range(len(result)) if k not in remove)
 
 
+def _can_stitch(last: str, first: str) -> bool:
+    """Whether ``first`` continues the paragraph ``last`` was cut off in: ``last`` ends mid-sentence and
+    ``first`` opens in lower case. Never fold onto or out of a structural block (heading, image, caption,
+    source, list), a display equation, or a URL line -- in particular never fold body text onto a figure
+    unit (which opens with an image and ends in its inline ``Source:`` DOI)."""
+    last = last.rstrip()
+    first = first.lstrip()
+    if not first:
+        return False
+    last_line = last.rsplit("\n", 1)[-1]
+    fc = first[:1]
+    return (
+        (fc.islower() or _is_cjk(fc))
+        and last[-1:] not in _PAGE_TERMINATORS
+        and "$$" not in last and not last.endswith("$") and not first.startswith("$")
+        and not _is_url_continuation(first) and "-->" not in last[-24:]
+        and not last.lstrip().startswith("![")           # never fold onto a figure unit (image + caption)
+        and not _ends_with_url(last_line)                 # ...or onto a line ending in a URL / figure DOI
+        and not last_line.startswith(("![", "#", "Source:", "|", ">"))
+        and not first.startswith(("![", "#", "Source:", "**", ">", "|", "<!--"))
+        and not _no_fold_into(last_line) and not _starts_unit(first) and not _starts_figure_unit(first)
+    )
+
+
+def _join(last: str, first: str) -> str:
+    last, first = last.rstrip(), first.lstrip()
+    sep = "" if (_is_cjk(last[-1:]) or _is_cjk(first[:1])) else " "
+    return f"{last}{sep}{first}"
+
+
+def _is_float_block(block: str) -> bool:
+    """A block that belongs to a floating figure (or the page marker beside it): an image, a figure/table
+    caption, its Source line, or a ``<!-- page N -->`` marker. A run of these can sit between the two
+    halves of a body paragraph the figure floats through."""
+    s = block.lstrip()
+    return bool(_PAGE_MARKER.match(s) or _SOURCE_LINE.match(s) or _starts_figure_unit(s))
+
+
 def _stitch_broken_paragraphs(markdown: str) -> str:
-    """Rejoin two adjacent blocks that are one paragraph split apart -- the first ends mid-sentence, the
-    second continues in lower case. Pulling a figure out from between a paragraph's two halves leaves
-    such a split; this merges it. Never merges a structural block (heading, image, caption, source, list),
-    a display equation, or a URL fragment, and only when the continuation opens in lower case (a new
-    paragraph opens with a capital)."""
+    """Rejoin two blocks that are one paragraph split apart -- the first ends mid-sentence, the second
+    continues in lower case. A page break, or a FIGURE that floats between the paragraph's two halves,
+    causes such a split. When a run of figure/caption/source/marker blocks (containing an actual image)
+    sits between the halves, the figure is a float: complete the paragraph ACROSS the run, then re-emit the
+    run after the finished paragraph. Structural blocks (headings, images, captions, sources) never merge."""
     blocks = re.split(r"\n\n+", markdown)
     out: list[str] = []
-    for b in blocks:
-        if out and b.strip():
-            last = out[-1].rstrip()
-            first = b.lstrip()
-            last_line = last.rsplit("\n", 1)[-1]
-            fc = first[:1]
-            if (
-                (fc.islower() or _is_cjk(fc))
-                and last[-1:] not in _PAGE_TERMINATORS
-                and "$$" not in last and not last.endswith("$") and not first.startswith("$")
-                and not _is_url_continuation(first) and "-->" not in last[-24:]
-                and not last_line.startswith(("![", "#", "Source:", "|", ">"))
-                and not first.startswith(("![", "#", "Source:", "**", ">", "|", "<!--"))
-                and not _no_fold_into(last_line) and not _starts_unit(first) and not _starts_figure_unit(first)
-            ):
-                sep = "" if (_is_cjk(last[-1:]) or _is_cjk(fc)) else " "
-                out[-1] = f"{last}{sep}{first}"
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        # a figure floating between a paragraph's halves: skip the maximal run of float blocks; if the
+        # block after it continues the paragraph in lower case, stitch across and float the run past it.
+        if out and _is_float_block(b):
+            j = i
+            while j < len(blocks) and _is_float_block(blocks[j]):
+                j += 1
+            if (j < len(blocks) and any(blocks[k].lstrip().startswith("![") for k in range(i, j))
+                    and _can_stitch(out[-1], blocks[j])):
+                out[-1] = _join(out[-1], blocks[j])
+                out.extend(blocks[i:j])                  # the figure floats past the finished paragraph
+                i = j + 1
                 continue
+        if out and b.strip() and _can_stitch(out[-1], b):
+            out[-1] = _join(out[-1], b)
+            i += 1
+            continue
         out.append(b)
+        i += 1
     return "\n\n".join(out)
 
 
@@ -436,9 +518,14 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
 
     for page_index, name in rendered:
         (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")  # per-page keeps the split
-    pages_doc = [(page_labels.get(pi) or str(pi + 1), md_by_index[pi]) for pi, _ in rendered]
+    # document.md only: consolidate a cross-page marginal front-matter column (journal metadata sidebar)
+    # so it stays contiguous instead of scattered through the body and split at the page break; the
+    # per-page files above keep each page's own content. A no-op when no such column is detected.
+    doc_md_by_index = consolidate_front_matter(md_by_index, blocks_by_page)
+    pages_doc = [(page_labels.get(pi) or str(pi + 1), doc_md_by_index[pi]) for pi, _ in rendered]
     (out / "document.md").write_text(
-        _stitch_broken_paragraphs(_consolidate_figure_units(_assemble_document(pages_doc))), encoding="utf-8")
+        _stitch_broken_paragraphs(_consolidate_figure_units(
+            _detach_image_from_trailing_text(_assemble_document(pages_doc)))), encoding="utf-8")
     _write_jsonl(out / "ledger.jsonl", result.ledger())
     _write_jsonl(out / "results.jsonl", results)
 
