@@ -253,6 +253,36 @@ def _consolidate_figure_units(markdown: str) -> str:
     return "\n\n".join(result[k] for k in range(len(result)) if k not in remove)
 
 
+def _stitch_broken_paragraphs(markdown: str) -> str:
+    """Rejoin two adjacent blocks that are one paragraph split apart -- the first ends mid-sentence, the
+    second continues in lower case. Pulling a figure out from between a paragraph's two halves leaves
+    such a split; this merges it. Never merges a structural block (heading, image, caption, source, list),
+    a display equation, or a URL fragment, and only when the continuation opens in lower case (a new
+    paragraph opens with a capital)."""
+    blocks = re.split(r"\n\n+", markdown)
+    out: list[str] = []
+    for b in blocks:
+        if out and b.strip():
+            last = out[-1].rstrip()
+            first = b.lstrip()
+            last_line = last.rsplit("\n", 1)[-1]
+            fc = first[:1]
+            if (
+                (fc.islower() or _is_cjk(fc))
+                and last[-1:] not in _PAGE_TERMINATORS
+                and "$$" not in last and not last.endswith("$") and not first.startswith("$")
+                and not _is_url_continuation(first) and "-->" not in last[-24:]
+                and not last_line.startswith(("![", "#", "Source:", "|", ">"))
+                and not first.startswith(("![", "#", "Source:", "**", ">", "|", "<!--"))
+                and not _no_fold_into(last_line) and not _starts_unit(first) and not _starts_figure_unit(first)
+            ):
+                sep = "" if (_is_cjk(last[-1:]) or _is_cjk(fc)) else " "
+                out[-1] = f"{last}{sep}{first}"
+                continue
+        out.append(b)
+    return "\n\n".join(out)
+
+
 def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
     """Assemble per-page Markdown into one continuous document. The page boundary is a physical PDF
     artifact, not document structure, so a sentence wrapped across it is STITCHED back (the same
@@ -393,7 +423,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     for page_index, name in rendered:
         (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")  # per-page keeps the split
     pages_doc = [(page_labels.get(pi) or str(pi + 1), md_by_index[pi]) for pi, _ in rendered]
-    (out / "document.md").write_text(_consolidate_figure_units(_assemble_document(pages_doc)), encoding="utf-8")
+    (out / "document.md").write_text(
+        _stitch_broken_paragraphs(_consolidate_figure_units(_assemble_document(pages_doc))), encoding="utf-8")
     _write_jsonl(out / "ledger.jsonl", result.ledger())
     _write_jsonl(out / "results.jsonl", results)
 

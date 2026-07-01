@@ -69,3 +69,17 @@ def test_consolidate_leaves_a_sourceless_figure_untouched():
     from odl_vl.pipeline.output import _consolidate_figure_units
     md = "![Fig 9](a.png)\n\n**Fig 9. X.** caption text\n\nbody text here now"
     assert _consolidate_figure_units(md) == md  # no Source line nearby -> no-op, never eats the body
+
+
+def test_stitch_rejoins_a_paragraph_split_around_a_figure():
+    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    md = "the class boundary at the\n\nunbiased value (B=0) and does not update the choices"
+    assert "boundary at the unbiased value" in _stitch_broken_paragraphs(md)
+
+
+def test_stitch_does_not_merge_an_equation_or_a_new_paragraph():
+    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    md1 = "the class probabilities, as follows:\n\n$$p(x) = 1$$"    # display equation -> keep separate
+    assert _stitch_broken_paragraphs(md1) == md1
+    md2 = "This sentence is complete.\n\nThe next paragraph begins here."  # capital start -> new paragraph
+    assert _stitch_broken_paragraphs(md2) == md2
