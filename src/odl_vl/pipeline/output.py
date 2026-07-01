@@ -123,7 +123,11 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
 
 
 _CAP_LABEL_TITLE = re.compile(
-    r"^((?:S\d+\s+(?:Fig|Table)|Fig(?:ure)?\s*\d+|Table\s*\d+|図\s*\d+|表\s*\d+|그림\s*\d+|표\s*\d+)\.?\s+.*?[.．])(\s.*|)$",
+    r"^("
+    r"(?:S\d+\s+(?:Fig(?:ure)?|Table)|(?:Fig(?:ure)?|Table|図|表|그림|표)\s*\d+)"  # label: 'S1 Fig' or 'Figure 3'
+    r"[.:]?\s+"                    # separator after the label: '.', ':' or none, then whitespace
+    r"[^.．]*[.．]?"                # title: up to & including the first period (the whole line if none)
+    r")(.*)$",
     re.IGNORECASE)
 
 
@@ -453,7 +457,13 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                                     "caption": None, "label": None})
                     meta["figures"].append(fid)
                     meta["content"].append(fid)
-        figures = [f for f in figures if not _tiny_figure(f.get("bbox"))]  # drop hairline icons/logos
+        # drop hairline icons/logos, and display-equation strips ODL mis-detects as raster figures. The
+        # equation case is gated on the page ACTUALLY containing display math (not height alone), so a
+        # thin real figure on a non-math page is never dropped -- the VLM's LaTeX already carries the math.
+        math_pages = {p.page_index for p in result.pages if _page_has_math(p.markdown)}
+        figures = [f for f in figures
+                   if not _tiny_figure(f.get("bbox"))
+                   and not (_text_line_strip(f.get("bbox")) and (f.get("page") or 0) - 1 in math_pages)]
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
         _bind_vector_captions(figures, blocks)  # 図N label + caption text (both modes)
         if describe_figure is not None:  # R14: VLM text description per cropped vector chart (det_vlm)
@@ -561,6 +571,27 @@ def _tiny_figure(bbox) -> bool:
         return False
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     return w * h < 900 or min(w, h) < 12
+
+
+def _text_line_strip(bbox) -> bool:
+    """The SHAPE half of the display-equation test: a thin horizontal band only a text line or two tall
+    (h < 40) and much wider than tall. This is a necessary but not sufficient signal -- the caller also
+    requires the page to actually contain display math (``_page_has_math``) before dropping, so height is
+    never the sole basis for removing a figure. Real content figures are far taller than this."""
+    if not bbox:
+        return False
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    return h < 40 and w > h * 3
+
+
+def _page_has_math(markdown: str) -> bool:
+    """The page's VLM transcription carries display math -- at least one display equation ($$...$$) or a
+    dense run of inline math. On such a page a thin figure strip is a display-equation crop (redundant
+    with the LaTeX); on a page with no math, the same-shaped strip is left alone."""
+    if not markdown:
+        return False
+    inline = markdown.count("$") - 2 * markdown.count("$$")
+    return markdown.count("$$") >= 2 or inline >= 8
 
 
 def _bind_vector_captions(figures: list[dict], blocks: list[dict]) -> None:

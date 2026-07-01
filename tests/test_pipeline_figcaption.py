@@ -41,8 +41,39 @@ def test_caption_bold_is_normalized_consistently():
     out = _normalize_captions("**Fig 7. Results.** (A-C) across *toi* episodes.")
     assert out.startswith("**Fig 7. Results.**") and "*toi*" in out
     assert _normalize_captions("S1 Fig. Schematic of BMBU. (A) x.").startswith("**S1 Fig. Schematic of BMBU.**")
-    # ordinary prose is untouched
+    # a colon label separator ('Figure 3:') is bolded like a period one
+    assert _normalize_captions("Figure 3: Neural activity from cells. a) foo").startswith(
+        "**Figure 3: Neural activity from cells.**")
+    # a title with NO terminal period (a short caption) bolds the whole label+title
+    assert _normalize_captions("Table 1. Hyperparameter range of the methods") == (
+        "**Table 1. Hyperparameter range of the methods**")
+    # an all-caps label with no separator ('FIGURE 1 Title.')
+    assert _normalize_captions("FIGURE 1 Two dimensional subspaces. Panel a shows.").startswith(
+        "**FIGURE 1 Two dimensional subspaces.**")
+    # ordinary prose is untouched (label not at line start)
     assert _normalize_captions("The figure 2 shows a trend.") == "The figure 2 shows a trend."
+
+
+def test_display_equation_strips_are_dropped_but_real_figures_kept():
+    from odl_vl.pipeline.output import _text_line_strip, _tiny_figure
+    # a thin horizontal band a text line or two tall = a display equation ODL mis-detected as a figure
+    assert _text_line_strip([100, 500, 456, 527])      # 356 x 27 -> equation strip
+    assert _text_line_strip([100, 500, 503, 518])      # 403 x 18 -> equation strip
+    # real figures (tall) are kept; a small square icon is left to _tiny_figure, not this filter
+    assert not _text_line_strip([100, 100, 568, 350])  # 468 x 250 -> real figure
+    assert not _text_line_strip([100, 100, 190, 145])  # 90 x 45  -> tall enough, real figure
+    assert not _text_line_strip([100, 100, 130, 122])  # 30 x 22  -> square-ish (a _tiny_figure case)
+    assert not _text_line_strip(None)
+
+
+def test_equation_strip_is_only_dropped_on_a_page_with_math():
+    # height/shape alone must not drop a figure: a thin strip is a display-equation crop ONLY when the
+    # page actually contains display math (the VLM transcribed the equation as LaTeX).
+    from odl_vl.pipeline.output import _page_has_math
+    assert _page_has_math(r"text $$x = \sum_i a_i$$ more text")       # a display equation present
+    assert _page_has_math("dense $a$ $b$ $c$ $d$ inline $e$ math $f$")  # dense inline math
+    assert not _page_has_math("A wide thin figure caption with no math at all here.")  # no math -> keep strip
+    assert not _page_has_math("")
 
 
 def test_labels_a_bare_figure_source_doi():
