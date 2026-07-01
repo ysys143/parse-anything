@@ -46,3 +46,26 @@ def test_caption_opening_a_page_is_not_folded_into_prior_prose():
                               ("2", "Fig 2. Experimental design and definition. (A) A chain of episodes.")])
     assert "follows Fig 2. Experimental" not in " ".join(out.split())
     assert "Fig 2. Experimental design and definition." in out
+
+
+def test_consolidate_merges_split_caption_and_source_into_figure_unit():
+    from odl_vl.pipeline.output import _consolidate_figure_units
+    md = "\n\n".join([
+        "**Fig 2. Title.** (A) head part ending mid",       # caption head, above the image
+        "![Fig 2](assets/f.png)",                            # image
+        "<!-- page 3 -->",                                   # a page marker that split the caption
+        "sentence continues (B) tail part here.",            # caption tail, below the image
+        "Source: https://doi.org/x.g002",                    # figure source
+        "Body paragraph after the figure.",                  # body (must survive, untouched)
+    ])
+    blocks = _consolidate_figure_units(md).split("\n\n")
+    assert blocks[0].startswith("![Fig 2]")                  # image first
+    assert "**Fig 2. Title.**" in blocks[1] and "tail part here." in blocks[1] and "<!-- page" not in blocks[1]
+    assert blocks[2].startswith("Source:")                   # source attached under the caption
+    assert "Body paragraph after the figure." in "\n\n".join(blocks)
+
+
+def test_consolidate_leaves_a_sourceless_figure_untouched():
+    from odl_vl.pipeline.output import _consolidate_figure_units
+    md = "![Fig 9](a.png)\n\n**Fig 9. X.** caption text\n\nbody text here now"
+    assert _consolidate_figure_units(md) == md  # no Source line nearby -> no-op, never eats the body

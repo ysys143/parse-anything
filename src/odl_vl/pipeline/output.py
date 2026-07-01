@@ -173,6 +173,56 @@ def _is_url_continuation(first: str) -> bool:
     return bool(_URL_CONT.match(tok)) and ("/" in tok or "." in tok)
 
 
+_FIG_IMG = re.compile(r"^!\[(Fig(?:ure)?\s*\d+|Table\s*\d+)\]", re.IGNORECASE)
+_SOURCE_LINE = re.compile(r"^Source:\s*https?://")
+
+
+def _consolidate_figure_units(markdown: str) -> str:
+    """Regroup each figure into one contiguous unit: image, then its caption (a head above the image
+    and a tail below -- split by the page break -- merged), then its Source line. The pieces already
+    sit in reading order; a multi-page caption just straddles the image. Only fires when a 'Source:'
+    line follows the image within a few blocks (else the figure is left untouched); page markers pulled
+    into a merged caption are dropped. Body is never consumed -- only the head block (when it opens with
+    the figure label) and the blocks up to the Source line are moved."""
+    blocks = re.split(r"\n\n+", markdown)
+    remove: set[int] = set()
+    result = list(blocks)
+    for i, b in enumerate(blocks):
+        m = _FIG_IMG.match(b.strip())
+        if not m:
+            continue
+        label = m.group(1)
+        head = None
+        if i > 0 and (i - 1) not in remove and re.match(rf"^\*?\*?{re.escape(label)}\.", blocks[i - 1].strip(), re.I):
+            head = blocks[i - 1]
+            remove.add(i - 1)
+        tail, source, j = [], None, i + 1
+        while j < len(blocks) and j - i <= 4:
+            bs = blocks[j].strip()
+            if _SOURCE_LINE.match(bs):
+                source = blocks[j]
+                remove.add(j)
+                break
+            if bs.startswith(("![", "#")):        # next figure/heading -> stop, no source for this one
+                break
+            tail.append(j)
+            j += 1
+        if source is None:                         # no source nearby -> leave the tail (never eat body)
+            tail = []
+        cap = " ".join(x.strip() for x in ([head] if head else []) + [blocks[k] for k in tail])
+        cap = re.sub(r"\s*<!-- page[^>]*-->\s*", " ", cap)   # drop page markers merged into the caption
+        cap = re.sub(r"\s{2,}", " ", cap).strip()
+        for k in tail:
+            remove.add(k)
+        unit = b.strip()
+        if cap:
+            unit += "\n\n" + cap
+        if source:
+            unit += "\n\n" + source.strip()
+        result[i] = unit
+    return "\n\n".join(result[k] for k in range(len(result)) if k not in remove)
+
+
 def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
     """Assemble per-page Markdown into one continuous document. The page boundary is a physical PDF
     artifact, not document structure, so a sentence wrapped across it is STITCHED back (the same
@@ -313,7 +363,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     for page_index, name in rendered:
         (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")  # per-page keeps the split
     pages_doc = [(page_labels.get(pi) or str(pi + 1), md_by_index[pi]) for pi, _ in rendered]
-    (out / "document.md").write_text(_assemble_document(pages_doc), encoding="utf-8")
+    (out / "document.md").write_text(_consolidate_figure_units(_assemble_document(pages_doc)), encoding="utf-8")
     _write_jsonl(out / "ledger.jsonl", result.ledger())
     _write_jsonl(out / "results.jsonl", results)
 
