@@ -16,6 +16,7 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .frontmatter import consolidate_front_matter
 from .outline import resolve_heading_authority
@@ -25,6 +26,9 @@ from .run import DocumentResult
 from .sections import _assign_heading_levels, apply_heading_levels, build_sections, strip_page_furniture
 from .structure import build_graph
 from .textalign import common_prefix_len, norm_block
+
+if TYPE_CHECKING:
+    from .ontology import Ontology
 
 
 def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
@@ -430,9 +434,19 @@ def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
     return out
 
 
+_ONTOLOGY_ROOT = Path(__file__).resolve().parents[3] / "ontology"   # <repo>/ontology/<family>.md
+
+
+def _default_ontology():
+    """The 'default' document ontology, loaded from the repo's ontology dir (cwd-independent)."""
+    from .ontology import load_ontology
+    return load_ontology("default", _ONTOLOGY_ROOT)
+
+
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
                   arithmetic: bool = True, inline_figures: bool = True, headings: bool = True,
-                  describe_figure: "Callable[[bytes, str | None], str] | None" = None) -> None:
+                  describe_figure: "Callable[[bytes, str | None], str] | None" = None,
+                  ontology: "Ontology | None" = None) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -451,6 +465,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     blocks_by_page: dict[int, tuple] = {}
     chart_noise: dict[int, set[str]] = {}
     slide_images: dict[int, str] = {}   # slide-deck mode: one rendered page image per page
+    onto = ontology or _default_ontology()   # injected document ontology (role/zone vocabulary + rules)
     if result.meta is not None and result.structure is not None:
         labels_by_page = {p.page_index: p.labels for p in result.pages}
         pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
@@ -524,10 +539,14 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         chart_noise = _chart_internal_noise(figures, blocks_by_page)  # legend/axis/year labels to drop
         _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
         _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
+        from .ontology import compute_font_ranks, tag_nodes
+        font_ranks = compute_font_ranks(blocks)
+        tag_nodes(blocks, tables, figures, onto, font_ranks, is_landscape=bool(slide_images))  # role + zone axes
         if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
             page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
             authority = resolve_heading_authority(pdf_path, result.structure)
-            level_map, style_levels = _assign_heading_levels(blocks, authority, printed_to_index(page_labels))
+            level_map, style_levels = _assign_heading_levels(blocks, authority, printed_to_index(page_labels),
+                                                             onto, font_ranks)   # + unnumbered-heading admission
             sections, section_by_node = build_sections(blocks, tables, figures, level_map)
             for node in (*blocks, *tables, *figures):
                 if node["id"] in section_by_node:
@@ -584,7 +603,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     _write_jsonl(out / "results.jsonl", results)
 
     if result.meta is not None:
-        _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels)
+        _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels, onto)
         _write_tables(out, tables)
 
 
@@ -764,7 +783,8 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
 
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
-                         sections: list[dict], page_labels: dict[int, str | None]) -> None:
+                         sections: list[dict], page_labels: dict[int, str | None],
+                         ontology: "Ontology | None" = None) -> None:
     """Emit the R12/R13 graph: per-page reading-order ``content`` (id stream) + typed id lists, the
     document-level ``blocks``/``tables``/``figures``/``sections`` registries keyed by stable id, and
     each page's printed ``page_label``."""
@@ -786,6 +806,16 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
     doc["blocks"] = blocks
     doc["tables"] = tables
     doc["figures"] = figures
+    if ontology is not None:   # declare which injected ontology + version produced this tagging (R15)
+        doc["@context"] = {"doco": "http://purl.org/spar/doco/", "deo": "http://purl.org/spar/deo/"}
+        doc["ontology"] = ontology.profile_stamp()
+        zpages: dict[str, list[int]] = {}   # zones[] summary: zone -> pages it covers (reading order)
+        for n in (*blocks, *tables, *figures):
+            z = n.get("zone")
+            pg = n.get("page") or (n.get("pages") or [None])[0]
+            if z and pg is not None and pg not in zpages.setdefault(z, []):
+                zpages[z].append(pg)
+        doc["zones"] = [{"zone": z, "pages": sorted(p)} for z, p in sorted(zpages.items(), key=lambda kv: min(kv[1]))]
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

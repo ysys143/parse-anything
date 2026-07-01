@@ -134,9 +134,12 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
             prompt = _FIG_DESCRIBE_PROMPT + (f"\nThe figure's caption is: {caption}" if caption else "")
             return transcribe_image(png, prompt, api_key=key, client=client)
 
+    from odl_vl.pipeline.ontology import load_ontology  # R15: injected node/zone ontology (family-selectable)
+
+    ontology = load_ontology(args.ontology or "default", _REPO / "ontology")
     write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic,
                   inline_figures=not args.no_inline_figures, headings=not args.no_headings,
-                  describe_figure=describe_figure)
+                  describe_figure=describe_figure, ontology=ontology)
     if args.review:
         from odl_vl.pipeline.review import write_review
 
@@ -162,6 +165,8 @@ def _parse_args(argv):
     parser.add_argument("--diagnose", action="store_true", help="run D-1 diagnosis first, save a profile, and use the recommended mode")
     parser.add_argument("--use-profile", action="store_true", help="use a stored SourceProfile's mode (skip diagnosis) if one exists for --source-id")
     parser.add_argument("--profiles-dir", default=None, help="profile store; default $ODL_VL_PROFILE_DIR or ./profiles")
+    parser.add_argument("--ontology", default=None,
+                        help="document ontology family (ontology/<family>.md) driving node role/zone tagging; default 'default'")
     parser.add_argument("--sample-size", type=int, default=4, help="pages D-1 samples when --diagnose (default 4)")
     parser.add_argument("--source-id", default="default", help="source (document stream) id; output groups by it")
     parser.add_argument("--external-id", default=None, help="caller-provided document id, preserved in metadata")

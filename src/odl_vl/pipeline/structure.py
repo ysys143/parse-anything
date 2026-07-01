@@ -124,6 +124,10 @@ def build_graph(structure: OdlDocument, labels_by_page: dict[int, tuple[dict, ..
                     "bbox": list(p.bbox), "text": p.text}
             if p.font_size:
                 node["font_size"] = round(float(p.font_size), 2)
+            if p.heading_level is not None:   # ODL heading-level signal (ontology heading admission)
+                node["heading_level"] = p.heading_level
+            if p.level:                       # ODL structural role ("Doctitle"/"Subtitle"/...)
+                node["odl_role"] = p.level
             blocks.append(node)
             pages[pi]["blocks"].append(bid)
             placement[pi].append((p.order, bid))
