@@ -359,6 +359,25 @@ Track C(C1)를 **실제 구현**했다: ODL Java를 수정해 hybrid 요청에 1
   실사용 실패 → **ODL이 주체가 되는 Track B/C의 고유 자산(grounding·triage)이 실측에서 이점을 못 준다.**
   표-중심 이미지엔 Paddle 직접 + source-level 진단이 정답.
 
+#### Track C로 Track A 따라잡기 — cross-page 표 (born-digital)
+
+Track A(det_vlm)가 직접 VLM/Track C를 이기는 **유일하게 입증된 축**(F22)이 cross-page 표 재구성이라,
+2페이지 연속 표(44행, born-digital)로 격차와 따라잡기를 측정:
+
+| 경로 | 표 구조 | 숫자 recall | 방식 |
+|---|---|---|---|
+| Track A (det_vlm) | 병합 (46 rows 1개) | **1.0** | **결정론(vlm_pages=0)** — ODL previous_table_id |
+| Track C (per-page) | 분절 (37+9, 2개) | 0.898 | 페이지별 VLM |
+| Track C (multi-image) | **병합 (45 rows 1개)** | 0.902 | chunk 페이지 1요청 VLM(`--multi-image`, spanning 프롬프트) |
+
+- **구조는 따라잡음**: `--multi-image`(chunk 페이지를 `transcribe_images`로 한 번에)로 분절 2개 → 병합
+  1개(45 rows). proxy `MultiTranscriber` 시임 추가.
+- **정확도는 못 따라잡음**: Track A(결정론) **1.0** ≫ Track C(VLM) **0.90**. 밀집 44행에서 VLM이 130개 중
+  ~13개 오독. Track A가 이기는 건 **born-digital을 VLM 없이(결정론 텍스트레이어) 완벽히 읽기 때문**이고,
+  Track C는 triage가 표를 backend로 보내 VLM 강제 → 값 손실.
+- **결론**: cross-page 병합을 따라잡을수록 Track A가 이기는 근본 이유가 드러난다 — **born-digital은
+  결정론이 정답**이고, VLM 위임(Track B/C)은 구조를 병합해도 값 정확도에서 결정론을 못 이긴다.
+
 ### 측정 자산 (재현용)
 - `scripts/track_b_scorecard.py` — 값 정확도(recall/precision, oracle/golden, 천단위 점·콤마 정규화, 표 완전성 tbl_cells/bytes).
 - `scripts/track_b_teds.py` — 표 TEDS(apted) + 텍스트 1-NED, OmniDocBench GT 대비.
