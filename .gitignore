@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local agent/runtime state
+.omc/state/
+.omo/boulder.json
+
+# ODL-VL orchestrator run artifacts.
+# The orchestrator writes results.jsonl / ledger.jsonl / pages/ into a user-chosen
+# --output-dir. In live mode the ledger can capture operational metadata, so these
+# artifacts must never be committed. The committed golden lives under
+# tests/fixtures/orchestrator/expected_results.json (a different name) and is unaffected.
+results.jsonl
+ledger.jsonl
+/out/
+
+# Local measurement prototypes + data (incl. private documents). Never committed.
+.local/

@@ -1,0 +1,8 @@
+# Runtime dependencies (mirror of pyproject [project.dependencies]).
+# Install into an isolated env with uv:  uv pip install -r requirements.txt
+# Note: opendataloader-pdf REQUIRES Java 17 at runtime (ODL structure layer -- F17).
+pypdfium2>=4
+pdf-inspector>=0.2
+Pillow>=10
+numpy>=1.24
+opendataloader-pdf>=2.4

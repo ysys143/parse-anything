@@ -69,7 +69,7 @@ Rust로 가는 길은 세 갈래이며, 목적에 따라 고른다.
 
 - **결과 JSON만 필요** → ODL의 **기존 Python 래퍼**(CLI 셸아웃). 가장 빠른 시작(이미 검증됨).
 - **Java API를 직접 다루고 싶다** → **JPype**로 JAR 인프로세스 로드(veraPDF `IObject`/ODL `TriageProcessor`까지 호출).
-- **순수 Python 동등 스택** → **Docling**(레이아웃+TableFormer+OCR+VLM, 순수 Py) 또는 PyMuPDF4LLM. 단 ODL의 접근성/태깅은 못 얻음.
+- **순수 Python 동등 스택** → **Docling**(레이아웃+TableFormer+OCR+VLM, 순수 Py). PyMuPDF4LLM은 AGPL/상용 라이선스 영향을 명시적으로 수용할 때만 후보로 본다. 단 ODL의 접근성/태깅은 못 얻음.
 
 ---
 

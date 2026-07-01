@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "golden_schema_version": 1,
+  "artifact_policy": {
+    "fixture_artifacts": "deferred",
+    "allowed_repository_contents": "metadata_only",
+    "private_paths_allowed": false,
+    "downloaded_benchmarks_allowed": false
+  },
+  "route_distribution": {
+    "deterministic_only": 1,
+    "gemini_vlm": 1,
+    "hybrid": 4,
+    "paddle_ocr": 2
+  },
+  "families": {
+    "simple_text": {
+      "expected_route": "deterministic_only",
+      "primary_metric": "md_json_accuracy",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["font_size_variation", "line_spacing_variation"],
+        "promotion_rule": "promote when deterministic output changes despite unchanged reading order"
+      },
+      "expected_challenge": "born-digital simple body text where deterministic parsing should be sufficient",
+      "source_type": "synthetic_born_digital_page",
+      "page_count": 1,
+      "language_profile": ["en"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "short headings and paragraphs with stable punctuation",
+        "layout_features": ["single_column", "plain_text", "no_tables", "no_images"]
+      },
+      "scoring_targets": ["reading_order", "md_json_accuracy", "cost"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "top_to_bottom_single_column",
+        "tables": "none",
+        "image_description": "none",
+        "key_fields": ["title", "paragraphs"]
+      },
+      "route_rationale": "This family establishes the deterministic baseline and should not require provider calls."
+    },
+    "two_column_ko_en": {
+      "expected_route": "hybrid",
+      "primary_metric": "reading_order",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["column_gap_variation", "footnote_density_variation", "language_mix_ratio_variation"],
+        "promotion_rule": "promote when providers disagree on column or footnote order"
+      },
+      "expected_challenge": "two-column Korean and English mixed text with footnotes and reading-order ambiguity",
+      "source_type": "synthetic_born_digital_page",
+      "page_count": 2,
+      "language_profile": ["ko", "en"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "parallel Korean and English sections with numbered footnotes",
+        "layout_features": ["two_columns", "mixed_cjk_latin", "footnotes", "section_headers"]
+      },
+      "scoring_targets": ["reading_order", "routing_accuracy", "md_json_accuracy", "cost"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "left_column_then_right_column_with_footnotes_after_body",
+        "tables": "none",
+        "image_description": "none",
+        "key_fields": ["section_titles", "footnote_markers", "footnote_text"]
+      },
+      "route_rationale": "Deterministic layout extraction should be checked, but VLM fallback may be needed when column order is ambiguous."
+    },
+    "merged_table": {
+      "expected_route": "hybrid",
+      "primary_metric": "table_fidelity",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["table_border_removal", "header_merge_variation", "unit_row_variation"],
+        "promotion_rule": "promote when markdown or HTML table structure loses merged headers or unit rows"
+      },
+      "expected_challenge": "merged cells, nested headers, and unit rows that stress table reconstruction",
+      "source_type": "synthetic_born_digital_page",
+      "page_count": 2,
+      "language_profile": ["en"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "measurement table with grouped headers and unit row",
+        "layout_features": ["merged_cells", "nested_headers", "unit_rows", "numeric_columns"]
+      },
+      "scoring_targets": ["table_fidelity", "md_json_accuracy", "bbox_preservation", "routing_accuracy"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "caption_then_table_then_notes",
+        "tables": "merged_header_structure_preserved",
+        "image_description": "none",
+        "key_fields": ["table_caption", "column_groups", "unit_row", "body_rows"]
+      },
+      "route_rationale": "Table extraction is deterministic-first, with provider fallback when merged structure cannot be preserved."
+    },
+    "formula_symbols": {
+      "expected_route": "hybrid",
+      "primary_metric": "ocr_contamination",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["symbol_density_variation", "subscript_superscript_variation", "arrow_symbol_variation"],
+        "promotion_rule": "promote when formulas or symbols are substituted with visually similar text"
+      },
+      "expected_challenge": "formulas, subscripts, arrows, and special symbols that can be lost or polluted by OCR",
+      "source_type": "synthetic_born_digital_page",
+      "page_count": 1,
+      "language_profile": ["en", "math"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "short derivation with Greek symbols, arrows, superscripts, and subscripts",
+        "layout_features": ["inline_formulas", "display_equations", "special_symbols"]
+      },
+      "scoring_targets": ["ocr_contamination", "md_json_accuracy", "reading_order", "routing_accuracy"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "paragraph_equation_paragraph",
+        "tables": "none",
+        "image_description": "none",
+        "key_fields": ["equation_tokens", "symbol_tokens", "subscript_superscript_pairs"]
+      },
+      "route_rationale": "Formula-like content needs deterministic text preservation plus provider comparison for symbol loss."
+    },
+    "chart_like_page": {
+      "expected_route": "gemini_vlm",
+      "primary_metric": "image_description",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["chart_label_density_variation", "legend_position_variation", "diagram_overlap_variation"],
+        "promotion_rule": "promote when OCR-only output misses chart trend or diagram relationship"
+      },
+      "expected_challenge": "chart, diagram, or figure explanation where semantic image description matters more than OCR text",
+      "source_type": "synthetic_visual_page",
+      "page_count": 1,
+      "language_profile": ["en"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "small chart with caption, legend, and labeled visual trend",
+        "layout_features": ["chart", "legend", "caption", "figure_labels"]
+      },
+      "scoring_targets": ["image_description", "routing_accuracy", "md_json_accuracy", "cost"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "caption_then_visual_summary_then_notes",
+        "tables": "none",
+        "image_description": "trend_or_relationship_described",
+        "key_fields": ["chart_title", "legend_labels", "main_trend"]
+      },
+      "route_rationale": "This is the primary Gemini fallback family because OCR cannot recover the visual semantics alone."
+    },
+    "text_as_image": {
+      "expected_route": "paddle_ocr",
+      "primary_metric": "text_recovery",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["rasterization", "font_weight_variation", "background_contrast_variation"],
+        "promotion_rule": "promote when text layer absence causes deterministic extraction to return empty or partial text"
+      },
+      "expected_challenge": "image-only text with no embedded text layer that requires OCR recovery",
+      "source_type": "synthetic_raster_text_page",
+      "page_count": 1,
+      "language_profile": ["ko", "en"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "short bilingual notice rendered as pixels only",
+        "layout_features": ["no_text_layer", "raster_text", "moderate_contrast"]
+      },
+      "scoring_targets": ["text_recovery", "ocr_contamination", "routing_accuracy", "bbox_preservation"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "top_to_bottom_single_image_text_block",
+        "tables": "none",
+        "image_description": "none",
+        "key_fields": ["notice_title", "notice_body"]
+      },
+      "route_rationale": "The absence of a text layer should route to OCR before any deterministic text extraction is trusted."
+    },
+    "rotated_scan": {
+      "expected_route": "paddle_ocr",
+      "primary_metric": "routing_accuracy",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["rotation_90_degrees", "rotation_180_degrees", "small_skew_variation"],
+        "promotion_rule": "promote when orientation correction changes OCR recovery or reading order"
+      },
+      "expected_challenge": "rotated or skewed scan-like page that needs orientation classification or unwarping",
+      "source_type": "synthetic_scan_page",
+      "page_count": 1,
+      "language_profile": ["ko"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "single-page Korean form-like text rotated from upright orientation",
+        "layout_features": ["rotated_page", "scan_texture", "orientation_error"]
+      },
+      "scoring_targets": ["routing_accuracy", "reading_order", "text_recovery", "bbox_preservation"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "upright_order_after_orientation_correction",
+        "tables": "optional_key_value_rows",
+        "image_description": "none",
+        "key_fields": ["orientation", "form_title", "field_labels"]
+      },
+      "route_rationale": "Orientation and OCR capability should be observable without requiring private scan files."
+    },
+    "low_quality_scan": {
+      "expected_route": "hybrid",
+      "primary_metric": "confidence_drop",
+      "mutation_strategy": {
+        "baseline": "generated_synthetic",
+        "operations": ["blur_variation", "jpeg_artifact_variation", "resolution_downsample"],
+        "promotion_rule": "promote when confidence, text recovery, or provider disagreement exposes robustness limits"
+      },
+      "expected_challenge": "blurred, artifacted, low-resolution scan-like page that stresses real-world robustness",
+      "source_type": "synthetic_scan_page",
+      "page_count": 2,
+      "language_profile": ["ko", "en"],
+      "generation_recipe": {
+        "artifact_status": "not_generated",
+        "storage_policy": "repo_metadata_only",
+        "content_seed": "mixed-language memo degraded with blur and compression artifacts",
+        "layout_features": ["blur", "jpeg_artifacts", "low_resolution", "faint_text"]
+      },
+      "scoring_targets": ["confidence_drop", "text_recovery", "ocr_contamination", "routing_accuracy", "cost"],
+      "expected_outputs": {
+        "golden_record": "page_level",
+        "reading_order": "top_to_bottom_with_possible_low_confidence_regions",
+        "tables": "none",
+        "image_description": "none",
+        "key_fields": ["visible_title", "recoverable_body", "low_confidence_regions"]
+      },
+      "route_rationale": "Low-quality inputs should expose whether OCR or VLM fallback improves quality enough to justify cost."
+    }
+  }
+}

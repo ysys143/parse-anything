@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "odl-vl"
+version = "0.1.0"
+description = "ODL VLM parsing experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pypdfium2>=4",            # license-clean (BSD/Apache) PDF render + text/bbox/value layer -- §3.1, F17
+    "pdf-inspector>=0.2",      # triage classify (text/scanned) -- §3.4 (diagnosis signal, not authority -- F16)
+    "Pillow>=10",              # image ops: rotate/deskew/crop/encode
+    "numpy>=1.24",             # input-quality gate (laplacian variance) -- quality.py, F14
+    "opendataloader-pdf>=2.4", # ODL structure + clean-text layer (REQUIRES Java 17) -- F17, processing-tiers §2.6
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "reportlab>=4"]   # reportlab: generate tiny PDFs for tests (no committed binaries)
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odl_vl"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = ["-p", "no:html"]

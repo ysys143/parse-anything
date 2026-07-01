@@ -1,0 +1,230 @@
+"""D-1 source diagnostic: pick an execution mode by *measurement*, not per-page guessing.
+
+Processing-tiers §2.5: per-page auto-routing is a false-positive gamble (F16). Instead, run a
+cheap built-in-VLM diagnosis ONCE per source -- sample a few pages, measure how far a VLM
+diverges from the deterministic text layer and whether the source is scanned / structurally
+complex -- and recommend deterministic vs det_vlm with evidence. The chosen mode then runs the
+whole source predictably (no runtime routing). The VLM client is injected (testable).
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .deterministic import page_text
+from .odl_extract import extract as odl_extract
+from .odl_extract import substantial_tables
+from .render import page_count, render_page_png
+
+_SCAN_TEXT_CHARS = 20      # below this, the page has effectively no text layer (scan/image)
+_DIVERGE_TOKEN = 0.30      # mean token divergence above which the VLM materially disagrees (F18)
+_SCAN_FRACTION = 0.25      # sampled-scan fraction above which OCR (VLM) is mandatory
+_TOKEN_RE = re.compile(r"[0-9a-z가-힣]+")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiagnosis:
+    recommended_mode: str          # "deterministic" | "det_vlm"
+    confidence: float              # 0..1
+    n_pages: int
+    n_sampled: int
+    scan_fraction: float
+    mean_token_divergence: float
+    pages_with_tables: int
+    pages_with_figures: int
+    reasons: tuple[str, ...]
+    samples: tuple[dict[str, Any], ...]
+    thresholds: dict[str, float] = field(default_factory=dict)  # the thresholds actually used
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "recommended_mode": self.recommended_mode,
+            "confidence": round(self.confidence, 2),
+            "n_pages": self.n_pages,
+            "n_sampled": self.n_sampled,
+            "scan_fraction": round(self.scan_fraction, 3),
+            "mean_token_divergence": round(self.mean_token_divergence, 3),
+            "pages_with_tables": self.pages_with_tables,
+            "pages_with_figures": self.pages_with_figures,
+            "reasons": list(self.reasons),
+            "thresholds": self.thresholds,
+            "samples": list(self.samples),
+        }
+
+
+def sample_indices(n_pages: int, k: int) -> list[int]:
+    """Evenly spaced page indices (deterministic -- includes first and last)."""
+    if n_pages <= 0:
+        return []
+    if n_pages <= k:
+        return list(range(n_pages))
+    step = (n_pages - 1) / (k - 1) if k > 1 else 0
+    return sorted({round(i * step) for i in range(k)})
+
+
+def _tokens(text: str) -> set[str]:
+    return set(_TOKEN_RE.findall(text.lower()))
+
+
+def token_divergence(a: str, b: str) -> float:
+    """1 - Jaccard over alphanumeric/Hangul tokens. 0 = identical content, 1 = disjoint.
+    Markdown syntax is ignored, so faithful transcription of a born-digital page scores ~0."""
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta and not tb:
+        return 0.0
+    union = ta | tb
+    return 1.0 - (len(ta & tb) / len(union) if union else 0.0)
+
+
+def diagnose_source(
+    pdf_path: str,
+    *,
+    vlm_client: Any,
+    api_key: str = "",
+    sample_size: int = 4,
+    odl_runner: Any | None = None,
+    thresholds: dict[str, float] | None = None,
+) -> SourceDiagnosis:
+    if vlm_client is None:
+        raise ValueError("D-1 diagnosis requires a VLM client (it measures deterministic-vs-VLM divergence)")
+    from .run import DEFAULT_PROMPT
+    from .vlm import VlmError, transcribe_image
+
+    n = page_count(pdf_path)
+    odl_doc = odl_extract(pdf_path, runner=odl_runner)
+    # Structure-aware sampling: even-spaced pages PLUS up to 2 pages ODL shows carry tables/
+    # figures, so the structure signal is actually measured (even sampling can miss sparse
+    # structure -- e.g. a single table page in a 24-page paper).
+    base = sample_indices(n, sample_size)
+    structure_pages = [i for i, pg in enumerate(odl_doc.pages) if substantial_tables(pg) or pg.images]
+    extra = [i for i in structure_pages if i not in base][:2]
+    indices = sorted(set(base) | set(extra))
+
+    samples: list[dict[str, Any]] = []
+    divergences: list[float] = []
+    scans = tables_pages = figures_pages = 0
+    for i in indices:
+        det_text = page_text(pdf_path, i)
+        is_scan = len(det_text.strip()) < _SCAN_TEXT_CHARS
+        odl_page = odl_doc.pages[i] if i < len(odl_doc.pages) else None
+        n_tables = len(substantial_tables(odl_page)) if odl_page else 0
+        n_figures = len(odl_page.images) if odl_page else 0
+        try:
+            vlm_text = transcribe_image(render_page_png(pdf_path, i), DEFAULT_PROMPT, api_key=api_key, client=vlm_client)
+            div: float | None = token_divergence(det_text, vlm_text)
+        except VlmError:
+            div = None  # a failed sample contributes structure/scan signal but no divergence
+        if is_scan:
+            scans += 1
+        if n_tables:
+            tables_pages += 1
+        if n_figures:
+            figures_pages += 1
+        if div is not None:
+            divergences.append(div)
+        samples.append({
+            "page_index": i, "is_scan": is_scan,
+            "token_divergence": round(div, 3) if div is not None else None,
+            "n_tables": n_tables, "n_figures": n_figures,
+        })
+
+    n_sampled = len(indices)
+    scan_fraction = scans / n_sampled if n_sampled else 0.0
+    mean_div = sum(divergences) / len(divergences) if divergences else 0.0
+    # Per-source thresholds (from a calibrated SourceProfile) override the corpus defaults.
+    thr = thresholds or {}
+    scan_threshold = float(thr.get("scan_fraction", _SCAN_FRACTION))
+    div_threshold = float(thr.get("token_divergence", _DIVERGE_TOKEN))
+    mode, confidence, reasons = _recommend(
+        scan_fraction, mean_div, tables_pages, figures_pages, scan_threshold=scan_threshold, div_threshold=div_threshold
+    )
+    return SourceDiagnosis(
+        recommended_mode=mode, confidence=confidence, n_pages=n, n_sampled=n_sampled,
+        scan_fraction=scan_fraction, mean_token_divergence=mean_div,
+        pages_with_tables=tables_pages, pages_with_figures=figures_pages,
+        reasons=reasons, samples=tuple(samples),
+        thresholds={"scan_fraction": scan_threshold, "token_divergence": div_threshold},
+    )
+
+
+def _recommend(scan_fraction: float, mean_div: float, tables_pages: int, figures_pages: int,
+               *, scan_threshold: float = _SCAN_FRACTION, div_threshold: float = _DIVERGE_TOKEN) -> tuple[str, float, tuple[str, ...]]:
+    # Calibrated on real corpora (F18): scan fraction + token divergence discriminate; structure
+    # PRESENCE does not (almost every born-digital doc has a figure/table, yet most are faithfully
+    # captured deterministically -- figures are placeholders either way, tables ODL handles). So
+    # structure is informational, not a mode driver. Thresholds are per-source (SourceProfile).
+    if scan_fraction >= scan_threshold:
+        return "det_vlm", 0.9, (f"scan_fraction={scan_fraction:.2f}: no text layer, OCR needs the VLM",)
+    if mean_div >= div_threshold:
+        return "det_vlm", 0.75, (f"mean_token_divergence={mean_div:.2f}: VLM materially diverges from the text layer",)
+    note = f" (structure present: tables {tables_pages}, figures {figures_pages} sampled pages)" if (tables_pages or figures_pages) else ""
+    return "deterministic", 0.7, (
+        f"born-digital, low divergence ({mean_div:.2f}): deterministic suffices{note}; note token "
+        "divergence cannot see table-structure fidelity -- escalate to D-2 if that matters",
+    )
+
+
+def prepare_bundle(
+    pdf_path: str,
+    out_dir: str | Path,
+    *,
+    sample_size: int = 4,
+    vlm_client: Any | None = None,
+    api_key: str = "",
+    odl_runner: Any | None = None,
+) -> dict[str, Any]:
+    """Write D-2 review material: sample page images + per-sample deterministic text, structure,
+    and (when a VLM client is given) the D-1 divergence -- the bundle a flagship agent reviews by
+    hand to write a SourceProfile (docs/diagnostic-d2.md). The agent IS the oracle position;
+    this only assembles what it looks at."""
+    out = Path(out_dir)
+    (out / "pages").mkdir(parents=True, exist_ok=True)
+    n = page_count(pdf_path)
+    odl_doc = odl_extract(pdf_path, runner=odl_runner)
+    base = sample_indices(n, sample_size)
+    structure_pages = [i for i, pg in enumerate(odl_doc.pages) if substantial_tables(pg) or pg.images]
+    indices = sorted(set(base) | set([i for i in structure_pages if i not in base][:2]))
+
+    samples: list[dict[str, Any]] = []
+    for i in indices:
+        png = render_page_png(pdf_path, i)
+        (out / "pages" / f"page-{i:03d}.png").write_bytes(png)
+        det = page_text(pdf_path, i)
+        odl_page = odl_doc.pages[i] if i < len(odl_doc.pages) else None
+        entry: dict[str, Any] = {
+            "page_index": i,
+            "image": f"pages/page-{i:03d}.png",
+            "deterministic_text": det,
+            "is_scan": len(det.strip()) < _SCAN_TEXT_CHARS,
+            "n_tables": len(substantial_tables(odl_page)) if odl_page else 0,
+            "n_figures": len(odl_page.images) if odl_page else 0,
+        }
+        if vlm_client is not None:
+            from .run import DEFAULT_PROMPT
+            from .vlm import VlmError, transcribe_image
+
+            try:
+                vlm_text = transcribe_image(png, DEFAULT_PROMPT, api_key=api_key, client=vlm_client)
+                entry["vlm_text"] = vlm_text
+                entry["token_divergence"] = round(token_divergence(det, vlm_text), 3)
+            except VlmError:
+                entry["vlm_text"] = None
+        samples.append(entry)
+
+    bundle = {
+        "pdf": str(pdf_path),
+        "n_pages": n,
+        "n_sampled": len(indices),
+        "samples": samples,
+        "instructions": (
+            "See docs/diagnostic-d2.md. Open each page image and compare it to deterministic_text "
+            "(and vlm_text if present); judge whether deterministic extraction is faithful or the "
+            "source needs det_vlm; write a SourceProfile (recommended_mode, confidence, calibrated "
+            "thresholds, reasons)."
+        ),
+    }
+    (out / "bundle.json").write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+    return bundle
