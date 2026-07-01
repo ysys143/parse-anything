@@ -119,6 +119,28 @@ def test_figure_unit_floats_out_of_a_paragraph_it_splits():
     assert "g002 and prospective" not in "\n\n".join(blocks)  # caption keeps its own source, no body glued
 
 
+def test_adjacent_cjk_blocks_are_not_merged():
+    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    # a grid of Korean cards (each a complete label + description, no terminal period) must stay separate:
+    # CJK has no letter case, so a 'lower-case = continuation' signal cannot tell items apart -- two merely
+    # ADJACENT CJK blocks are never merged.
+    md = "로봇개 (Quadruped) 순찰 및 점검 수행 고도화\n\n휴머노이드 (Humanoid) 작업 자동화 극대화"
+    assert _stitch_broken_paragraphs(md) == md
+
+
+def test_cjk_paragraph_split_by_a_figure_is_still_rejoined():
+    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    # but when a figure floats between the two halves of ONE Korean paragraph, that IS a real split -> join
+    md = "\n\n".join([
+        "경계는 다음 값으로 이동한다",                              # Korean head, ends mid-sentence
+        "![Fig 1](f.png)",
+        "**그림 1. 제목.** 캡션. Source: https://doi.org/x.g001",
+        "즉 편향되지 않은 값이 된다.",                              # Korean tail, continues the sentence
+    ])
+    out = _stitch_broken_paragraphs(md)
+    assert "경계는 다음 값으로 이동한다즉 편향되지 않은 값이 된다." in out   # rejoined across the floated figure
+
+
 def test_stitch_never_glues_body_onto_a_figure_unit():
     from odl_vl.pipeline.output import _stitch_broken_paragraphs
     md = "![Fig 3](f.png)\n\n**Fig 3. Title.** caption. Source: https://doi.org/x.g003\n\nand more body text here"

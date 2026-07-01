@@ -312,11 +312,16 @@ def _consolidate_figure_units(markdown: str) -> str:
     return "\n\n".join(result[k] for k in range(len(result)) if k not in remove)
 
 
-def _can_stitch(last: str, first: str) -> bool:
+def _can_stitch(last: str, first: str, *, cjk_ok: bool = True) -> bool:
     """Whether ``first`` continues the paragraph ``last`` was cut off in: ``last`` ends mid-sentence and
     ``first`` opens in lower case. Never fold onto or out of a structural block (heading, image, caption,
     source, list), a display equation, or a URL line -- in particular never fold body text onto a figure
-    unit (which opens with an image and ends in its inline ``Source:`` DOI)."""
+    unit (which opens with an image and ends in its inline ``Source:`` DOI).
+
+    A lower-case opener is a strong 'this is a continuation' signal in Latin scripts; CJK has no case, so
+    every CJK block opens the same way and merging on that alone runs distinct items (a grid of cards, a
+    list) together. ``cjk_ok`` therefore gates CJK merging: it is allowed only where a real split is
+    evident (a figure floats between the halves), not for two merely adjacent CJK blocks."""
     last = last.rstrip()
     first = first.lstrip()
     if not first:
@@ -324,7 +329,7 @@ def _can_stitch(last: str, first: str) -> bool:
     last_line = last.rsplit("\n", 1)[-1]
     fc = first[:1]
     return (
-        (fc.islower() or _is_cjk(fc))
+        (fc.islower() or (cjk_ok and _is_cjk(fc)))
         and last[-1:] not in _PAGE_TERMINATORS
         and "$$" not in last and not last.endswith("$") and not first.startswith("$")
         and not _is_url_continuation(first) and "-->" not in last[-24:]
@@ -373,7 +378,7 @@ def _stitch_broken_paragraphs(markdown: str) -> str:
                 out.extend(blocks[i:j])                  # the figure floats past the finished paragraph
                 i = j + 1
                 continue
-        if out and b.strip() and _can_stitch(out[-1], b):
+        if out and b.strip() and _can_stitch(out[-1], b, cjk_ok=False):  # adjacent blocks: no CJK merging
             out[-1] = _join(out[-1], b)
             i += 1
             continue
