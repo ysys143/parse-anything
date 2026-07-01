@@ -66,3 +66,23 @@ def test_unalignable_page_is_left_untouched():
     vlm = "\n\n".join(["Alpha block content here now", "Beta block content here now",
                        "Gamma block content here now", "Delta block content here now"])
     assert _reorder_by_odl_order(vlm, page).strip() == vlm.strip()
+
+
+def test_align_matches_distinct_odl_blocks_one_to_one():
+    from odl_vl.pipeline.textalign import align_vlm_to_odl, norm_block
+    odl = sorted([(1, norm_block("which defines the stimuli distribution clearly")),
+                  (2, norm_block("which defines the correct answer plainly here")),
+                  (3, norm_block("Header line that anchors everything in place"))])
+    blocks = ["Header line that anchors everything in place",
+              "which defines the stimuli distribution clearly",
+              "which defines the correct answer plainly here"]
+    ms = align_vlm_to_odl(blocks, odl)
+    assert [m.order for m in ms] == [3, 1, 2]  # distinct, siblings do not collide on 1
+
+
+def test_align_leaves_low_prefix_block_unmatched():
+    from odl_vl.pipeline.textalign import align_vlm_to_odl, norm_block
+    odl = [(1, norm_block("We incorporated the deviation into the model somehow"))]
+    blocks = ["We incorporated the deviation into the model somehow", "$$p(S|B) = N(S; B)$$"]
+    ms = align_vlm_to_odl(blocks, odl)
+    assert ms[0].order == 1 and ms[1].order is None

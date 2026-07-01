@@ -21,6 +21,7 @@ from .odl_extract import OdlDocument, OdlPage, OdlTable
 from .odl_extract import extract as odl_extract
 from .render import page_count
 from .run import DocumentResult, PageOutcome
+from .textalign import align_vlm_to_odl, norm_block
 
 ExecutionMode = Literal["deterministic", "det_vlm"]
 
@@ -61,63 +62,33 @@ def _page_markdown(odl_page: OdlPage, tables: list[OdlTable]) -> str:
     return "\n\n".join(md for _, md in items if md and md.strip())
 
 
-def _norm_block(text: str) -> str:
-    """Markdown-stripped, collapsed, lowercased form for aligning a VLM block to an ODL paragraph."""
-    text = re.sub(r"^[#>*\s]+", "", text)       # leading heading/quote/list markers
-    text = re.sub(r"[*_`#>]", "", text)          # inline emphasis / heading marks
-    return " ".join(text.split()).lower()
-
-
-def _common_prefix_len(a: str, b: str) -> int:
-    n = min(len(a), len(b))
-    i = 0
-    while i < n and a[i] == b[i]:
-        i += 1
-    return i
-
-
 def _reorder_by_odl_order(markdown: str, odl_page: OdlPage, *, min_match: float = 0.4) -> str:
     """Re-sequence a det_vlm page's blocks into the PDF's logical reading order (ODL ``p.order`` = the
-    PDF/UA content-stream DFS index). The VLM transcribes a rendered page in VISUAL order, which on a
-    multi-column page (e.g. a journal sidebar beside the body) lands the sidebar mid-article. ODL carries
-    the document's true reading order, so each VLM block is aligned to its ODL paragraph and the blocks
-    are stably re-sorted by that order.
-
-    Matching is ONE-TO-ONE by longest common prefix with consumption: sibling blocks that share an
-    opening ('which defines the …') align to DISTINCT ODL paragraphs instead of all colliding on the
-    first. A block with no confident match (equations the VLM renders as LaTeX, text ODL garbled) is
-    anchored just after its preceding matched block -- so an equation stays interleaved with its
-    surrounding prose. Safety: if too few blocks align, the page is left untouched -- single-column
-    pages (VLM order already == ODL order) and unalignable pages are no-ops."""
+    content-stream DFS index). The VLM transcribes a rendered page in VISUAL order, which on a multi-
+    column page (e.g. a journal sidebar beside the body) lands the sidebar mid-article. ODL carries the
+    document's true reading order, so each VLM block is aligned to its ODL paragraph (``align_vlm_to_odl``)
+    and the blocks are stably re-sorted by that order. A block with no confident match (equations the VLM
+    renders as LaTeX, text ODL garbled) is anchored just after its preceding matched block -- so an
+    equation stays interleaved with its prose. Safety: if too few blocks align, the page is left untouched
+    -- single-column and unalignable pages are no-ops."""
     paras = getattr(odl_page, "paragraphs", ())
     if not paras:
         return markdown
     blocks = re.split(r"\n\s*\n", markdown.strip())
     if len(blocks) < 4:
         return markdown
-    odl_items = sorted(((p.order, _norm_block(p.text)) for p in paras if p.order >= 0), key=lambda x: x[0])
-    consumed: set[int] = set()
+    odl_items = sorted(((p.order, norm_block(p.text)) for p in paras if p.order >= 0), key=lambda x: x[0])
     placed: list[tuple[float, int, str]] = []
     matched, substantive, last = 0, 0, -1.0
-    for i, b in enumerate(blocks):
-        bn = _norm_block(b)
-        if len(bn) >= 8 and not bn.startswith("!["):
+    for m in align_vlm_to_odl(blocks, odl_items):
+        if len(m.norm) >= 8 and not m.norm.startswith("!["):
             substantive += 1
-        best_order, best_lcp = None, 0
-        for order, on in odl_items:                # longest-common-prefix match among UNCONSUMED paras
-            if order in consumed or len(on) < 8:
-                continue
-            lcp = _common_prefix_len(bn, on)
-            if lcp > best_lcp:
-                best_lcp, best_order = lcp, order
-        if best_order is not None and best_lcp >= 10:
-            consumed.add(best_order)
-            last = float(best_order)
+        if m.order is not None:
             matched += 1
-            placed.append((last, i, b))
+            last = float(m.order)
         else:
             last += 1e-3                          # anchor right after the previous matched block
-            placed.append((last, i, b))
+        placed.append((last, m.idx, m.text))
     if substantive == 0 or matched / substantive < min_match:  # not confidently alignable -> leave as-is
         return markdown
     placed.sort(key=lambda x: (x[0], x[1]))        # stable: ties keep original order
