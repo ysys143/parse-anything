@@ -43,3 +43,11 @@ def test_caption_bold_is_normalized_consistently():
     assert _normalize_captions("S1 Fig. Schematic of BMBU. (A) x.").startswith("**S1 Fig. Schematic of BMBU.**")
     # ordinary prose is untouched
     assert _normalize_captions("The figure 2 shows a trend.") == "The figure 2 shows a trend."
+
+
+def test_labels_a_bare_figure_source_doi():
+    from odl_vl.pipeline.output import _label_figure_sources
+    assert _label_figure_sources("https://doi.org/10.1371/journal.pbio.3002373.g007").startswith(
+        "Source: https://doi.org/10.1371/journal.pbio.3002373.g007")
+    # a DOI embedded in prose (not a bare source line) is left untouched
+    assert _label_figure_sources("see https://doi.org/x.g007 here") == "see https://doi.org/x.g007 here"

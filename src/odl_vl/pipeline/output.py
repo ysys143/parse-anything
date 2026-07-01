@@ -23,7 +23,7 @@ from .reflow import _is_cjk, _no_fold_into, _starts_unit, reflow_markdown
 from .run import DocumentResult
 from .sections import _assign_heading_levels, apply_heading_levels, build_sections, strip_page_furniture
 from .structure import build_graph
-from .textalign import norm_block
+from .textalign import common_prefix_len, norm_block
 
 
 def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
@@ -63,13 +63,6 @@ def _snap_past_table(lines: list[str], idx: int) -> int:
     return j
 
 
-def _norm_cap(text: str) -> str:
-    """Markdown-insensitive form: the VLM often renders a caption bold/italic ('**Fig 7…**'), so the
-    emphasis marks must be stripped before comparing against a bound caption, or the same caption is
-    emitted twice."""
-    return " ".join(re.sub(r"[*_`#]", "", text).split()).lower()
-
-
 def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     """Insert ODL figure image references into a page's VLM Markdown at reading-order position.
 
@@ -87,15 +80,17 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
     top_refs: list[str] = []
     end_refs: list[str] = []
     placed: list[tuple[int, str]] = []
-    joined = _norm_cap(markdown)  # markdown-insensitive, so a bold VLM caption still suppresses the recovery
     for fig in sorted(figs, key=lambda f: -f["bbox"][3]):  # top of page first (larger y = higher)
         ref = f'![{fig.get("label") or "figure"}]({fig["file"]})'
         cap, label = (fig.get("caption") or "").strip(), (fig.get("label") or "").strip()
         # Recover a caption the transcription dropped: a full-page figure leaves a page the VLM types as
-        # empty and ODL files under type=caption (so it never reaches the body). Emit the figure's bound
-        # caption ONLY when it really is one (starts with the figure label, so a mis-bound body paragraph
-        # is skipped) AND it is not already in this page's text (so a transcribed caption is not doubled).
-        if cap and label and _norm_cap(cap).startswith(_norm_cap(label)) and _norm_cap(cap)[:40] not in joined:
+        # empty and ODL files it under type=caption (so it never reaches the body). Emit the figure's ODL-
+        # bound caption ONLY when it starts with the figure label (guards an ODL mis-binding) AND the VLM
+        # has not already transcribed it -- presence by longest-common-prefix (the align primitive), robust
+        # to the VLM's bold/italic rendering rather than a brittle fixed-length substring.
+        cap_norm = norm_block(cap)
+        already = any(common_prefix_len(cap_norm, norm_block(ln)) >= 20 for ln in lines if len(ln.strip()) >= 15)
+        if cap and label and cap_norm.startswith(norm_block(label)) and not already:
             ref += "\n\n" + cap
         if fig.get("description"):  # a VLM text description of the chart, as a blockquote under the image
             ref += "\n\n> " + " ".join(fig["description"].split())
@@ -129,6 +124,16 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
 _CAP_LABEL_TITLE = re.compile(
     r"^((?:S\d+\s+(?:Fig|Table)|Fig(?:ure)?\s*\d+|Table\s*\d+|図\s*\d+|表\s*\d+|그림\s*\d+|표\s*\d+)\.?\s+.*?[.．])(\s.*|)$",
     re.IGNORECASE)
+
+
+_FIG_SOURCE = re.compile(r"^(https?://\S+\.g\d+)\s*$")
+
+
+def _label_figure_sources(markdown: str) -> str:
+    """Prefix a bare figure-source DOI line ('https://doi.org/….g007') with 'Source: ' so it reads as
+    the figure's data link, not a stray URL in the body."""
+    return "\n".join(f"Source: {m.group(1)}" if (m := _FIG_SOURCE.match(ln.strip())) else ln
+                      for ln in markdown.split("\n"))
 
 
 def _normalize_captions(markdown: str) -> str:
@@ -303,6 +308,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         odl_norms_by_page = {pi: [norm_block(p.text) for p in paras] for pi, paras in blocks_by_page.items()}
         md_by_index = strip_page_furniture(md_by_index, page_labels, odl_norms_by_page)
     md_by_index = {pi: _normalize_captions(md) for pi, md in md_by_index.items()}  # uniform caption bold
+    md_by_index = {pi: _label_figure_sources(md) for pi, md in md_by_index.items()}  # label figure DOIs
 
     for page_index, name in rendered:
         (pages_dir / name).write_text(md_by_index[page_index], encoding="utf-8")  # per-page keeps the split
