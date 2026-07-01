@@ -136,6 +136,13 @@ def _label_figure_sources(markdown: str) -> str:
                       for ln in markdown.split("\n"))
 
 
+def _escape_currency(markdown: str) -> str:
+    """A literal currency '$' ('$10/h', '$1,000.50') is not a math delimiter -- left unescaped it opens
+    a math span that swallows text (and mis-pairs every '$' downstream) until the next '$'. Escape it,
+    while leaving a real math token whose digits continue into LaTeX ('$5 \\times…$', '$100\\times$')."""
+    return re.sub(r"\$(\d[\d,.]*)(?![\d\s\\^_{])", r"\\$\1", markdown)
+
+
 def _restore_panel_labels(markdown: str) -> str:
     """The VLM sometimes reads a figure panel label '(C)' as the copyright glyph '©'. Restore it to
     '(C)', but keep a genuine copyright notice ('© 2023 …' -- a digit/year follows) untouched."""
@@ -423,7 +430,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         # ODL already filters running headers/footers -> a VLM line matching no ODL block is furniture.
         odl_norms_by_page = {pi: [norm_block(p.text) for p in paras] for pi, paras in blocks_by_page.items()}
         md_by_index = strip_page_furniture(md_by_index, page_labels, odl_norms_by_page)
-    md_by_index = {pi: _restore_panel_labels(_normalize_captions(md)) for pi, md in md_by_index.items()}  # caption bold + (C) glyph
+    md_by_index = {pi: _escape_currency(_restore_panel_labels(_normalize_captions(md)))
+                   for pi, md in md_by_index.items()}  # caption bold + (C) glyph + currency $ escape
     md_by_index = {pi: _label_figure_sources(md) for pi, md in md_by_index.items()}  # label figure DOIs
 
     for page_index, name in rendered:

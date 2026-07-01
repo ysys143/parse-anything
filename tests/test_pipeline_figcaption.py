@@ -58,3 +58,11 @@ def test_restores_misread_panel_label_but_keeps_copyright():
     assert _restore_panel_labels("as in (B) and ©.") == "as in (B) and (C)."
     assert _restore_panel_labels("black cube. © The 3D state") == "black cube. (C) The 3D state"
     assert _restore_panel_labels("**Copyright:** © 2023 Lee et al.") == "**Copyright:** © 2023 Lee et al."
+
+
+def test_escapes_currency_dollar_but_not_math():
+    from odl_vl.pipeline.output import _escape_currency
+    assert _escape_currency("paid $10/h.") == "paid \\$10/h."
+    assert _escape_currency("cost $1,000.50 total") == "cost \\$1,000.50 total"
+    assert _escape_currency("was $5 \\times 2") == "was $5 \\times 2"      # math token kept
+    assert _escape_currency("$B_t$ and $m'_t$") == "$B_t$ and $m'_t$"       # math kept
