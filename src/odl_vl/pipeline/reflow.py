@@ -24,7 +24,7 @@ _STARTS_UNIT = re.compile(
     r"!\[|"                     # image
     r"\[figure\]|"              # figure placeholder
     r"[-*+]\s|"                 # markdown bullet
-    r"\d+[.)]\s|"               # markdown numbered list
+    r"\d+(?:\.\d+)*[.)]\s|"     # numbered / hierarchical list item: '3. ', '3.1. ', '4.2. ' (TOC entries)
     r"[０-９]+[.．｡)）]|"   # fullwidth numbered list  １． ２）
     r"（[0-9０-９]+）|"          # （１） section marker
     r"[①-⑳]|"          # circled numbers ①-⑳

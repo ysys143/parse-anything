@@ -25,6 +25,16 @@ def test_cluster_gap_controls_grouping():
     assert len(_cluster(boxes, gap=20.0)) == 1    # gap bridges them
 
 
+def test_page_sized_cluster_is_a_background_not_a_chart():
+    # a vector cluster covering ~the whole page is a slide / page background (its decorative paths),
+    # not a chart. Detecting it as a figure would crop the whole slide and suppress all its text as
+    # 'chart-internal'. Reject it; a normal chart region (a fraction of the page) is still detected.
+    page_bg = [(0.0, 0.0, 960.0, 540.0)] * 10                    # 10 paths spanning the full slide
+    assert _page_figures(page_bg, [], [], width=960.0, height=540.0) == []
+    chart = [(100.0, 100.0, 400.0, 350.0)] * 10                  # ~24% of the page -> a real chart
+    assert len(_page_figures(chart, [], [], width=960.0, height=540.0)) == 1
+
+
 def test_in_table_excludes_paths_inside_a_table_region():
     table = (50.0, 50.0, 150.0, 150.0)
     assert _in_table((90.0, 90.0, 110.0, 110.0), [table])       # center inside the table

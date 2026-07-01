@@ -66,7 +66,8 @@ def _text_cover(box: BBox, text_blocks: list[BBox]) -> float:
 
 def _page_figures(paths: list[BBox], tables: list[BBox], text_blocks: list[BBox], *,
                   width: float, height: float, min_paths: int = 8, gap: float = 12.0, pad: float = 14.0,
-                  min_area: float = 2500.0, max_text_cover: float = 0.35) -> list[BBox]:
+                  min_area: float = 2500.0, max_text_cover: float = 0.35,
+                  max_area_frac: float = 0.8) -> list[BBox]:
     """Figure bboxes for ONE page (pure -- the testable core). Inputs are path / table / text-block
     bboxes in PDF space (origin bottom-left). Padded output; sorted top-to-bottom."""
     non_table = [b for b in paths if not _in_table(b, tables)]
@@ -80,6 +81,8 @@ def _page_figures(paths: list[BBox], tables: list[BBox], text_blocks: list[BBox]
         x1, y1 = min(width, max(p[2] for p in cluster)), min(height, max(p[3] for p in cluster))
         if (x1 - x0) * (y1 - y0) < min_area:               # hairline / icon -> noise
             continue
+        if (x1 - x0) * (y1 - y0) > width * height * max_area_frac:   # covers ~the whole page: a slide or
+            continue                                                #   page background, not a chart region
         if _text_cover((x0, y0, x1, y1), text_blocks) > max_text_cover:  # a prose region, not a figure
             continue
         figs.append((max(0.0, x0 - pad), max(0.0, y0 - pad), min(width, x1 + pad), min(height, y1 + pad)))

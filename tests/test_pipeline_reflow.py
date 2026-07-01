@@ -40,6 +40,17 @@ def test_circled_number_heading_does_not_absorb_body():
     assert reflow_markdown(md) == "①強み\n我が国の産業は強い。"
 
 
+def test_hierarchical_toc_entries_stay_separate():
+    # a table of contents: each entry ('3.', '3.1.', '3.2.') is its own line, not a wrap continuation,
+    # so they must NOT be folded into one run-on ('...랩온어칩3.1. 현장진단...').
+    md = ("3. 진단기기로서 미세유체공학 기반 랩온어칩\n"
+          "3.1. 현장진단 시험 기기\n"
+          "3.2. 질병 진단, 예후예측")
+    assert reflow_markdown(md) == md
+    # a decimal that is NOT a list marker ('3.5 mm', no trailing dot) still folds as a normal wrap
+    assert reflow_markdown("두께는\n3.5 mm 이다.") == "두께는3.5 mm 이다."
+
+
 def test_label_colon_starts_new_line_but_its_wrap_folds():
     # the real footnote: 備考 / numbered items / 資料 stay separate; each item's wrap folds in.
     md = (
