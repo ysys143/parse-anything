@@ -26,7 +26,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "pytest",
+    "testCommand": "cd /Users/jaesolshin/Documents/GitHub/odl-vl\nuv run --no-sync python -m pytest tests/ -q 2>&1 | tail -2",
     "lintCommand": "ruff check",
     "devCommand": null,
     "scripts": {}
