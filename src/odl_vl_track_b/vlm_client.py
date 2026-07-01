@@ -12,10 +12,12 @@ from typing import Any, Callable, Protocol
 
 from odl_vl.config import load_settings
 from odl_vl.pipeline import paddle_vlm
-from odl_vl.pipeline.vlm import transcribe_image
+from odl_vl.pipeline.vlm import transcribe_image, transcribe_images
 from odl_vl.providers import ProviderHttpClient, SafeTransport, UrllibTransport
 
 Transcriber = Callable[[bytes, str], str]
+# (page_pngs, prompt) -> markdown: all pages of a chunk in ONE request (cross-page table merge).
+MultiTranscriber = Callable[[list[bytes], str], str]
 
 
 class _Settings(Protocol):
@@ -35,6 +37,12 @@ def make_http_client() -> ProviderHttpClient:
 def gemini_transcriber(api_key: str, *, client: Any = None) -> Transcriber:
     cl = client or make_http_client()
     return lambda png, prompt: transcribe_image(png, prompt, api_key=api_key, client=cl)
+
+
+def gemini_multi_transcriber(api_key: str, *, client: Any = None) -> MultiTranscriber:
+    """All chunk pages in ONE Gemini request -> lets the VLM merge a page-spanning table."""
+    cl = client or make_http_client()
+    return lambda pngs, prompt: transcribe_images(pngs, prompt, api_key=api_key, client=cl)
 
 
 def paddle_transcriber(

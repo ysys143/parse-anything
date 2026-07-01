@@ -27,7 +27,12 @@ import pypdfium2 as pdfium
 
 from odl_vl.pipeline.render import render_page_png
 from odl_vl_track_b.docling_out import PageBlock, build_docling_document, build_response
-from odl_vl_track_b.vlm_client import Transcriber, transcriber_from_env
+from odl_vl_track_b.vlm_client import (
+    MultiTranscriber,
+    Transcriber,
+    gemini_multi_transcriber,
+    transcriber_from_env,
+)
 
 logger = logging.getLogger("odl_vl_track_b.proxy")
 
@@ -36,6 +41,15 @@ DEFAULT_PROMPT = (
     "Transcribe this page to clean, faithful GitHub-Flavored Markdown. Preserve reading order, "
     "headings, lists, and tables (use Markdown table syntax). Do NOT invent values or text that "
     "is not visible. Output only the Markdown, no preamble."
+)
+
+# Multi-image (cross-page) prompt: the images are consecutive pages; merge a table that continues
+# across them into ONE Markdown table (header once, rows concatenated in order).
+SPANNING_PROMPT = (
+    "These images are consecutive pages of one document. Transcribe them to clean GFM Markdown. "
+    "If a table continues across pages (same columns, header repeated or omitted on later pages), "
+    "MERGE it into a single Markdown table: emit the header once and concatenate all rows in order. "
+    "Do NOT invent values. Output only the Markdown, no preamble."
 )
 
 # Pre-hook: (pdf_path, page_index_0based, page_png, base_prompt, supplied_md) -> (prompt, flags).
@@ -124,6 +138,7 @@ def convert_pdf(
     hook: PageHook = _identity_hook,
     post_hook: PostHook = _no_post,
     supplied_markdown: str | None = None,
+    multi_transcriber: "MultiTranscriber | None" = None,
 ) -> dict[str, Any]:
     """Render + transcribe the requested pages and build the DoclingDocument envelope.
 
@@ -144,18 +159,33 @@ def convert_pdf(
     try:
         total = _page_count(pdf_path)
         start, end = _parse_range(page_ranges, total)
-        for page_no in range(start, end + 1):
-            idx = page_no - 1
+        if multi_transcriber is not None and end > start:
+            # Cross-page: send the whole chunk in ONE request so the VLM can merge a page-spanning
+            # table into one (vs per-page transcription that fragments it). One block on start page.
             try:
-                png = render_page_png(pdf_path, idx)
-                page_prompt, flags = hook(pdf_path, idx, png, prompt, supplied_markdown)
-                markdown = transcriber(png, page_prompt)
-                flags = flags + post_hook(pdf_path, idx, markdown)
-                width, height = _page_size(pdf_path, idx)
-                blocks.append(PageBlock(page_no, width, height, markdown, flags=flags))
-            except Exception as exc:  # never drop a page silently
-                errors.append(f"Page {page_no}: {type(exc).__name__}")
-                failed.append(page_no)
+                pngs = [render_page_png(pdf_path, pno - 1) for pno in range(start, end + 1)]
+                page_prompt, flags = hook(pdf_path, start - 1, pngs[0], prompt, supplied_markdown)
+                markdown = multi_transcriber(pngs, page_prompt)
+                flags = flags + post_hook(pdf_path, start - 1, markdown)
+                width, height = _page_size(pdf_path, start - 1)
+                blocks.append(PageBlock(start, width, height, markdown, flags=flags))
+            except Exception as exc:
+                for pno in range(start, end + 1):
+                    errors.append(f"Page {pno}: {type(exc).__name__}")
+                    failed.append(pno)
+        else:
+            for page_no in range(start, end + 1):
+                idx = page_no - 1
+                try:
+                    png = render_page_png(pdf_path, idx)
+                    page_prompt, flags = hook(pdf_path, idx, png, prompt, supplied_markdown)
+                    markdown = transcriber(png, page_prompt)
+                    flags = flags + post_hook(pdf_path, idx, markdown)
+                    width, height = _page_size(pdf_path, idx)
+                    blocks.append(PageBlock(page_no, width, height, markdown, flags=flags))
+                except Exception as exc:  # never drop a page silently
+                    errors.append(f"Page {page_no}: {type(exc).__name__}")
+                    failed.append(page_no)
     finally:
         try:
             os.unlink(pdf_path)
@@ -174,6 +204,7 @@ class _Handler(BaseHTTPRequestHandler):
     prompt: str = DEFAULT_PROMPT
     hook: PageHook = staticmethod(_identity_hook)
     post_hook: PostHook = staticmethod(_no_post)
+    multi_transcriber: "MultiTranscriber | None" = None
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - base signature name
         logger.info("%s - %s", self.address_string(), format % args)
@@ -219,6 +250,7 @@ class _Handler(BaseHTTPRequestHandler):
                 transcriber=type(self).transcriber, prompt=type(self).prompt,
                 hook=type(self).hook, post_hook=type(self).post_hook,
                 supplied_markdown=supplied_markdown,
+                multi_transcriber=type(self).multi_transcriber,
             )
             self._send_json(result)
         except Exception as exc:
@@ -235,6 +267,7 @@ def serve(
     prompt: str = DEFAULT_PROMPT,
     hook: PageHook = _identity_hook,
     post_hook: PostHook = _no_post,
+    multi_transcriber: "MultiTranscriber | None" = None,
 ) -> ThreadingHTTPServer:
     """Build (not start) a server bound to host:port with the given transcriber/hook(s)."""
     handler = type("_BoundHandler", (_Handler,), {})
@@ -242,6 +275,7 @@ def serve(
     handler.prompt = prompt
     handler.hook = staticmethod(hook)  # type: ignore[assignment]
     handler.post_hook = staticmethod(post_hook)  # type: ignore[assignment]
+    handler.multi_transcriber = staticmethod(multi_transcriber) if multi_transcriber else None  # type: ignore[assignment]
     return ThreadingHTTPServer((host, port), handler)
 
 
@@ -260,21 +294,34 @@ def main(argv: list[str] | None = None) -> int:
                         help="B-4: only guard numbers >= this value (page numbers / small counts are noise)")
     parser.add_argument("--ignore-supplied", action="store_true",
                         help="B-4 mode: re-parse in proxy even if ODL shipped 1st-pass md (Track C off)")
+    parser.add_argument("--multi-image", action="store_true",
+                        help="cross-page: send a chunk's pages in one request to merge spanning tables (gemini only)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     transcriber = transcriber_from_env(args.provider, doc_preprocess=args.paddle_preprocess)
+    multi = None
+    base_prompt = DEFAULT_PROMPT
+    if args.multi_image:
+        if args.provider != "gemini":
+            raise SystemExit("--multi-image requires --provider gemini (transcribe_images is Gemini)")
+        from odl_vl.config import load_settings
+        multi = gemini_multi_transcriber(load_settings().gemini_api_key)  # type: ignore[arg-type]
+        base_prompt = SPANNING_PROMPT
     if args.det_aug:
         from odl_vl_track_b.det_aug import make_grounding_hook, make_guard_hook
         server = serve(
-            host=args.host, port=args.port, transcriber=transcriber,
+            host=args.host, port=args.port, transcriber=transcriber, prompt=base_prompt,
             hook=make_grounding_hook(use_odl=not args.no_odl_grounding, use_supplied=not args.ignore_supplied),
-            post_hook=make_guard_hook(min_value=args.min_value),
+            post_hook=make_guard_hook(min_value=args.min_value), multi_transcriber=multi,
         )
         variant = "B-4 (re-parse)" if args.ignore_supplied else "Track C (supplied grounding)"
     else:
-        server = serve(host=args.host, port=args.port, transcriber=transcriber)
+        server = serve(host=args.host, port=args.port, transcriber=transcriber, prompt=base_prompt,
+                       multi_transcriber=multi)
         variant = "B-3 (pure VLM)"
+    if args.multi_image:
+        variant += " +multi-image"
     logger.info("%s proxy on http://%s:%d (provider=%s)", variant, args.host, args.port, args.provider)
     try:
         server.serve_forever()
