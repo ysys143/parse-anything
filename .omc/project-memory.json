@@ -225,6 +225,12 @@
       "accessCount": 1,
       "lastAccessed": 1782892399330,
       "type": "file"
+    },
+    {
+      "path": "scripts/pdf_to_markdown.py",
+      "accessCount": 1,
+      "lastAccessed": 1782895015731,
+      "type": "file"
     }
   ],
   "userDirectives": []
