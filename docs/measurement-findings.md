@@ -256,7 +256,8 @@
   | 수정본 | 0.9301 | 0.8735 | 0.8192 |
   **200 docs 문서별 overall까지 완전 동일 → 회귀 0.** 코퍼스가 born-digital 전용(텍스트레이어 없는 전면 스캔 부재)이라 우리 가드(`textChunkCount==0`)가 한 페이지도 안 걸림 = 라우팅 불변 확증. 단 같은 이유로 이 bench는 **개선을 못 보임**(스캔이 없으니) — 개선 증거는 위 국소 대조표.
 - **deterministic bench(참고):** `--check-regression`(200 docs) All thresholds met(NID 0.902/TEDS 0.489/MHS 0.740); triage 미경유 경로라 자명한 무회귀.
-- **upstream 반영:** 이슈 [#619](https://github.com/opendataloader-project/opendataloader-pdf/issues/619) + PR [#620](https://github.com/opendataloader-project/opendataloader-pdf/pull/620) (fork `ysys143:feat/triage-scan-routing`).
+- **upstream 반영:** 이슈 [#619](https://github.com/opendataloader-project/opendataloader-pdf/issues/619) + PR [#620](https://github.com/opendataloader-project/opendataloader-pdf/pull/620) (fork `ysys143:feat/triage-scan-routing`). CLA 보류(indemnification 조항) — 병합 미추진, 코드만 공개.
+- **리뷰 반영(coderabbit):** 최초 가드 `textChunkCount == 0`은 결함 — `textChunkCount`는 **공백-only TextChunk까지 카운트**(OCR/reflow 스캔에 흔함)라, 공백 artifact 있는 스캔은 여전히 JAVA로 떨어져 버그 재발. **`nonWhitespaceTextCount == 0`으로 전환**(TriageSignals 필드/생성자/equals·hashCode·toString 관통). **실증**: 전면 이미지+공백 텍스트 PDF(`wsscan.pdf`)가 구버전 → JAVA, 신버전 → BACKEND. 봇 리뷰가 우리 대조 실험이 못 잡은 실제 결함을 포착한 사례.
 
 ---
 
