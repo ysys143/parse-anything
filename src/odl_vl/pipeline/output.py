@@ -175,15 +175,21 @@ def _is_url_continuation(first: str) -> bool:
 
 _FIG_IMG = re.compile(r"^!\[(Fig(?:ure)?\s*\d+|Table\s*\d+)\]", re.IGNORECASE)
 _SOURCE_LINE = re.compile(r"^Source:\s*https?://")
+_PAGE_MARKER = re.compile(r"^<!-- page[^>]*-->$")
+
+
+def _is_figure_caption(block: str, label: str) -> bool:
+    return re.match(rf"^\*?\*?\s*{re.escape(label)}\.", block.strip(), re.I) is not None
 
 
 def _consolidate_figure_units(markdown: str) -> str:
-    """Regroup each figure into one contiguous unit: image, then its caption (a head above the image
-    and a tail below -- split by the page break -- merged), then its Source line. The pieces already
-    sit in reading order; a multi-page caption just straddles the image. Only fires when a 'Source:'
-    line follows the image within a few blocks (else the figure is left untouched); page markers pulled
-    into a merged caption are dropped. Body is never consumed -- only the head block (when it opens with
-    the figure label) and the blocks up to the Source line are moved."""
+    """Regroup each figure into one contiguous unit: image, then its caption, then its Source line. The
+    pieces already sit in reading order but a multi-page caption straddles the image (a head above, a
+    tail below), and a body paragraph or the caption's second half can land between the image and its
+    caption. Attach the caption to its image in every arrangement -- a split head+tail is merged; a
+    caption found below (even past an interposed body paragraph, which is left to follow the unit) is
+    pulled up. Its Source line is attached when it sits just after the caption (skipping page markers).
+    Body is never consumed: only the caption/tail/source blocks move, never a plain paragraph."""
     blocks = re.split(r"\n\n+", markdown)
     remove: set[int] = set()
     result = list(blocks)
@@ -192,33 +198,57 @@ def _consolidate_figure_units(markdown: str) -> str:
         if not m:
             continue
         label = m.group(1)
-        head = None
-        if i > 0 and (i - 1) not in remove and re.match(rf"^\*?\*?{re.escape(label)}\.", blocks[i - 1].strip(), re.I):
-            head = blocks[i - 1]
+        cap_parts: list[int] = []
+        source: int | None = None
+        if i > 0 and (i - 1) not in remove and _is_figure_caption(blocks[i - 1], label):
+            # split caption: head above the image, continuation tail below until the Source line
+            cap_parts.append(i - 1)
             remove.add(i - 1)
-        tail, source, j = [], None, i + 1
-        while j < len(blocks) and j - i <= 4:
-            bs = blocks[j].strip()
-            if _SOURCE_LINE.match(bs):
-                source = blocks[j]
+            j = i + 1
+            while j < len(blocks) and j - i <= 5 and j not in remove:
+                bs = blocks[j].strip()
+                if _SOURCE_LINE.match(bs):
+                    source = j
+                    remove.add(j)
+                    break
+                if bs.startswith(("![", "#")):
+                    break
+                cap_parts.append(j)
                 remove.add(j)
+                j += 1
+        else:
+            # caption below the image (possibly past an interposed body paragraph): find it by label
+            cap_idx = None
+            for j in range(i + 1, min(len(blocks), i + 7)):
+                if j in remove:
+                    continue
+                if _is_figure_caption(blocks[j], label):
+                    cap_idx = j
+                    break
+                if blocks[j].strip().startswith(("![", "#")):   # next figure / heading -> stop
+                    break
+            if cap_idx is None:                                 # no caption found -> leave figure untouched
+                continue
+            cap_parts.append(cap_idx)
+            remove.add(cap_idx)
+            j = cap_idx + 1                                     # attach the Source line, skipping page markers
+            while j < len(blocks) and j - cap_idx <= 3 and j not in remove:
+                if _PAGE_MARKER.match(blocks[j].strip()):
+                    remove.add(j)
+                    j += 1
+                    continue
+                if _SOURCE_LINE.match(blocks[j].strip()):
+                    source = j
+                    remove.add(j)
                 break
-            if bs.startswith(("![", "#")):        # next figure/heading -> stop, no source for this one
-                break
-            tail.append(j)
-            j += 1
-        if source is None:                         # no source nearby -> leave the tail (never eat body)
-            tail = []
-        cap = " ".join(x.strip() for x in ([head] if head else []) + [blocks[k] for k in tail])
-        cap = re.sub(r"\s*<!-- page[^>]*-->\s*", " ", cap)   # drop page markers merged into the caption
+        cap = " ".join(blocks[k].strip() for k in cap_parts)
+        cap = re.sub(r"\s*<!-- page[^>]*-->\s*", " ", cap)     # drop page markers merged into the caption
         cap = re.sub(r"\s{2,}", " ", cap).strip()
-        for k in tail:
-            remove.add(k)
         unit = b.strip()
         if cap:
             unit += "\n\n" + cap
-        if source:
-            unit += "\n\n" + source.strip()
+        if source is not None:
+            unit += "\n\n" + blocks[source].strip()
         result[i] = unit
     return "\n\n".join(result[k] for k in range(len(result)) if k not in remove)
 
