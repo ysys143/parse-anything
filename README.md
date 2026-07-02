@@ -34,7 +34,7 @@ All run artifacts are git-ignored.
 Requires Python ≥ 3.11 and **Java 17** (for the `opendataloader-pdf` structure layer).
 
 ```bash
-uv pip install -e ".[dev]"     # installs the `parse-anything` command (short alias `pa`)
+uv pip install -e ".[dev]"     # installs the `parse-anything` command (short aliases `parse`, `pa`)
 ```
 
 ```bash

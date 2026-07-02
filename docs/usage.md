@@ -52,7 +52,7 @@ Provider keys live only in a local `.env` (auto-loaded; never commit them). Reco
 ### `parse-anything` — the pipeline
 
 After `uv pip install -e .` (or `pip install parse-anything`), the pipeline is the **`parse-anything`**
-console command (short alias **`pa`**). From a source checkout without an install, the legacy
+console command (short aliases **`parse`**, **`pa`**). From a source checkout without an install, the legacy
 `python scripts/pdf_to_markdown.py …` path still works.
 
 ```
