@@ -218,9 +218,13 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Local agent/runtime state
-.omc/state/
-.omo/boulder.json
+# Local agent/runtime state (oh-my-claudecode / omo / cwf tooling -- machine-local, not project source)
+.omc/
+.omo/
+.cwf/
+
+# Auxiliary git worktrees checked out inside the repo (registered via `git worktree add`, not project source)
+worktree-*/
 
 # ODL-VL orchestrator run artifacts.
 # The orchestrator writes results.jsonl / ledger.jsonl / pages/ into a user-chosen
