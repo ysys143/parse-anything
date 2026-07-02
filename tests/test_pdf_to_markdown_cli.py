@@ -1,24 +1,15 @@
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
-import sys
-from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "pdf_to_markdown.py"
-
 
 def _load_cli():
-    spec = importlib.util.spec_from_file_location("pdf_to_markdown", _SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["pdf_to_markdown"] = module
-    spec.loader.exec_module(module)
-    return module
+    import parse_anything.cli as cli   # the packaged CLI (the `parse-anything` console entry point)
+    return cli
 
 
 def _text_pdf(path) -> str:
