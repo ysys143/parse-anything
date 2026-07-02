@@ -97,8 +97,9 @@ ipython_config.py
 # UV
 #   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-# uv.lock
+#   commonly ignored for libraries. odl-vl ships as a library, and `uv run --with ...` regenerates
+#   this lock ad hoc, so it is ignored (never tracked) to keep it out of feature commits.
+uv.lock
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
