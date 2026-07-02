@@ -61,6 +61,33 @@ uv run --no-sync python scripts/build_viewer.py --dir out/mydocs/<document_id>/
 Writes a self-contained, double-clickable `viewer.html` (semantic nodes / section tree / small-to-big
 chunks / zones + stats / figure gallery + equations & references; KaTeX with a raw-LaTeX fallback).
 
+### Python SDK
+
+Two calls — `run_document` (extract) → `write_outputs` (emit the layered artifacts):
+
+```python
+from parse_anything.pipeline.run import run_document
+from parse_anything.pipeline.output import document_dir, write_outputs
+
+# deterministic: no keys, no network
+result = run_document("doc.pdf", mode="deterministic", source_id="docs")
+out = document_dir("out/", result)
+write_outputs(result, out, pdf_path="doc.pdf")   # ontology=None -> bundled default; chunk=True
+
+# consume the clean view + RAG chunks through the versioned contracts
+import json
+from parse_anything.export import SemanticView, ChunkRecord, CHUNK_CONTRACT, check_compatible
+
+sem = SemanticView.from_dict(json.load(open(out / "document.semantic.json")))
+for line in open(out / "document.chunks.jsonl"):
+    row = json.loads(line)
+    assert check_compatible(row["contract"], CHUNK_CONTRACT)
+    chunk = ChunkRecord.from_dict(row)
+```
+
+For `det_vlm` (VLM client + `GEMINI_API_KEY`), ontology injection, chunk-policy control, the full CLI flag
+table, and the field-level output schema, see **[docs/usage.md](docs/usage.md)**.
+
 ## Modes
 
 The CLI is **diagnose-then-configure**, not per-page runtime routing (auto-routing measured as a
@@ -119,6 +146,7 @@ uv run --with ruff ruff check .                       # lint
 
 ## Design docs
 
+- [Usage](docs/usage.md) — full CLI & SDK reference, output schema, ontology authoring.
 - [Agent-ready schema and chunking](docs/agent-ready-schema-and-chunking.md) — the layered-artifact +
   ontology + small-to-big chunking design.
 - [Export contracts](docs/export-contracts.md) — the versioned Layer-0/1/2 + chunk surfaces.
