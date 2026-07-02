@@ -16,9 +16,9 @@ _SRC = _REPO / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
-from odl_vl.config import load_settings  # noqa: E402
-from odl_vl.pipeline.diagnose import prepare_bundle  # noqa: E402
+from parse_anything.cli_support import Runtime, safe_client  # noqa: E402
+from parse_anything.config import load_settings  # noqa: E402
+from parse_anything.pipeline.diagnose import prepare_bundle  # noqa: E402
 
 
 def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:

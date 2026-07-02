@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.triage import PageSignals, Route, TriagePolicy, decide_route
+from parse_anything.pipeline.triage import PageSignals, Route, TriagePolicy, decide_route
 
 
 def test_no_text_layer_routes_to_scan():

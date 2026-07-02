@@ -30,7 +30,7 @@ run and persistence are tier-agnostic.
 4. **Write the `SourceProfile`** (schema below) to `<bundle>/profile.json`. The run then uses
    `recommended_mode`; persistence (R4.4) stores it for reuse so the source is not re-diagnosed.
 
-## SourceProfile schema (`src/odl_vl/pipeline/profile.py`)
+## SourceProfile schema (`src/parse_anything/pipeline/profile.py`)
 
 ```jsonc
 {

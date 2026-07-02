@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from odl_vl.ir import ProviderName
-from odl_vl.normalizers import (
+from parse_anything.ir import ProviderName
+from parse_anything.normalizers import (
     decode_json_body,
     extract_gemini_text,
     normalize_deterministic,

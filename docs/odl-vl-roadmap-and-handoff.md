@@ -2,7 +2,7 @@
 
 ## Current State
 
-ODL-VL is an early parsing experiment for a deterministic-first PDF parsing pipeline with VLM/OCR escalation. The page-level external-orchestrator scaffold (ODL-like page JSON input) has been **removed and superseded**. A working PDF pipeline now exists under `src/odl_vl/pipeline/` (render, deterministic extraction, per-page processing, value-oracle + scan/quality guards, page-spanning tables, Markdown + ledger output, review/scorecard tooling). It doesn't claim production readiness.
+ODL-VL is an early parsing experiment for a deterministic-first PDF parsing pipeline with VLM/OCR escalation. The page-level external-orchestrator scaffold (ODL-like page JSON input) has been **removed and superseded**. A working PDF pipeline now exists under `src/parse_anything/pipeline/` (render, deterministic extraction, per-page processing, value-oracle + scan/quality guards, page-spanning tables, Markdown + ledger output, review/scorecard tooling). It doesn't claim production readiness.
 
 Real-corpus measurement (F16/F17 in [measurement findings](measurement-findings.md)) redirected the architecture: **runtime per-page auto-routing is a false-positive gamble** (no deterministic structure detector is reliable across document types), so the target is **source-level diagnose-then-configure** with two configured modes (deterministic; deterministic-powered VLM) — see [Processing tiers and domain adaptation](processing-tiers-and-adaptation.md) §2.5–2.6/P7 and [PDF pipeline requirements](pdf-pipeline-requirements.md).
 
@@ -30,7 +30,7 @@ The completed foundation is PaddleOCR official API + Gemini direct common scaffo
 
 Completed pieces include:
 
-- Python package scaffold under `src/odl_vl/`.
+- Python package scaffold under `src/parse_anything/`.
 - Environment contract using `GEMINI_API_KEY`, `PADDLE_API_KEY`, `PADDLE_BASE_URL`, and optional `PADDLE_MODEL` by name only.
 - Provider request builders and offline client seams for Gemini direct and PaddleOCR official API.
 - Internal IR, route selection, and faithful ledger helpers.
@@ -42,7 +42,7 @@ Completed pieces include:
 
 ## Implemented: External Orchestrator (REMOVED, superseded by the PDF pipeline)
 
-> The JSON-input orchestrator (`orchestrator.py`, `orchestrator_input.py`, `router.py`, `ledger.py`, `scripts/odl_vl_orchestrate.py`) was a scaffold and has been **removed**. It is superseded by the PDF pipeline (`src/odl_vl/pipeline/`, `scripts/pdf_to_markdown.py`); see `pdf-pipeline-requirements.md` and `measurement-findings.md`. The shared provider layer and smoke CLI are retained. The description below is historical.
+> The JSON-input orchestrator (`orchestrator.py`, `orchestrator_input.py`, `router.py`, `ledger.py`, `scripts/parse_anything_orchestrate.py`) was a scaffold and has been **removed**. It is superseded by the PDF pipeline (`src/parse_anything/pipeline/`, `scripts/pdf_to_markdown.py`); see `pdf-pipeline-requirements.md` and `measurement-findings.md`. The shared provider layer and smoke CLI are retained. The description below is historical.
 
 Built as a library + CLI slice that takes ODL-like page JSON as input. The input contract represents document id, page id/index, `first_pass_md`, `page_image`, fixture family, routing hints, and optional `intent_prompt`.
 
@@ -92,13 +92,13 @@ Do not commit from this handoff task. Future implementation commits should only 
 ## Start Command
 
 ```bash
-$start-work odl-vl-external-orchestrator
+$start-work parse-anything-external-orchestrator
 ```
 
 ## Source References
 
-- `.omo/plans/odl-vl-parser.md`: completed common scaffold todos 1-6 and final verification.
-- `.omo/plans/odl-vl-external-orchestrator.md`: the external orchestrator plan (implemented).
-- `.omo/drafts/odl-vl-external-orchestrator.md`: decisions to consume ODL-like JSON, use injectable provider calls, keep fixtures metadata-only, and exclude ODL runner, PDF renderer, and provider expansion.
+- `.omo/plans/parse-anything-parser.md`: completed common scaffold todos 1-6 and final verification.
+- `.omo/plans/parse-anything-external-orchestrator.md`: the external orchestrator plan (implemented).
+- `.omo/drafts/parse-anything-external-orchestrator.md`: decisions to consume ODL-like JSON, use injectable provider calls, keep fixtures metadata-only, and exclude ODL runner, PDF renderer, and provider expansion.
 - `docs/vlm-provider-and-fixture-plan.md`: PaddleOCR official API + Gemini direct decision, environment variable names, routing architecture, fixture strategy, and deferred providers.
 - `README.md`: current setup, offline test, dry config, optional smoke, and fixture docs for the common scaffold.

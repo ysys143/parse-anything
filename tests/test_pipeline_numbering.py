@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from odl_vl.pipeline.numbering import classify_numbering
+from parse_anything.pipeline.numbering import classify_numbering
 
 
 @pytest.mark.parametrize("text,rank", [

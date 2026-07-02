@@ -6,8 +6,8 @@ import pytest
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.diagnose import SourceDiagnosis, diagnose_source, prepare_bundle, sample_indices, token_divergence
-from odl_vl.providers import HttpResponse
+from parse_anything.pipeline.diagnose import SourceDiagnosis, diagnose_source, prepare_bundle, sample_indices, token_divergence
+from parse_anything.providers import HttpResponse
 
 
 class _FakeClient:

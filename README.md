@@ -1,4 +1,4 @@
-# odl-vl
+# parse-anything
 
 ODL-VL parsing experiments for evaluating a deterministic parsing front with VLM/OCR provider fallbacks. This repository currently documents and scaffolds the initial development loop; it does not claim production readiness.
 
@@ -59,8 +59,8 @@ python3 -m pytest tests/test_pipeline_*.py tests/test_pdf_to_markdown_cli.py
 These commands inspect provider configuration presence and selected non-secret metadata only. They must not print key values.
 
 ```bash
-python3 scripts/odl_vl_smoke.py --provider gemini --dry-config
-python3 scripts/odl_vl_smoke.py --provider paddle --dry-config
+python3 scripts/parse_anything_smoke.py --provider gemini --dry-config
+python3 scripts/parse_anything_smoke.py --provider paddle --dry-config
 ```
 
 ## Optional Live Smoke Checks
@@ -68,8 +68,8 @@ python3 scripts/odl_vl_smoke.py --provider paddle --dry-config
 Run live smoke checks only when local environment variables are already configured. These commands call external services and may fail because of local auth, provider availability, quota, or network state.
 
 ```bash
-python3 scripts/odl_vl_smoke.py --provider gemini --live
-python3 scripts/odl_vl_smoke.py --provider paddle --live --demo-url https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png
+python3 scripts/parse_anything_smoke.py --provider gemini --live
+python3 scripts/parse_anything_smoke.py --provider paddle --live --demo-url https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png
 ```
 
 The live smoke commands report pass/fail status without printing API keys, signed result URLs, full response bodies, or local `.env` contents.

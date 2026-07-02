@@ -5,10 +5,10 @@ import json
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.docmeta import DocumentMeta
-from odl_vl.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlTable
-from odl_vl.pipeline.output import document_dir, write_outputs
-from odl_vl.pipeline.run import DocumentResult, PageOutcome
+from parse_anything.pipeline.docmeta import DocumentMeta
+from parse_anything.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlTable
+from parse_anything.pipeline.output import document_dir, write_outputs
+from parse_anything.pipeline.run import DocumentResult, PageOutcome
 
 
 def _one_page_pdf(path) -> str:

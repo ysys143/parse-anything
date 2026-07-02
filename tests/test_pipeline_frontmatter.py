@@ -9,7 +9,7 @@ isolated-left-block pages untouched.
 """
 from dataclasses import dataclass
 
-from odl_vl.pipeline.frontmatter import (
+from parse_anything.pipeline.frontmatter import (
     consolidate_front_matter,
     marginal_paragraphs,
 )

@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from fixtures.furniture_cases import FURNITURE_CASES
-from odl_vl.pipeline.sections import strip_page_furniture
-from odl_vl.pipeline.textalign import norm_block
+from parse_anything.pipeline.sections import strip_page_furniture
+from parse_anything.pipeline.textalign import norm_block
 
 
 def _odl_from_case(case):

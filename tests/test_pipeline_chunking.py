@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.ontology import ChunkPolicy
-from odl_vl.pipeline.output import _approx_tokens, _chunk_node_text, build_chunks
+from parse_anything.pipeline.ontology import ChunkPolicy
+from parse_anything.pipeline.output import _approx_tokens, _chunk_node_text, build_chunks
 
 
 def _policy(child_tokens: int = 100) -> ChunkPolicy:

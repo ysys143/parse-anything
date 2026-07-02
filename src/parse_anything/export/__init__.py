@@ -1,7 +1,7 @@
 """Versioned public export contracts (design doc §10).
 
 Two stable, independently-versioned surfaces sit between the parsing/chunking core and any
-downstream consumer, so a future repo split (`odl-vl` core vs `odl-vl[kg]`) is a packaging
+downstream consumer, so a future repo split (`parse-anything` core vs `parse-anything[kg]`) is a packaging
 move, not a rewrite:
 
 - **Structure export** (Layer 0+1) -- the grounded structure graph (identity/provenance +

@@ -3,7 +3,7 @@ from __future__ import annotations
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.docmeta import build_meta, document_id
+from parse_anything.pipeline.docmeta import build_meta, document_id
 
 
 def _pdf(path, line: str) -> str:

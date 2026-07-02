@@ -3,7 +3,7 @@
 > 상태: 설계 제안(계약 아님). ODL-VL 파이프라인이 현재 뱉는 loss-aware `document.json` 위에,
 > **바로 에이전트/RAG에 먹일 수 있는 파생 레이어**와 **런타임 주입형 문서 온톨로지**, 그리고
 > **구조·의미 인지 계층 청킹**을 이 모듈 안에서 함께 산출하기 위한 설계.
-> 적용 범위: `src/odl_vl/pipeline/output.py`, `structure.py`, `sections.py`, `docmeta.py`, `profile.py`가
+> 적용 범위: `src/parse_anything/pipeline/output.py`, `structure.py`, `sections.py`, `docmeta.py`, `profile.py`가
 > 이미 만든 구조 그래프를 입력으로 하는 후속 스테이지, 그리고 그 산출을 LightRAG 등 RAG/그래프 툴에
 > 연결하는 통합 전략(§9)과 리포/패키지 경계(§10).
 >
@@ -468,21 +468,21 @@ Extractor.extract(chunks, schema_hint) -> KG_IR   # 우리 중립 IR로 반환
 근거 — bounded context · 의존성 방향 · 스키마 churn 세 축:
 
 - **churn(지금 분리 반대):** Mode 2 fusion은 구조 그래프(Layer 0/1)에 깊이 접근해야 하는데 그 스키마는 아직
-  빠르게 변한다. 지금 리포를 쪼개면 `odl-kg`가 `odl-vl` 스키마 버전에 pin → **크로스리포 버전 댄스**, 원자적
+  빠르게 변한다. 지금 리포를 쪼개면 `odl-kg`가 `parse-anything` 스키마 버전에 pin → **크로스리포 버전 댄스**, 원자적
   리팩터 불가. **미성숙한 경계의 하드 분리는 가장 아픈 실수.**
 - **의존성(격리 찬성):** Mode 2는 LangChain/GraphRAG/Neo4j 드라이버/엔티티 임베딩을 끌어온다. "그래프 필요없는
-  다수"가 설치하면 안 된다. 방향은 `odl-kg → odl-vl` 단방향(역방향 없음).
+  다수"가 설치하면 안 된다. 방향은 `odl-kg → parse-anything` 단방향(역방향 없음).
 
 **구조:**
 
 ```
-odl-vl (core)            parse + chunk + Mode 1.  lean deps(pypdfium2/ODL/PIL).
+parse-anything (core)            parse + chunk + Mode 1.  lean deps(pypdfium2/ODL/PIL).
                          └ 안정·버전링된 "구조 export 계약" 노출.
-odl-vl[kg] (subpackage)  extractor 포트 + fusion + KG IR.  무거운 deps 여기만. opt-in.
+parse-anything[kg] (subpackage)  extractor 포트 + fusion + KG IR.  무거운 deps 여기만. opt-in.
                          └ core의 공개 export만 import. core는 kg를 절대 모름(import-linter 강제).
 ```
 
-- `pip install odl-vl`(가벼움) vs `pip install odl-vl[kg]`(무거움) — **extras가 리포 분리 없이 의존성 격리를 준다**
+- `pip install parse-anything`(가벼움) vs `pip install parse-anything[kg]`(무거움) — **extras가 리포 분리 없이 의존성 격리를 준다**
   ("지금 분리"의 최강 논거를 상쇄).
 - **#3197 BaseExternalParser 플러그인도 lean core에만 의존**해야 하니 Mode 2를 core 밖에 두는 또 하나의 이유.
 
@@ -514,7 +514,7 @@ odl-vl[kg] (subpackage)  extractor 포트 + fusion + KG IR.  무거운 deps 여�
   측정 뒤로 유예 — "측정 없는 정교화 동결". 계약 코어(§10)는 측정의 인프라이자 seam이라 유예 대상 아님.
 - **LightRAG**: delegate-not-wrap. 공개 표면(`ainsert` 텍스트 > `custom_kg` > 내부)만 추종. extractor-plug 아님(용접).
   `custom_kg`는 구조 시딩 보조로만. 메타 천장은 A/B 동일.
-- **패키지**: `odl-vl` core(lean) + `odl-vl[kg]`(무거움, opt-in), 단방향 import 강제. 두 export 계약 public·버전링.
+- **패키지**: `parse-anything` core(lean) + `parse-anything[kg]`(무거움, opt-in), 단방향 import 강제. 두 export 계약 public·버전링.
   리포 분리는 계약 안정 후.
 
 ### 참고 (LightRAG 조사 출처)

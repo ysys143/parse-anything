@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a self-contained, dependency-free HTML viewer for an odl-vl conversion output dir.
+"""Build a self-contained, dependency-free HTML viewer for an parse-anything conversion output dir.
 
 Reads one conversion output directory (``document.semantic.json`` + ``document.chunks.jsonl``
 required, ``document.provenance.json`` optional) and writes a single ``viewer.html`` INTO the
@@ -102,7 +102,7 @@ def build(out_dir: Path, out_name: str) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Build a self-contained HTML viewer for an odl-vl output dir.")
+    ap = argparse.ArgumentParser(description="Build a self-contained HTML viewer for an parse-anything output dir.")
     ap.add_argument("--dir", required=True, help="conversion output directory (contains document.semantic.json)")
     ap.add_argument("--out", default="viewer.html", help="output filename written INTO --dir (default: viewer.html)")
     args = ap.parse_args(argv)
@@ -125,7 +125,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>odl-vl viewer</title>
+<title>parse-anything viewer</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
       integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"

@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from odl_vl.ir import NormalizedPage, ProviderName
+from parse_anything.ir import NormalizedPage, ProviderName
 
 
 def decode_json_body(body: bytes | str) -> Any:

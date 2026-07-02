@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from odl_vl.export import (
+from parse_anything.export import (
     PROVENANCE_CONTRACT,
     SEMANTIC_CONTRACT,
     STRUCTURE_CONTRACT,
@@ -19,10 +19,10 @@ from odl_vl.export import (
     StructureExport,
     contract_tag,
 )
-from odl_vl.pipeline.docmeta import DocumentMeta
-from odl_vl.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlParagraph, OdlTable
-from odl_vl.pipeline.output import document_dir, write_outputs
-from odl_vl.pipeline.run import DocumentResult, PageOutcome
+from parse_anything.pipeline.docmeta import DocumentMeta
+from parse_anything.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlParagraph, OdlTable
+from parse_anything.pipeline.output import document_dir, write_outputs
+from parse_anything.pipeline.run import DocumentResult, PageOutcome
 
 
 def _emit(tmp_path):

@@ -74,7 +74,7 @@ def test_cli_skips_already_processed_unless_forced(tmp_path):
 
 
 def test_cli_use_profile_skips_diagnosis(tmp_path):
-    from odl_vl.pipeline.profile import SourceProfile, save_profile
+    from parse_anything.pipeline.profile import SourceProfile, save_profile
 
     cli = _load_cli()
     pdf = _text_pdf(tmp_path / "doc.pdf")

@@ -3,8 +3,8 @@ from __future__ import annotations
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.review import build_review_html, write_review
-from odl_vl.pipeline.run import DocumentResult, PageOutcome
+from parse_anything.pipeline.review import build_review_html, write_review
+from parse_anything.pipeline.run import DocumentResult, PageOutcome
 
 
 def _two_page_pdf(path) -> str:

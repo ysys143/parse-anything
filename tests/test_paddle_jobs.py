@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from itertools import count
 
-from odl_vl.jsonsearch import find_first_string
-from odl_vl.paddle_jobs import (
+from parse_anything.jsonsearch import find_first_string
+from parse_anything.paddle_jobs import (
     classify_status,
     extract_job_id,
     extract_status,
     find_result_json_url,
     poll_job,
 )
-from odl_vl.providers import HttpResponse
+from parse_anything.providers import HttpResponse
 
 
 def test_find_first_string_walks_nested_and_optionally_strips():
@@ -77,7 +77,7 @@ class _ListTransport:
 
 
 def _client(responses):
-    from odl_vl.providers import ProviderHttpClient
+    from parse_anything.providers import ProviderHttpClient
 
     return ProviderHttpClient(_ListTransport(responses))
 

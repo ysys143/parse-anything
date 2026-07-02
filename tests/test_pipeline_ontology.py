@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from odl_vl.pipeline.ontology import compute_font_ranks, load_ontology, tag_nodes
-from odl_vl.pipeline.sections import _assign_heading_levels, build_sections
+from parse_anything.pipeline.ontology import compute_font_ranks, load_ontology, tag_nodes
+from parse_anything.pipeline.sections import _assign_heading_levels, build_sections
 
 _ONTOLOGY_DIR = Path(__file__).resolve().parents[1] / "ontology"
 
@@ -120,7 +120,7 @@ def test_unnumbered_headings_are_admitted_only_with_the_ontology():
 def test_unnumbered_headings_nest_by_document_outline_authority():
     # when the document declares its own hierarchy (a PDF outline / printed TOC), unnumbered headings are
     # nested by THAT authority (reliable), not by font. Without an authority they stay flat (level 1).
-    from odl_vl.pipeline.outline import HeadingAuthority, OutlineEntry
+    from parse_anything.pipeline.outline import HeadingAuthority, OutlineEntry
     blocks = [
         {"id": "h1", "type": "heading", "page": 1, "order": 1, "text": "Introduction", "font_size": 13.0},
         {"id": "p1", "type": "paragraph", "page": 1, "order": 2, "text": _BODY, "font_size": 10.0},
@@ -223,13 +223,13 @@ def test_prose_admission_vetoes_equations_symbols_and_chart_labels():
 
 
 def test_bare_paren_number_is_never_a_section_heading():
-    from odl_vl.pipeline.sections import _is_prose_not_heading
+    from parse_anything.pipeline.sections import _is_prose_not_heading
     assert _is_prose_not_heading("(2020).") and _is_prose_not_heading("(13)")   # citation year / eq number
     assert not _is_prose_not_heading("(2) Results follow from the fitted model")  # a real numbered heading is fine
 
 
 def test_build_semantic_separates_geometry_into_a_provenance_sidecar():
-    from odl_vl.pipeline.output import _build_semantic
+    from parse_anything.pipeline.output import _build_semantic
     onto = _load()
     blocks = [
         {"id": "t1", "role": "title", "zone": "cover", "type": "heading", "text": "A Title",

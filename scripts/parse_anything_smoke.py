@@ -15,11 +15,11 @@ _SRC_ROOT: Final = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
-from odl_vl.config import Settings, load_settings  # noqa: E402
-from odl_vl.normalizers import extract_gemini_text, try_decode_json  # noqa: E402
-from odl_vl.paddle_jobs import poll_job, submit_job  # noqa: E402
-from odl_vl.providers import (  # noqa: E402
+from parse_anything.cli_support import Runtime, safe_client  # noqa: E402
+from parse_anything.config import Settings, load_settings  # noqa: E402
+from parse_anything.normalizers import extract_gemini_text, try_decode_json  # noqa: E402
+from parse_anything.paddle_jobs import poll_job, submit_job  # noqa: E402
+from parse_anything.providers import (  # noqa: E402
     DEFAULT_GEMINI_MODEL,
     DEFAULT_PADDLE_MODEL,
     GEMINI_BASE_URL,

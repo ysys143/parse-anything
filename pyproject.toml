@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "odl-vl"
+name = "parse-anything"
 version = "0.1.0"
 description = "ODL VLM parsing experiments"
 readme = "README.md"
@@ -19,12 +19,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "reportlab>=4"]   # reportlab: generate tiny PDFs for tests (no committed binaries)
 # Mode 2 (our KG output) seam -- design doc §10. Heavy extractor/graph deps live behind this
-# extra so the lean parsing core (`pip install odl-vl`) never pulls them. Populated when the
+# extra so the lean parsing core (`pip install parse-anything`) never pulls them. Populated when the
 # Extractor port lands (LangChain LLMGraphTransformer / GraphRAG / graph store drivers).
 kg = []
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/odl_vl"]
+packages = ["src/parse_anything"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

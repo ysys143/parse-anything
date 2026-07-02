@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.odl_extract import _FIGURE_LABEL_RE, _TABLE_LABEL_RE, parse_document
+from parse_anything.pipeline.odl_extract import _FIGURE_LABEL_RE, _TABLE_LABEL_RE, parse_document
 
 
 def test_label_regex_handles_japanese_marks_and_unicode_dashes():

@@ -5,8 +5,8 @@ import json
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.run import DocumentResult, run_document
-from odl_vl.providers import HttpResponse
+from parse_anything.pipeline.run import DocumentResult, run_document
+from parse_anything.providers import HttpResponse
 
 
 class _FakeClient:

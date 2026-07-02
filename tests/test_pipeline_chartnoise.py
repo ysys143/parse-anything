@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.odl_extract import OdlParagraph
-from odl_vl.pipeline.output import (
+from parse_anything.pipeline.odl_extract import OdlParagraph
+from parse_anything.pipeline.output import (
     _KEEP_IN_FIG, _chart_internal_noise, _mark_chart_label_blocks, _suppress_chart_noise,
 )
 

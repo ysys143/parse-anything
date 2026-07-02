@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from odl_vl.pipeline.ontology import load_ontology
-from odl_vl.pipeline.output import (_build_semantic, _display_equations_by_page, _zones_summary)
+from parse_anything.pipeline.ontology import load_ontology
+from parse_anything.pipeline.output import (_build_semantic, _display_equations_by_page, _zones_summary)
 
 _ONTOLOGY_DIR = Path(__file__).resolve().parents[1] / "ontology"
 _ONTO = load_ontology("default", _ONTOLOGY_DIR)

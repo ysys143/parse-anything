@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from fixtures.heading_cases import HEADING_CASES
-from odl_vl.pipeline.numbering import classify_numbering
-from odl_vl.pipeline.sections import _CAPTION_LEAD, _is_list_not_heading, _is_prose_not_heading
+from parse_anything.pipeline.numbering import classify_numbering
+from parse_anything.pipeline.sections import _CAPTION_LEAD, _is_list_not_heading, _is_prose_not_heading
 
 
 def _detects_as_heading(text: str) -> bool:

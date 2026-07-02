@@ -1,13 +1,13 @@
 # Export Contracts (Layer 2 chunks · Layer 0+1 structure)
 
 > 상태: 계약 스펙. `agent-ready-schema-and-chunking.md` §10의 "두 export surface를 public·버전링으로
-> 못 박기"를 구현한다. 코드의 authoritative 정의는 `src/odl_vl/export/contracts.py`이고, 이 문서는 그
+> 못 박기"를 구현한다. 코드의 authoritative 정의는 `src/parse_anything/export/contracts.py`이고, 이 문서는 그
 > 필드/버전/안정성 정책을 기술한다. `tests/test_export_contracts.py`가 둘의 동기화를 강제한다.
 
 ## 왜 계약인가
 
 파싱/청킹 코어와 다운스트림 소비자 사이에 **두 개의 안정·독립 버전링 surface**를 둔다. 그러면 미래의
-리포 분리(`odl-vl` core ↔ `odl-vl[kg]`)가 **리라이트가 아니라 packaging 작업**이 된다(§10).
+리포 분리(`parse-anything` core ↔ `parse-anything[kg]`)가 **리라이트가 아니라 packaging 작업**이 된다(§10).
 
 - **Structure export (Layer 0+1)** — grounded 구조 그래프. **Mode 2(우리 KG 빌더)** 와 그래프 툴이 소비.
   기존 `document.json` + Layer 1 `roles` 오버레이의 상위집합.
@@ -19,15 +19,15 @@
 - **소비자는 미지의 필드를 무시해야 한다**(forward-compat). `from_dict`가 이를 강제한다(unknown key drop).
 - **생산자는 `None` optional을 생략**한다(`document.json`의 compact 스타일과 일치).
 - 모든 payload는 `contract` 태그(`{name, version}`)를 싣는다. 소비자는 `check_compatible`로 **MAJOR** 게이팅.
-- 현 버전: `odl-vl.structure` = **1.1**, `odl-vl.chunks` = **1.1**, `odl-vl.semantic` = **1.0**,
-  `odl-vl.provenance` = **1.0**.
+- 현 버전: `parse-anything.structure` = **1.1**, `parse-anything.chunks` = **1.1**, `parse-anything.semantic` = **1.0**,
+  `parse-anything.provenance` = **1.0**.
   - **v1.1 델타**(PR #3×#4 통합): `StructureExport`에 `@context`·`zones[]` 추가(additive→MINOR);
     `ChunkRecord`를 small-to-big parent/child 모델로 확장(`level/children/prev/next/is_continuation/
     display_text/embedding_text/tokenizer/node_types/zone` 추가, `text`는 legacy alias로 optional 유지).
     Layer 2 clean 투영과 그 geometry 사이드카를 위해 `SemanticView`·`Provenance`를 신규 추가.
 
 ```python
-from odl_vl.export import STRUCTURE_CONTRACT, check_compatible
+from parse_anything.export import STRUCTURE_CONTRACT, check_compatible
 assert check_compatible(payload["contract"], STRUCTURE_CONTRACT)  # 같은 name + 같은 major
 ```
 
@@ -44,7 +44,7 @@ assert check_compatible(payload["contract"], STRUCTURE_CONTRACT)  # 같은 name 
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `contract` | `{name, version}` | `odl-vl.structure` / `1.1` |
+| `contract` | `{name, version}` | `parse-anything.structure` / `1.1` |
 | `@context` | object \| null | JSON-LD `@context`(portable IR, v1.1). 없으면 생략 |
 | `document_id`, `content_sha256`, `n_pages`, `mode`, … | — | flat identity(`DocumentMeta.to_dict()`를 top-level로 펼침) |
 | `ontology` | `{profile, version}` \| null | 주입된 온톨로지(§2.4). 미분류면 null |
@@ -78,11 +78,11 @@ assert check_compatible(payload["contract"], STRUCTURE_CONTRACT)  # 같은 name 
 geometry(bbox/order/font_size/regions/cell bbox)는 제거되어 동반 `document.provenance.json`으로 강등된다.
 파이프라인은 이 두 파일을 각각 `SemanticView`·`Provenance`의 `.to_dict()`로 직렬화한다(§5 producer-backed).
 
-**`SemanticView`** (`odl-vl.semantic` / `1.0`) — 최상위는 flat identity(Layer 0과 정렬)를 펼치고 봉투 필드를 싣는다:
+**`SemanticView`** (`parse-anything.semantic` / `1.0`) — 최상위는 flat identity(Layer 0과 정렬)를 펼치고 봉투 필드를 싣는다:
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `contract` | `{name, version}` | `odl-vl.semantic` / `1.0` |
+| `contract` | `{name, version}` | `parse-anything.semantic` / `1.0` |
 | `document_id`, `content_sha256`, `n_pages`, `mode`, … | — | flat identity(`document`에서 펼침) |
 | `@context` | object \| null | JSON-LD `@context` |
 | `profile` | object \| null | 주입된 온톨로지 프로파일 스탬프 |
@@ -92,11 +92,11 @@ geometry(bbox/order/font_size/regions/cell bbox)는 제거되어 동반 `documen
 | `sections` | object[] | heading 트리(`id/heading/level/zone/heading_ref/parent/children/content`) |
 | `reading_order` | id[] | 평면 reading-order 노드 id 스트림 |
 
-**`Provenance`** (`odl-vl.provenance` / `1.0`) — geometry 사이드카. `SemanticView`/`StructureExport`와 **노드 id로 조인**:
+**`Provenance`** (`parse-anything.provenance` / `1.0`) — geometry 사이드카. `SemanticView`/`StructureExport`와 **노드 id로 조인**:
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `contract` | `{name, version}` | `odl-vl.provenance` / `1.0` |
+| `contract` | `{name, version}` | `parse-anything.provenance` / `1.0` |
 | `profile` | object \| null | 온톨로지 프로파일 스탬프 |
 | `prov` | `{node_id: {page?, order?, bbox?, font_size?, regions?, cell_boxes?}}` | 노드별 geometry |
 

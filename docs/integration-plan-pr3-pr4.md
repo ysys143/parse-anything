@@ -1,7 +1,7 @@
 # Integration Plan — PR #3 (contract) × PR #4 (implementation)
 
 > 상태: 실행 플랜. 같은 설계(`agent-ready-schema-and-chunking.md`)에서 갈라진 두 PR을 하나로 수렴시킨다.
-> - **PR #3** (`claude/document-schema-design-0a9yc8`): 버전드 계약 레이어 `src/odl_vl/export/` — producer 없음.
+> - **PR #3** (`claude/document-schema-design-0a9yc8`): 버전드 계약 레이어 `src/parse_anything/export/` — producer 없음.
 > - **PR #4** (`feat/agent-ready-schema-chunking`): 파이프라인 emission — `ontology.py`, `output.py` 배선,
 >   `ontology/{default,paper}.md`, `document.semantic.json`/`provenance.json`/`chunks.jsonl` 산출, 434 통과.
 
@@ -42,7 +42,7 @@ Layer 2  document.semantic.json   clean 투영: role 인라인 해소, geometry 
 Chunks   document.chunks.jsonl     parent(섹션)/child(token-pack, atomic whole) + embedding_text/prev/next.
 ```
 
-계약(`src/odl_vl/export/`)은 위 각 표면을 **버전드 타입으로 덮고**, emission이 그 타입을 통해 직렬화한다
+계약(`src/parse_anything/export/`)은 위 각 표면을 **버전드 타입으로 덮고**, emission이 그 타입을 통해 직렬화한다
 (`document.json`만은 무손실 원본이라 hand-built로 두고, 타입드 뷰는 `document.structure.json`으로 병행 emit).
 
 ## 3. Divergence 판정 → 구체 목표
@@ -69,12 +69,12 @@ Chunks   document.chunks.jsonl     parent(섹션)/child(token-pack, atomic whole
 - 조치: 계약 `ChunkRecord`를 이 모델로 확장. `source_refs:{nodes,pages}`는 `node_ids+page_span`을 포괄하는
   더 나은 추상이라 **이름은 계약 쪽 유지**, 값은 PR #4 데이터로 채움.
 
-## 4. 계약 v1.1 델타 (`src/odl_vl/export/contracts.py`)
+## 4. 계약 v1.1 델타 (`src/parse_anything/export/contracts.py`)
 
-- **신규 `SemanticView`** (Layer 2, `odl-vl.semantic` 1.0): `context`(@context), `metadata`(title 등),
+- **신규 `SemanticView`** (Layer 2, `parse-anything.semantic` 1.0): `context`(@context), `metadata`(title 등),
   `zones[]`, `nodes[]`(role 인라인·geometry 없음: id/type/role/text/latex?/caption_of?/…), `sections[]`(트리),
   `reading_order[]`. `semantic.json`의 계약.
-- **신규 `Provenance`** (사이드카, `odl-vl.provenance` 1.0): `{node_id: {bbox, order, font_size, regions?,
+- **신규 `Provenance`** (사이드카, `parse-anything.provenance` 1.0): `{node_id: {bbox, order, font_size, regions?,
   cell_boxes?}}`. `provenance.json`의 계약. node id로 `SemanticView`/`StructureExport`와 join.
 - **`StructureExport` 확장(→1.1)**: `context`, `zones[]` 추가. `roles` overlay 유지. 나머지 하위호환.
 - **`ChunkRecord` 확장(→1.1)**: `level`(parent|child), `children[]`, `prev`/`next`, `is_continuation`,
@@ -82,7 +82,7 @@ Chunks   document.chunks.jsonl     parent(섹션)/child(token-pack, atomic whole
   node_ids+page_span). `atomic`/`role`/`heading_path`/`parent_id`/`meta` 유지.
 - 전방호환·compact·버전 태그·`check_compatible`는 그대로(추가 필드는 MINOR).
 
-## 5. Emission 배선 (`src/odl_vl/pipeline/output.py`)
+## 5. Emission 배선 (`src/parse_anything/pipeline/output.py`)
 
 - output.py의 ad-hoc dict 생성 대신, `export.contracts`의 타입을 만들어 `.to_dict()`로 직렬화한다:
   - 구조 그래프 → `StructureExport(...).to_dict()` → (선택) `document.structure.json` 또는 기존 document.json 정합
@@ -106,7 +106,7 @@ Chunks   document.chunks.jsonl     parent(섹션)/child(token-pack, atomic whole
 
 병렬 머지 시 "불일치하는 두 스키마 정의 공존" → 금지.
 
-1. **PR #4를 통합 브랜치로.** `src/odl_vl/export/`(계약)를 PR #4 브랜치로 가져온다(cherry-pick 또는 병합).
+1. **PR #4를 통합 브랜치로.** `src/parse_anything/export/`(계약)를 PR #4 브랜치로 가져온다(cherry-pick 또는 병합).
 2. §4 계약 v1.1 델타 적용 + §5 emission 배선(output.py가 계약 타입으로 직렬화).
 3. §3-① byte-compat 위반 수정(Layer 0에서 role/zone 제거).
 4. §6 이름 통일.
@@ -130,7 +130,7 @@ Chunks   document.chunks.jsonl     parent(섹션)/child(token-pack, atomic whole
 ## 9. 열린 결정 (통합 시)
 
 1. **[해결]** Layer 0 표면: `document.json`(loss-aware raw SoT, hand-built) **유지** + `document.structure.json`
-   **신설**(`StructureExport.from_dict(doc).to_dict()`, 계약 `odl-vl.structure` 1.1). raw는 무손실로 두고
+   **신설**(`StructureExport.from_dict(doc).to_dict()`, 계약 `parse-anything.structure` 1.1). raw는 무손실로 두고
    타입드·버전드 뷰를 별도 파일로 제공(옵션 C). `StructureExport`는 식별자를 top-level로 펼치는 **평면**으로
    정렬(`SemanticView`/`document.json`과 동형).
 2. **[해결→독립 유지]** `SemanticView`/`Provenance`는 **독립 버전**(각 1.0), `StructureExport`/`ChunkRecord`는

@@ -12,7 +12,7 @@ import time
 import uuid
 from typing import Any, Callable
 
-from odl_vl.providers import HttpRequest, _join_url, _paddle_jobs_url, is_success_status
+from parse_anything.providers import HttpRequest, _join_url, _paddle_jobs_url, is_success_status
 
 _DEFAULT_MODEL = "PaddleOCR-VL-1.6"
 _OPTIONAL_PAYLOAD = {"useDocOrientationClassify": False, "useDocUnwarping": False, "useChartRecognition": False}

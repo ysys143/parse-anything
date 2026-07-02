@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.sections import (_AUTHOR_AFFIL, _is_list_not_heading, _is_prose_not_heading,
+from parse_anything.pipeline.sections import (_AUTHOR_AFFIL, _is_list_not_heading, _is_prose_not_heading,
                                       _looks_like_equation)
 
 
@@ -44,8 +44,8 @@ def test_author_affiliation_marker():
 
 
 def test_numbered_heading_levels_are_overridden_by_the_outline_authority():
-    from odl_vl.pipeline.outline import HeadingAuthority, OutlineEntry
-    from odl_vl.pipeline.sections import _assign_heading_levels
+    from parse_anything.pipeline.outline import HeadingAuthority, OutlineEntry
+    from parse_anything.pipeline.sections import _assign_heading_levels
     blocks = [
         {"id": "h1", "type": "heading", "page": 1, "order": 1, "text": "1 Introduction"},
         {"id": "h2", "type": "heading", "page": 1, "order": 2, "text": "1.1 Background"},
@@ -60,8 +60,8 @@ def test_numbered_heading_levels_are_overridden_by_the_outline_authority():
 
 def test_authority_override_pops_deeper_open_sections():
     # a heading that returns to a shallower authority level must pop the deeper open frames off the stack.
-    from odl_vl.pipeline.outline import HeadingAuthority, OutlineEntry
-    from odl_vl.pipeline.sections import _assign_heading_levels
+    from parse_anything.pipeline.outline import HeadingAuthority, OutlineEntry
+    from parse_anything.pipeline.sections import _assign_heading_levels
     blocks = [
         {"id": "a", "type": "heading", "page": 1, "order": 1, "text": "1 Alpha"},
         {"id": "b", "type": "heading", "page": 1, "order": 2, "text": "1.1 Beta"},
@@ -77,8 +77,8 @@ def test_authority_override_pops_deeper_open_sections():
 
 
 def test_authority_level_skips_entries_with_empty_titles():
-    from odl_vl.pipeline.outline import HeadingAuthority, OutlineEntry
-    from odl_vl.pipeline.sections import _authority_level
+    from parse_anything.pipeline.outline import HeadingAuthority, OutlineEntry
+    from parse_anything.pipeline.sections import _authority_level
     auth = HeadingAuthority(entries=[
         OutlineEntry("", 1, None, 0, "pdf_outline"),           # empty title -> skipped
         OutlineEntry("Methods", 2, None, 0, "pdf_outline"),
@@ -87,7 +87,7 @@ def test_authority_level_skips_entries_with_empty_titles():
 
 
 def test_apply_heading_levels_renders_numbered_and_demotes_enumerated_runs():
-    from odl_vl.pipeline.sections import apply_heading_levels
+    from parse_anything.pipeline.sections import apply_heading_levels
     md = "1. Introduction\n\nSome body sentence here.\n\n① first item\n② second item"
     out = apply_heading_levels(md)
     lines = out.split("\n")

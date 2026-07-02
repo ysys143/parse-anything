@@ -4,9 +4,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final, Literal
 
-from odl_vl.jsonsearch import find_first_scalar, find_first_string
-from odl_vl.normalizers import try_decode_json
-from odl_vl.providers import HttpRequest, HttpResponse, ProviderHttpClient, is_success_status
+from parse_anything.jsonsearch import find_first_scalar, find_first_string
+from parse_anything.normalizers import try_decode_json
+from parse_anything.providers import HttpRequest, HttpResponse, ProviderHttpClient, is_success_status
 
 
 COMPLETE_STATUSES: Final = frozenset({"done", "completed", "complete", "success", "succeeded", "finished"})

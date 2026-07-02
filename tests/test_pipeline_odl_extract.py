@@ -4,7 +4,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 
-from odl_vl.pipeline.odl_extract import (
+from parse_anything.pipeline.odl_extract import (
     OdlPage,
     OdlTable,
     extract,

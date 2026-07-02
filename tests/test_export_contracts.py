@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.export import (
+from parse_anything.export import (
     CHUNK_CONTRACT,
     PROVENANCE_CONTRACT,
     SEMANTIC_CONTRACT,
@@ -18,7 +18,7 @@ from odl_vl.export import (
     check_compatible,
     contract_tag,
 )
-from odl_vl.export.contracts import Cell, Region
+from parse_anything.export.contracts import Cell, Region
 
 
 def _structure() -> StructureExport:
@@ -40,7 +40,7 @@ def _structure() -> StructureExport:
 def test_contract_tags_are_stamped():
     payload = _structure().to_dict()
     assert payload["contract"] == contract_tag(STRUCTURE_CONTRACT)
-    assert payload["contract"]["name"] == "odl-vl.structure"
+    assert payload["contract"]["name"] == "parse-anything.structure"
 
 
 def test_structure_round_trip_is_lossless():
@@ -70,10 +70,10 @@ def test_from_dict_ignores_unknown_keys_forward_compat():
 
 
 def test_check_compatible_matches_major_only():
-    assert check_compatible({"name": "odl-vl.structure", "version": "1.0"}, STRUCTURE_CONTRACT)
-    assert check_compatible({"name": "odl-vl.structure", "version": "1.7"}, STRUCTURE_CONTRACT)  # minor ok
-    assert not check_compatible({"name": "odl-vl.structure", "version": "2.0"}, STRUCTURE_CONTRACT)
-    assert not check_compatible({"name": "odl-vl.chunks", "version": "1.0"}, STRUCTURE_CONTRACT)
+    assert check_compatible({"name": "parse-anything.structure", "version": "1.0"}, STRUCTURE_CONTRACT)
+    assert check_compatible({"name": "parse-anything.structure", "version": "1.7"}, STRUCTURE_CONTRACT)  # minor ok
+    assert not check_compatible({"name": "parse-anything.structure", "version": "2.0"}, STRUCTURE_CONTRACT)
+    assert not check_compatible({"name": "parse-anything.chunks", "version": "1.0"}, STRUCTURE_CONTRACT)
     assert not check_compatible(None, STRUCTURE_CONTRACT)
 
 
@@ -90,7 +90,7 @@ def test_chunk_record_round_trip_and_compaction():
 
 
 def test_chunk_contract_distinct_from_structure():
-    assert CHUNK_CONTRACT[0] == "odl-vl.chunks" and STRUCTURE_CONTRACT[0] == "odl-vl.structure"
+    assert CHUNK_CONTRACT[0] == "parse-anything.chunks" and STRUCTURE_CONTRACT[0] == "parse-anything.structure"
 
 
 # ---- v1.1 additions: parent/child chunk model, SemanticView, Provenance -----------------------------
@@ -116,7 +116,7 @@ def test_chunk_record_parent_child_small_to_big_round_trip():
 
 def test_chunk_contract_is_minor_bumped_and_still_major_1():
     assert CHUNK_CONTRACT[1] == "1.1"
-    assert check_compatible({"name": "odl-vl.chunks", "version": "1.0"}, CHUNK_CONTRACT)   # old consumer ok
+    assert check_compatible({"name": "parse-anything.chunks", "version": "1.0"}, CHUNK_CONTRACT)   # old consumer ok
 
 
 def _semantic() -> SemanticView:

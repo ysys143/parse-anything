@@ -9,18 +9,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
-from odl_vl.providers import HttpRequest, HttpResponse
+from parse_anything.providers import HttpRequest, HttpResponse
 
 
-_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "odl_vl_smoke.py"
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "parse_anything_smoke.py"
 
 
 def _load_smoke_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("odl_vl_smoke", _SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location("parse_anything_smoke", _SCRIPT_PATH)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    sys.modules["odl_vl_smoke"] = module
+    sys.modules["parse_anything_smoke"] = module
     spec.loader.exec_module(module)
     return module
 

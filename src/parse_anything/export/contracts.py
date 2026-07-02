@@ -18,11 +18,11 @@ from typing import Any
 # MINOR bumps on additive fields. Consumers gate on MAJOR (see check_compatible).
 # v1.1: StructureExport gains context/zones; ChunkRecord gains the parent/child small-to-big model
 # (level/children/prev/next/is_continuation/page_span via source_refs/display_text/embedding_text/tokenizer).
-STRUCTURE_CONTRACT: tuple[str, str] = ("odl-vl.structure", "1.1")
-CHUNK_CONTRACT: tuple[str, str] = ("odl-vl.chunks", "1.1")
+STRUCTURE_CONTRACT: tuple[str, str] = ("parse-anything.structure", "1.1")
+CHUNK_CONTRACT: tuple[str, str] = ("parse-anything.chunks", "1.1")
 # Layer 2 clean projection + its geometry sidecar (the two artifacts PR #4's pipeline actually produces).
-SEMANTIC_CONTRACT: tuple[str, str] = ("odl-vl.semantic", "1.0")
-PROVENANCE_CONTRACT: tuple[str, str] = ("odl-vl.provenance", "1.0")
+SEMANTIC_CONTRACT: tuple[str, str] = ("parse-anything.semantic", "1.0")
+PROVENANCE_CONTRACT: tuple[str, str] = ("parse-anything.provenance", "1.0")
 
 
 def contract_tag(contract: tuple[str, str]) -> dict[str, str]:

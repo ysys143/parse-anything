@@ -1,4 +1,4 @@
-"""VLM transcription wrapper (reuses odl_vl.providers; injectable client).
+"""VLM transcription wrapper (reuses parse_anything.providers; injectable client).
 
 Evidence: docs/measurement-findings.md F3 (image-only baseline), F9 (multi-image for
 page-spanning tables). Contract: pdf-pipeline-requirements §5.
@@ -14,8 +14,8 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from odl_vl.normalizers import extract_gemini_text, try_decode_json
-from odl_vl.providers import (
+from parse_anything.normalizers import extract_gemini_text, try_decode_json
+from parse_anything.providers import (
     GeminiGenerateContentRequest,
     GeminiInlineImage,
     HttpRequest,

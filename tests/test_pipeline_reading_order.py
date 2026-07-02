@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from odl_vl.pipeline.assemble import _reorder_by_odl_order
+from parse_anything.pipeline.assemble import _reorder_by_odl_order
 
 
 def _page(*order_text):
@@ -69,7 +69,7 @@ def test_unalignable_page_is_left_untouched():
 
 
 def test_align_matches_distinct_odl_blocks_one_to_one():
-    from odl_vl.pipeline.textalign import align_vlm_to_odl, norm_block
+    from parse_anything.pipeline.textalign import align_vlm_to_odl, norm_block
     odl = sorted([(1, norm_block("which defines the stimuli distribution clearly")),
                   (2, norm_block("which defines the correct answer plainly here")),
                   (3, norm_block("Header line that anchors everything in place"))])
@@ -81,7 +81,7 @@ def test_align_matches_distinct_odl_blocks_one_to_one():
 
 
 def test_align_leaves_low_prefix_block_unmatched():
-    from odl_vl.pipeline.textalign import align_vlm_to_odl, norm_block
+    from parse_anything.pipeline.textalign import align_vlm_to_odl, norm_block
     odl = [(1, norm_block("We incorporated the deviation into the model somehow"))]
     blocks = ["We incorporated the deviation into the model somehow", "$$p(S|B) = N(S; B)$$"]
     ms = align_vlm_to_odl(blocks, odl)

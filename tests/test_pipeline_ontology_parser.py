@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from odl_vl.pipeline import ontology as O
-from odl_vl.pipeline.ontology import (compute_font_ranks, load_ontology, node_signals, tag_nodes)
+from parse_anything.pipeline import ontology as O
+from parse_anything.pipeline.ontology import (compute_font_ranks, load_ontology, node_signals, tag_nodes)
 
 
 def _load_fm(tmp_path, frontmatter: str, name: str = "t"):
@@ -235,8 +235,8 @@ def test_frontmatter_root_must_be_a_mapping(tmp_path):
 
 
 def test_authority_level_matches_and_abstains():
-    from odl_vl.pipeline.outline import HeadingAuthority, OutlineEntry
-    from odl_vl.pipeline.sections import _authority_level
+    from parse_anything.pipeline.outline import HeadingAuthority, OutlineEntry
+    from parse_anything.pipeline.sections import _authority_level
     auth = HeadingAuthority(entries=[
         OutlineEntry("Introduction", 1, None, 0, "pdf_outline"),
         OutlineEntry("Methods", 2, "7", None, "printed_toc"),    # resolved via printed_to_pdf
