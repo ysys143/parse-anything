@@ -158,6 +158,20 @@ def _cmp(value: Any, spec: Any) -> bool:
     return True
 
 
+def _is_degenerate_text(text: str) -> bool:
+    """High-precision detector for extraction NOISE (not real content): the same whitespace token
+    repeated 3+ times (e.g. 'a1111111111 a1111111111 a1111111111 ...'), or a run built from a single
+    repeated non-space character (rules/dividers/artifacts). Abstain-safe -- ordinary prose never trips it."""
+    s = (text or "").strip()
+    if len(s) < 6:
+        return False
+    toks = s.split()
+    if len(toks) >= 3 and len(set(toks)) == 1:            # one token, many times
+        return True
+    non_space = [c for c in s if not c.isspace()]
+    return len(non_space) >= 6 and len(set(non_space)) == 1   # one character, many times
+
+
 def _match(clause: Any, signals: dict[str, Any]) -> bool:
     """Evaluate a ``when`` clause: combinators (all/any/not) or a mapping of predicate-name -> spec."""
     if not isinstance(clause, dict):
@@ -177,6 +191,10 @@ def _match(clause: Any, signals: dict[str, Any]) -> bool:
             has = classify_numbering(signals.get("text") or "") is not None
             want = True if spec == "not_null" else bool(_cmp(has, spec) if isinstance(spec, dict) else spec)
             if has != want:
+                return False
+        elif key == "text_degenerate":
+            # special primitive: is the node's text degenerate extraction noise? (see _is_degenerate_text)
+            if _is_degenerate_text(signals.get("text") or "") != bool(spec):
                 return False
         elif key == "text_matches":
             pat, flags = (spec, 0)

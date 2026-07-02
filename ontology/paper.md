@@ -16,9 +16,12 @@ node_types:
 zones: [cover, metadata, toc, body, references, appendix, furniture]
 figure_kinds: [chart, plot, diagram, photo, map, screenshot, logo, icon, full_page_image, decoration]
 rules:
+  - {id: noise-furniture, when: {text_degenerate: true}, then: {zone: furniture}}
+  - {id: math-garble-furniture, when: {text_matches: '[ðÐÞþ]|[A-Za-z]\s*¼\s*\d'}, then: {zone: furniture}}
   - {id: doc-title, when: {all: [{page_index: {eq: 0}}, {odl_role: {in: [Doctitle, Title]}}]}, then: {type: title, zone: cover}}
   - {id: abstract-metadata, when: {all: [{page_index: {lte: 1}}, {text_matches: '(?i)^\s*(?:abstract|요\s*약|초\s*록)\b'}]}, then: {zone: metadata}}
   - {id: keywords-metadata, when: {text_matches: '(?i)^\s*(?:keywords|key\s+words|index\s+terms|주\s*제\s*어)\b'}, then: {zone: metadata}}
+  - {id: front-matter-metadata, when: {all: [{page_frac: {lte: 0.2}}, {text_matches: '(?i)^\s*(?:open\s+access|citation\s*:|received\s*:|accepted\s*:|published\s*:|revised\s*:|copyright\b|competing\s+interests\b|conflict\s+of\s+interest|funding\s*:|data\s+availability|abbreviations\s*:|academic\s+editor\b|peer\s+review\s+history|correspondence\s*:|doi\s*:|issn\s*:|©)'}]}, then: {zone: metadata}}
   - {id: references-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+)?(?:references|bibliography|works\s+cited|literature\s+cited|참고\s*문헌|参考文献)\s*$'}]}, then: {zone: references, opens_zone: true}}
   - {id: appendix-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+|appendix\s+)?(?:appendix|supplementary|supporting\s+information|부록|附録)\b'}]}, then: {zone: appendix, opens_zone: true}}
   - {id: numbered-heading, when: {classify_numbering: not_null}, then: {type: heading, level: from_numbering}}

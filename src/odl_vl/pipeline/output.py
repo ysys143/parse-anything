@@ -802,16 +802,38 @@ def _zones_summary(blocks: list[dict], tables: list[dict], figures: list[dict]) 
 
 
 _DISPLAY_EQ = re.compile(r"\$\$(.+?)\$\$", re.S)   # a display equation in the VLM markdown
+# a whole line that is a single $...$ (or $$...$$) math span -- a display equation the VLM wrapped in single $.
+_STANDALONE_EQ = re.compile(r"^\s*\$\$?(?P<tex>.+?)\$\$?\s*$")
+# math-display markers: a standalone $-line is a display equation only if it carries a relation/operator
+# (or is long), so a lone inline symbol on its own line is not mistaken for one.
+_MATHY = re.compile(r"=|\\leq|\\geq|\\neq|\\approx|\\sum|\\int|\\prod|\\frac|\\cdot|\\times|\\log")
 # a bibliographic entry marker at the head of a reference: '[12]' / '12.' / '(12)' / '12)' / a circled digit.
 # Numeric/circled markers are language-neutral, so the split works for EN/KR/JP reference lists alike.
 _REF_MARKER = re.compile(r"^\s*(?:\[(\d+)\]|\((\d+)\)|(\d+)[.)]|([①-⑳]))\s+")
 
 
+def _looks_like_display_latex(tex: str) -> bool:
+    """A harvested standalone-$ line is a display equation only if it reads like one (a relation/operator,
+    or a non-trivial length) -- keeps a lone '$x$' or '$\\theta$' line from becoming a spurious equation."""
+    return bool(_MATHY.search(tex)) or len(tex) >= 15
+
+
 def _display_equations_by_page(page_markdown: dict[int, str]) -> dict[int, list[str]]:
-    """page_index -> [latex, ...] for each $$...$$ display equation in that page's VLM markdown."""
+    """page_index -> [latex, ...] for the display equations in that page's VLM markdown: both ``$$...$$``
+    blocks AND standalone lines that are a single ``$...$`` span (the VLM often wraps a display equation in
+    single ``$``). The clean VLM LaTeX is harvested here so the equation is a first-class node even when the
+    deterministic text layer only had glyph-garbled fragments of it."""
     out: dict[int, list[str]] = {}
     for pi, md in page_markdown.items():
         eqs = [m.group(1).strip() for m in _DISPLAY_EQ.finditer(md) if m.group(1).strip()]
+        for line in md.splitlines():
+            if "$$" in line:                                     # already captured by the block scan above
+                continue
+            m = _STANDALONE_EQ.match(line)
+            if m:
+                tex = m.group("tex").strip().rstrip(" .,;")
+                if tex and _looks_like_display_latex(tex):
+                    eqs.append(tex)
         if eqs:
             out[pi] = eqs
     return out
@@ -859,13 +881,31 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
             if t.get(k):
                 node[k] = t[k]
         nodes.append(node)
+    # De-dup figure origins for the clean view: a VLM-reported figure (source=vlm, no raster) is dropped when
+    # a raster figure (odl_image/vector) already carries the same label -- ODL didn't miss it, so the VLM node
+    # is a same-page duplicate or a text-mention phantom. VLM figures with a UNIQUE label are kept (ODL genuinely
+    # missed them). Layer 0 document.json keeps ALL origins (loss-aware); this is the clean projection.
+    def _fig_source(f: dict) -> str:                              # unify the 3 figure origins into one source tag
+        fid = str(f["id"])
+        return f.get("source") or ("vlm" if "_vlm" in fid else "vector" if "_vec" in fid else "odl_image")
+    raster_labels = {f.get("label") for f in figures if _fig_source(f) != "vlm" and f.get("label")}
+    vlm_desc: dict = {}
+    figures_kept: list = []
     for f in figures:
+        if _fig_source(f) == "vlm" and f.get("label") in raster_labels:
+            if f.get("description"):                              # keep the dropped VLM figure's description by
+                vlm_desc.setdefault(f["label"], f["description"])  # grafting it onto the surviving raster figure
+            continue
+        figures_kept.append(f)
+    for f in figures_kept:
         demote(f["id"], f, ("page", "order", "bbox"))
-        fid = str(f["id"])                                        # unify the 3 figure origins into one source tag
-        source = f.get("source") or ("vlm" if "_vlm" in fid else "vector" if "_vec" in fid else "odl_image")
+        source = _fig_source(f)
         node = {"id": f["id"], "type": f.get("role", "figure"), "zone": f.get("zone"), "label": f.get("label"),
                 "kind": f.get("kind"), "source": source, "file": f.get("file")}
-        for k in ("description", "section", "refs"):
+        desc = f.get("description") or (vlm_desc.get(f.get("label")) if source != "vlm" else None)
+        if desc:
+            node["description"] = desc
+        for k in ("section", "refs"):
             if f.get(k):
                 node[k] = f[k]
         nodes.append(node)
@@ -873,7 +913,7 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
     # Caption promotion: a figure/table's caption becomes a `caption` node (re-typed existing caption block,
     # else synthesized); the figure/table references it via `caption_ref` (no duplicated caption text).
     node_by_id = {n["id"]: n for n in nodes}
-    for src in (*figures, *tables):
+    for src in (*figures_kept, *tables):
         fid, cid, cap = src["id"], src.get("caption_id"), src.get("caption")
         host = node_by_id.get(fid)
         if cid and cid in node_by_id:                             # caption is already a block node -> re-type
@@ -921,9 +961,12 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
             ids.append(nid)
         eq_ids_by_page[pi] = ids
 
+    # Reading order excludes `furniture` (extraction noise / glyph-garbled math debris): it stays in the
+    # nodes[] pool (loss-aware) but leaves the reading flow, so the reading view and the chunks are clean.
+    furniture_ids = {n["id"] for n in nodes if n.get("zone") == "furniture"}
     reading_order: list = []
     for pi, content in pages_content:
-        reading_order.extend(content)
+        reading_order.extend(nid for nid in content if nid not in furniture_ids)
         reading_order.extend(eq_ids_by_page.get(pi, []))
 
     sec_clean = [{"id": s["id"], "heading": s["heading"], "level": s["level"], "zone": s.get("zone"),

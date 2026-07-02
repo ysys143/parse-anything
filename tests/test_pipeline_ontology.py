@@ -20,7 +20,7 @@ def test_ontology_load_parses_frontmatter_subset():
     assert len(o.sha256) == 64                                   # bytes hashed for provenance
     assert "body" in o.zones and "references" in o.zones and "cover" in o.zones
     assert o.node_types["figure"].atomic is True                # nested flow map parsed
-    assert [r.id for r in o.rules][:2] == ["doc-title", "references-zone"]   # rule ORDER preserved
+    assert [r.id for r in o.rules][:3] == ["noise-furniture", "math-garble-furniture", "doc-title"]  # rule ORDER preserved
     dt = next(r for r in o.rules if r.id == "doc-title")         # deeply-nested flow: {all: [{...}, {...}]}
     assert "all" in dt.when and dt.then["type"] == "title" and dt.then["zone"] == "cover"
 
@@ -42,6 +42,45 @@ def test_classify_axes_for_common_nodes():
     assert o.classify({"odl_type": "heading", "text": "Introduction"}).role == "heading"            # prose
     assert o.classify({"odl_type": "paragraph", "text": "We present a pipeline."}).role == "paragraph"
     assert o.classify({"odl_type": "list item", "text": "first bullet"}).role == "list_item"
+
+
+def test_degenerate_extraction_noise_is_zoned_furniture():
+    o = _load("default")
+    noise = ("a1111111111 a1111111111 a1111111111 a1111111111 a1111111111",
+             "x x x x x x", "──────────", "..........")
+    for text in noise:
+        v = o.classify({"odl_type": "paragraph", "text": text})
+        assert v.zone == "furniture", f"{text!r} -> {v.zone}"
+    # real prose and short/varied lines are NOT furniture (abstain-safe)
+    for text in ("We present a deterministic pipeline.", "the cat sat on the mat", "hi hi", "10 20 30 40"):
+        assert o.classify({"odl_type": "paragraph", "text": text}).zone != "furniture", text
+
+
+def test_math_garble_fragments_are_zoned_furniture():
+    o = _load("default")
+    garbled = ("LLðy;modelÞ ¼ log pðdatajy;modelÞ ¼", "log pðCi;j;kjy; modelÞ;",
+               "d ¼ r QlargeðsmallÞ ¼ r pðCL ¼ largeðsmallÞÞ VlargeðsmallÞ;", "k¼1", "i¼1")
+    for text in garbled:
+        assert o.classify({"odl_type": "paragraph", "text": text}).zone == "furniture", text
+    # clean prose / a real quarter-fraction phrase are NOT furniture
+    assert o.classify({"odl_type": "paragraph", "text": "Add ¼ cup of sugar to the mix."}).zone != "furniture"
+    assert o.classify({"odl_type": "paragraph", "text": "The model was fit to the data."}).zone != "furniture"
+
+
+def test_front_matter_labels_are_zoned_metadata_near_the_front():
+    o = _load("default")
+    fm = ("OPEN ACCESS", "Citation: Lee H-J, Lee H", "Received: February 14, 2023",
+          "Copyright: © 2023 Lee et al.", "Competing interests: none", "Funding: This research was supported",
+          "Data Availability Statement: on GitHub", "Abbreviations: PDM, perceptual decision-making")
+    for text in fm:
+        v = o.classify({"odl_type": "paragraph", "text": text, "page_frac": 0.03})
+        assert v.zone == "metadata", f"{text!r} -> {v.zone}"
+        assert v.role == "paragraph" and v.opens_zone is False       # per-node only, does not span
+    # the same label deep in the document is NOT reclassified (front-only, avoids body false positives)
+    assert o.classify({"odl_type": "paragraph", "text": "Funding: ...", "page_frac": 0.8}).zone is None
+    # real front-page prose (abstract body) stays body/unzoned -- only the labels match
+    assert o.classify({"odl_type": "paragraph", "text": "Corrective feedback received on decisions is crucial.",
+                       "page_frac": 0.03}).zone is None
 
 
 def test_unknown_predicate_raises_loudly(tmp_path):
