@@ -2,8 +2,8 @@
 
 > **REMOVED / HISTORICAL.** The page-level JSON-input orchestrator described below
 > (`orchestrator.py`, `orchestrator_input.py`, `router.py`, `ledger.py`,
-> `scripts/odl_vl_orchestrate.py`) has been **removed** and superseded by the PDF
-> pipeline (`src/odl_vl/pipeline/`, `scripts/pdf_to_markdown.py`). Kept for history.
+> `scripts/parse_anything_orchestrate.py`) has been **removed** and superseded by the PDF
+> pipeline (`src/parse_anything/pipeline/`, `scripts/pdf_to_markdown.py`). Kept for history.
 > The shared provider layer (`config`, `providers`, `paddle_jobs`, `normalizers`,
 > `cli_support`) is retained. See `pdf-pipeline-requirements.md` and
 > `measurement-findings.md` for current behavior.
@@ -34,7 +34,7 @@ automation, page-spanning table assembly, multi-image VLM requests, numeric
 source gates, arithmetic invariant checks, human-review targeting, domain
 calibration tooling, asset manifests, and document-level Markdown/JSON assembly.
 
-## Module map (`src/odl_vl/`)
+## Module map (`src/parse_anything/`)
 
 | Module | Responsibility |
 | --- | --- |
@@ -49,8 +49,8 @@ calibration tooling, asset manifests, and document-level Markdown/JSON assembly.
 | `config.py` | `Settings` / `load_settings` — read keys from `.env` / environment (live mode only). |
 | `cli_support.py` | `Runtime` (injectable transport/stdout/environ/sleep) and `safe_client`. |
 
-CLI entry points live in `scripts/`: `odl_vl_orchestrate.py` (the orchestrator,
-offline + live) and `odl_vl_smoke.py` (single-provider dry-config / live smoke).
+CLI entry points live in `scripts/`: `parse_anything_orchestrate.py` (the orchestrator,
+offline + live) and `parse_anything_smoke.py` (single-provider dry-config / live smoke).
 
 ## Data flow
 

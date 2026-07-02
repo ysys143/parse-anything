@@ -11,10 +11,14 @@ from __future__ import annotations
 import difflib
 import re
 from collections import Counter
+from typing import TYPE_CHECKING
 
 from .numbering import NumberClass, classify_numbering, level_for
 from .outline import HeadingAuthority
 from .textalign import common_prefix_len, norm_block
+
+if TYPE_CHECKING:
+    from .ontology import Ontology
 
 _TERMINATORS = "。．.!?！？"          # a numbered line ending here is a sentence (body), not a heading
 _CAPTION_LEAD = re.compile(r"(?i)^\s*(?:table|figure|fig\.?|表|図|그림|표)\s*\d")
@@ -41,6 +45,21 @@ def _is_list_not_heading(text: str, kind: str) -> bool:
 
 _CITE_RE = re.compile(r"https?://|www\.|doi\.org|\bdoi:\s|\bPMID\b", re.IGNORECASE)
 _SENTENCE_BOUNDARY = re.compile(r"[.!?。][\s　]")
+_PAREN_ONLY = re.compile(r"[（(]\s*\d+\s*[）)][.．]?")   # '(2020).' / '(13)' -- a citation year / equation number
+_EQ_TAIL = re.compile(r"\(\s*\d+\s*\)\s*$")   # a trailing display-equation number, e.g. '… (13)'
+# a "word": a run of >=3 letters (Latin/accented/Hangul/Kana/CJK). A real heading always has one.
+_HEADING_WORD = re.compile(r"[A-Za-zÀ-ɏ가-힣぀-ヿ一-鿿]{3,}")
+# a letter bonded to a superscript digit/marker ('Latimer1∗', 'LeeID1') -- an author/affiliation line.
+_AUTHOR_AFFIL = re.compile(r"[A-Za-z][0-9∗*†‡§¶]")
+_NON_SECTION_ZONES = frozenset({"cover", "metadata", "furniture"})   # body sections never live here
+
+
+def _looks_like_equation(text: str) -> bool:
+    """A display equation or math/chart fragment ODL mis-typed as a heading: it carries an '=' or a
+    trailing equation number, or has NO real word at all (bare symbols / single letters like 'A B',
+    'N(0, 1)', 'Cγ = …'). Vetoes these from unnumbered-heading admission."""
+    t = text.strip()
+    return "=" in t or bool(_EQ_TAIL.search(t)) or not _HEADING_WORD.search(t)
 
 
 def _is_prose_not_heading(text: str) -> bool:
@@ -52,16 +71,18 @@ def _is_prose_not_heading(text: str) -> bool:
     heading. Document-agnostic."""
     if "|" in text:  # a table data row the VLM rendered inline, not a section heading
         return True
+    if _PAREN_ONLY.fullmatch(text.strip()):  # '(2020).' bare paren-number -> citation year / eq number
+        return True
     rest = _NUM_PREFIX.sub("", text.strip(), count=1).lstrip()
     if not rest or rest[0] == ":":  # 'marker:digits' -> a volume:page citation, not a heading
         return True
     return bool(_CITE_RE.search(rest)) or len(_SENTENCE_BOUNDARY.findall(rest)) >= 2
 
 
-def _authority_level(text: str, page: int, authority: HeadingAuthority, printed_to_pdf: dict[str, int]) -> int | None:
+def _authority_level(text: str, page: int | None, authority: HeadingAuthority, printed_to_pdf: dict[str, int]) -> int | None:
     """Match a body heading to an authority entry (resolved to its PDF page) by normalized title."""
     norm = _normalize(text)
-    if not norm:
+    if not norm or page is None:
         return None
     best_ratio, best_level = 0.0, None
     for e in authority.entries:
@@ -83,7 +104,9 @@ def _authority_level(text: str, page: int, authority: HeadingAuthority, printed_
 
 
 def _assign_heading_levels(blocks: list[dict], authority: HeadingAuthority | None = None,
-                           printed_to_pdf: dict[str, int] | None = None) -> tuple[dict[object, int], dict[str, int]]:
+                           printed_to_pdf: dict[str, int] | None = None, ontology: "Ontology | None" = None,
+                           font_ranks: dict[object, float | None] | None = None,
+                           n_pages: int | None = None) -> tuple[dict[object, int], dict[str, int]]:
     """(block id -> level, style -> first level). Levels are DOCUMENT-RELATIVE: detection/abstain/
     run-demote are unchanged (they key on rank); a reading-order nesting stack owns the level."""
     printed_to_pdf = printed_to_pdf or {}
@@ -132,6 +155,50 @@ def _assign_heading_levels(blocks: list[dict], authority: HeadingAuthority | Non
         levels[b["id"]] = lvl
         style_levels.setdefault(sig.style, lvl)
         stack.append({"style": sig.style, "level": lvl, "tier": sig.tier, "dec_depth": sig.dec_depth})
+
+    # UNNUMBERED prose headings: ODL typed them as headings (or gave a structural role / heading_level)
+    # but they carry no numbering, so the path above abstained -- leaving papers like latimer with 0
+    # sections despite 38 heading blocks. Admit them via the injected ontology (proposes) + the SAME
+    # conservative prose/list/caption guards (dispose), and level them by document font-size rank. Only
+    # truly UNNUMBERED blocks are considered here, so numbered detection/demotion is untouched.
+    if ontology is not None:
+        from .ontology import node_signals as _node_signals
+        opos = {b["id"]: i for i, b in enumerate(ordered)}
+
+        def _followed_by_body(bid: object) -> bool:
+            # a real section heading is followed by body prose before the next heading; a chart label or
+            # figure title is surrounded by more labels/figures, so this abstains on it (safe default).
+            for nb in ordered[opos[bid] + 1: opos[bid] + 9]:
+                if nb.get("type") == "heading":
+                    return False
+                if nb.get("type") == "paragraph" and len(nb.get("text", "")) >= 60:
+                    return True
+            return False
+
+        prose: list[tuple[object, str, "int | None"]] = []
+        for b in ordered:
+            bid, text = b["id"], b.get("text", "")
+            if bid in levels or classify_numbering(text) is not None:
+                continue
+            if (_is_list_not_heading(text, b.get("type", "")) or _is_prose_not_heading(text)
+                    or _CAPTION_LEAD.match(text) or b.get("figure") or _looks_like_equation(text)
+                    or _AUTHOR_AFFIL.search(text) or b.get("zone") in _NON_SECTION_ZONES):
+                continue         # chart label / equation / author-affiliation line / non-body zone
+            if getattr(ontology.classify(_node_signals(b, font_ranks, n_pages=n_pages)), "role", None) != "heading":
+                continue
+            if not _followed_by_body(bid):   # structural corroboration -- a real section is followed by prose
+                continue
+            prose.append((bid, text, b.get("page")))
+        # Nesting for an unnumbered heading comes from the document's OWN declared hierarchy -- a PDF
+        # outline / printed-TOC authority entry it matches (by normalized title + page). That is reliable,
+        # document-declared structure. Absent an authority match it stays FLAT (level 1): font size / ODL
+        # heading_level "flip between documents" (numbering.py) and do NOT reliably encode nesting, so we
+        # abstain rather than fabricate a tree from a signal that does not generalize.
+        pmap = printed_to_pdf or {}
+        for bid, text, page in prose:
+            a = _authority_level(text, page, authority, pmap) if (authority is not None and page is not None) else None
+            levels[bid] = a if a is not None else 1
+
     return levels, style_levels
 
 
@@ -163,8 +230,8 @@ def build_sections(blocks: list[dict], tables: list[dict], figures: list[dict],
                 stack.pop()
             seq += 1
             sec = {"id": f"sec{seq}", "heading": n.get("text", ""), "level": lvl, "block_id": nid,
-                   "page": n.get("page"), "parent": stack[-1]["id"] if stack else None,
-                   "children": [], "content": []}
+                   "zone": n.get("zone"), "page": n.get("page"),
+                   "parent": stack[-1]["id"] if stack else None, "children": [], "content": []}
             if stack:
                 stack[-1]["children"].append(sec["id"])
             sections.append(sec)

@@ -231,8 +231,8 @@ benchmark-runs/<run_id>/
     tesseract/
     paddle/
     gemini/
-    odl_vl_deterministic/
-    odl_vl_det_vlm/
+    parse_anything_deterministic/
+    parse_anything_det_vlm/
   scores/
     page_scores.jsonl
     document_scores.jsonl

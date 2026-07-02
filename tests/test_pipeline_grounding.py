@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.grounding import build_grounded_prompt
-from odl_vl.pipeline.odl_extract import OdlPage, OdlParagraph, OdlTable
+from parse_anything.pipeline.grounding import build_grounded_prompt
+from parse_anything.pipeline.odl_extract import OdlPage, OdlParagraph, OdlTable
 
 
 def test_grounded_prompt_injects_both_deterministic_sources():

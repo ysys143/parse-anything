@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.diagnose import SourceDiagnosis
-from odl_vl.pipeline.profile import SourceProfile, from_d1_diagnosis, load_profile, save_profile
+from parse_anything.pipeline.diagnose import SourceDiagnosis
+from parse_anything.pipeline.profile import SourceProfile, from_d1_diagnosis, load_profile, save_profile
 
 
 def test_save_and_load_profile_roundtrip(tmp_path):

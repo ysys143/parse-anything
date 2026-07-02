@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.pageno import _resolve, printed_to_index
+from parse_anything.pipeline.pageno import _resolve, printed_to_index
 
 
 def test_offset_recovered_and_repeated_footnote_ignored():

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.output import interleave_figures
+from parse_anything.pipeline.output import interleave_figures
 
 
 def _fig(label, caption, bbox=(0.0, 0.0, 100.0, 700.0)):
@@ -35,7 +35,7 @@ def test_bold_vlm_caption_suppresses_the_recovered_one():
 
 
 def test_caption_bold_is_normalized_consistently():
-    from odl_vl.pipeline.output import _normalize_captions
+    from parse_anything.pipeline.output import _normalize_captions
     assert _normalize_captions("Fig 2. Title here. (A) panel.").startswith("**Fig 2. Title here.**")
     # already-bold stays bold; inline italics in the body survive
     out = _normalize_captions("**Fig 7. Results.** (A-C) across *toi* episodes.")
@@ -59,7 +59,7 @@ def test_caption_bold_is_normalized_consistently():
 
 
 def test_caption_title_keeps_a_cross_reference_abbreviation_period():
-    from odl_vl.pipeline.output import _normalize_captions
+    from parse_anything.pipeline.output import _normalize_captions
     # 'Fig.' mid-title is a cross-reference abbreviation, not a sentence end -> the bold title spans past it
     cap = "FIGURE 13 The dependency of the dPCs for the LIP data in Fig. 12A-D on regularization strength."
     assert _normalize_captions(cap) == f"**{cap}**"
@@ -69,7 +69,7 @@ def test_caption_title_keeps_a_cross_reference_abbreviation_period():
 
 
 def test_caption_title_still_ends_at_a_real_sentence_after_an_abbreviation():
-    from odl_vl.pipeline.output import _normalize_captions
+    from parse_anything.pipeline.output import _normalize_captions
     # 'Fig. 3.' is absorbed, but the genuine sentence that follows stays out of the bold title
     out = _normalize_captions("Fig 2. Effects shown in Fig. 3. The trend is clear.")
     assert out.startswith("**Fig 2. Effects shown in Fig. 3.**")
@@ -77,7 +77,7 @@ def test_caption_title_still_ends_at_a_real_sentence_after_an_abbreviation():
 
 
 def test_display_equation_strips_are_dropped_but_real_figures_kept():
-    from odl_vl.pipeline.output import _text_line_strip, _tiny_figure
+    from parse_anything.pipeline.output import _text_line_strip, _tiny_figure
     # a thin horizontal band a text line or two tall = a display equation ODL mis-detected as a figure
     assert _text_line_strip([100, 500, 456, 527])      # 356 x 27 -> equation strip
     assert _text_line_strip([100, 500, 503, 518])      # 403 x 18 -> equation strip
@@ -91,7 +91,7 @@ def test_display_equation_strips_are_dropped_but_real_figures_kept():
 def test_equation_strip_is_only_dropped_on_a_page_with_math():
     # height/shape alone must not drop a figure: a thin strip is a display-equation crop ONLY when the
     # page actually contains display math (the VLM transcribed the equation as LaTeX).
-    from odl_vl.pipeline.output import _page_has_math
+    from parse_anything.pipeline.output import _page_has_math
     assert _page_has_math(r"text $$x = \sum_i a_i$$ more text")       # a display equation present
     assert _page_has_math("dense $a$ $b$ $c$ $d$ inline $e$ math $f$")  # dense inline math
     assert not _page_has_math("A wide thin figure caption with no math at all here.")  # no math -> keep strip
@@ -99,7 +99,7 @@ def test_equation_strip_is_only_dropped_on_a_page_with_math():
 
 
 def test_labels_a_bare_figure_source_doi():
-    from odl_vl.pipeline.output import _label_figure_sources
+    from parse_anything.pipeline.output import _label_figure_sources
     assert _label_figure_sources("https://doi.org/10.1371/journal.pbio.3002373.g007").startswith(
         "Source: https://doi.org/10.1371/journal.pbio.3002373.g007")
     # a DOI embedded in prose (not a bare source line) is left untouched
@@ -107,14 +107,14 @@ def test_labels_a_bare_figure_source_doi():
 
 
 def test_restores_misread_panel_label_but_keeps_copyright():
-    from odl_vl.pipeline.output import _restore_panel_labels
+    from parse_anything.pipeline.output import _restore_panel_labels
     assert _restore_panel_labels("as in (B) and ©.") == "as in (B) and (C)."
     assert _restore_panel_labels("black cube. © The 3D state") == "black cube. (C) The 3D state"
     assert _restore_panel_labels("**Copyright:** © 2023 Lee et al.") == "**Copyright:** © 2023 Lee et al."
 
 
 def test_escapes_currency_dollar_but_not_math():
-    from odl_vl.pipeline.output import _escape_currency
+    from parse_anything.pipeline.output import _escape_currency
     assert _escape_currency("paid $10/h.") == "paid \\$10/h."
     assert _escape_currency("cost $1,000.50 total") == "cost \\$1,000.50 total"
     assert _escape_currency("was $5 \\times 2") == "was $5 \\times 2"      # math token kept

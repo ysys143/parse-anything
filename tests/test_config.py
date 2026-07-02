@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from odl_vl.config import load_settings
+from parse_anything.config import load_settings
 
 
 def test_load_settings_prefers_shell_values_over_env_file(tmp_path, monkeypatch):

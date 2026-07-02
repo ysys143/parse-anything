@@ -92,7 +92,7 @@ Markdown은 사람이 읽기 좋은 view다. JSON은 source of truth이며, elem
 
 - **소스 레벨 메타데이터(증보).** `document.json`은 페이지 메타에 더해 **소스 식별·프로파일·진단 출처**(source id, 적용된 소스 프로파일·실행 모드, 진단 등급 D-1/D-2와 시각)를 기록한다 (처리계층 §2.5). 같은 소스에서 나온 문서들이 동일 프로파일로 처리됐음을 추적할 수 있어야 한다.
 - **모드 매핑.** 두 실행 모드 모두 이 계약을 산출한다 — `tables/`·`assets/`의 구조는 ODL, 값/`cells[].source_text`는 pypdfium2, 결정론-powered VLM 모드는 VLM 보강분을 정합해 넣는다(provenance에 출처 표기).
-- **현 구현 갭.** `src/odl_vl/pipeline/output.py`는 현재 `pages/`·`document.md`·`ledger.jsonl`·`results.jsonl`만 쓰고, `document.json`(loss-aware)·`tables/`·`assets/`·소스 메타데이터는 미구현이다. 목표 계약과의 차이는 §10에 정리한다.
+- **현 구현 갭.** `src/parse_anything/pipeline/output.py`는 현재 `pages/`·`document.md`·`ledger.jsonl`·`results.jsonl`만 쓰고, `document.json`(loss-aware)·`tables/`·`assets/`·소스 메타데이터는 미구현이다. 목표 계약과의 차이는 §10에 정리한다.
 
 ## 8. Verification Contract
 

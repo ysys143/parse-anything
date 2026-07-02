@@ -3,8 +3,8 @@ from __future__ import annotations
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.deterministic import number_tokens, page_text, text_char_count
-from odl_vl.pipeline.guards import source_gate
+from parse_anything.pipeline.deterministic import number_tokens, page_text, text_char_count
+from parse_anything.pipeline.guards import source_gate
 
 
 def _make_pdf(path, lines) -> str:

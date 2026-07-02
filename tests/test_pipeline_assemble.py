@@ -5,8 +5,8 @@ import json
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.assemble import _recurring_numbers, assemble_document
-from odl_vl.providers import HttpResponse
+from parse_anything.pipeline.assemble import _recurring_numbers, assemble_document
+from parse_anything.providers import HttpResponse
 
 
 class _FakeClient:
@@ -65,7 +65,7 @@ def test_det_vlm_spanning_merges_pages_via_multi_image(tmp_path):
 
 
 def test_det_vlm_no_spanning_processes_pages_separately(tmp_path):
-    from odl_vl.pipeline.assemble import DetVlmOptions
+    from parse_anything.pipeline.assemble import DetVlmOptions
 
     pdf = _two_page_pdf(tmp_path / "s.pdf")
     client = _FakeClient([_gemini_ok("p1"), _gemini_ok("p2")])   # two per-page requests
@@ -75,7 +75,7 @@ def test_det_vlm_no_spanning_processes_pages_separately(tmp_path):
 
 
 def test_det_vlm_primary_paddle_uses_paddle_transcriber(tmp_path):
-    from odl_vl.pipeline.assemble import DetVlmOptions
+    from parse_anything.pipeline.assemble import DetVlmOptions
 
     pdf = _pdf(tmp_path / "d.pdf", "value 1,234,567")
     paddle = lambda _png: "| H | V |\n| --- | --- |\n| a | 1 |"  # noqa: E731
@@ -104,7 +104,7 @@ def test_det_vlm_grounding_default_injects_deterministic_text(tmp_path):
 
 
 def test_det_vlm_no_ground_option_is_image_only(tmp_path):
-    from odl_vl.pipeline.assemble import DetVlmOptions
+    from parse_anything.pipeline.assemble import DetVlmOptions
 
     pdf = _pdf(tmp_path / "d.pdf", "authoritative value 1,234,567")
     client = _CaptureClient([_gemini_ok("ok")])

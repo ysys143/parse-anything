@@ -19,10 +19,10 @@ _SRC = _REPO / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from odl_vl.cli_support import Runtime, safe_client  # noqa: E402
-from odl_vl.config import load_settings  # noqa: E402
-from odl_vl.pipeline.output import document_dir, write_outputs  # noqa: E402
-from odl_vl.pipeline.run import run_document  # noqa: E402
+from parse_anything.cli_support import Runtime, safe_client  # noqa: E402
+from parse_anything.config import load_settings  # noqa: E402
+from parse_anything.pipeline.output import document_dir, write_outputs  # noqa: E402
+from parse_anything.pipeline.run import run_document  # noqa: E402
 
 _FIG_DESCRIBE_PROMPT = (
     "You are shown a small image cropped from a document page. Decide what it is.\n"
@@ -47,12 +47,12 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     args = _parse_args(argv)
     settings = load_settings(env_file=env_file or _REPO / ".env", environ=runtime.environ)
     key = settings.gemini_api_key
-    out_root = args.out or (runtime.environ or {}).get("ODL_VL_OUT_DIR") or "out"
+    out_root = args.out or (runtime.environ or {}).get("PARSE_ANYTHING_OUT_DIR") or "out"
 
     # Reprocessing prevention: the document_id is a content hash, so an existing document.json with
     # the same hash means this exact input was already processed. Skip (no re-run) unless --force.
     if not args.force:
-        from odl_vl.pipeline.docmeta import document_id
+        from parse_anything.pipeline.docmeta import document_id
 
         short_id, full_hash = document_id(args.pdf)
         existing = Path(out_root) / args.source_id / short_id / "document.json"
@@ -65,11 +65,11 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
                 print(f"skipped: {args.source_id}/{short_id} already processed (--force to reprocess)", file=runtime.stdout)
                 return 0
 
-    profiles_dir = args.profiles_dir or (runtime.environ or {}).get("ODL_VL_PROFILE_DIR") or "profiles"
+    profiles_dir = args.profiles_dir or (runtime.environ or {}).get("PARSE_ANYTHING_PROFILE_DIR") or "profiles"
     mode = None
     if args.use_profile:
         # Reuse a stored diagnosis instead of re-running it.
-        from odl_vl.pipeline.profile import load_profile
+        from parse_anything.pipeline.profile import load_profile
 
         profile = load_profile(args.source_id, profiles_dir)
         if profile is not None:
@@ -80,8 +80,8 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
         if not key:
             print("error: --diagnose requires GEMINI_API_KEY (D-1 runs the VLM on sampled pages)", file=runtime.stdout)
             return 2
-        from odl_vl.pipeline.diagnose import diagnose_source
-        from odl_vl.pipeline.profile import from_d1_diagnosis, load_profile, save_profile
+        from parse_anything.pipeline.diagnose import diagnose_source
+        from parse_anything.pipeline.profile import from_d1_diagnosis, load_profile, save_profile
 
         prior = load_profile(args.source_id, profiles_dir)  # reuse calibrated thresholds if a profile exists
         diag = diagnose_source(args.pdf, vlm_client=safe_client(runtime), api_key=key, sample_size=args.sample_size,
@@ -99,7 +99,7 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
             return 2
         client = safe_client(runtime)
 
-    from odl_vl.pipeline.assemble import DetVlmOptions
+    from parse_anything.pipeline.assemble import DetVlmOptions
 
     custom_prompt = args.prompt
     if args.prompt_file:
@@ -113,7 +113,7 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     # PaddleOCR (local-file upload) as the det_vlm primary transcriber (R10 --primary paddle), when configured.
     primary_transcribe = None
     if mode == "det_vlm" and options.primary == "paddle" and settings.paddle_api_key and settings.paddle_base_url:
-        from odl_vl.pipeline.paddle_vlm import make_transcriber
+        from parse_anything.pipeline.paddle_vlm import make_transcriber
 
         primary_transcribe = make_transcriber(safe_client(runtime), base_url=settings.paddle_base_url,
                                               token=settings.paddle_api_key, model=settings.paddle_model or "PaddleOCR-VL-1.6")
@@ -128,17 +128,20 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
 
     describe_figure = None  # R14: a VLM text description for each cropped vector chart (det_vlm only)
     if client is not None and key and not args.no_describe_figures:
-        from odl_vl.pipeline.vlm import transcribe_image
+        from parse_anything.pipeline.vlm import transcribe_image
 
         def describe_figure(png: bytes, caption: str | None) -> str:
             prompt = _FIG_DESCRIBE_PROMPT + (f"\nThe figure's caption is: {caption}" if caption else "")
             return transcribe_image(png, prompt, api_key=key, client=client)
 
+    from parse_anything.pipeline.ontology import bundled_ontology_root, load_ontology  # R15: injected node/zone ontology
+
+    ontology = load_ontology(args.ontology or "default", bundled_ontology_root())
     write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic,
                   inline_figures=not args.no_inline_figures, headings=not args.no_headings,
-                  describe_figure=describe_figure)
+                  describe_figure=describe_figure, ontology=ontology, chunk=not args.no_chunks)
     if args.review:
-        from odl_vl.pipeline.review import write_review
+        from parse_anything.pipeline.review import write_review
 
         write_review(args.pdf, result, out_dir / "review.html")
 
@@ -155,13 +158,15 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
 def _parse_args(argv):
     parser = argparse.ArgumentParser(description="PDF -> Markdown pipeline (diagnose-then-configure modes)")
     parser.add_argument("--pdf", required=True)
-    parser.add_argument("--out", default=None, help="output root; default $ODL_VL_OUT_DIR or ./out")
+    parser.add_argument("--out", default=None, help="output root; default $PARSE_ANYTHING_OUT_DIR or ./out")
     parser.add_argument("--mode", choices=["deterministic", "det_vlm"], default="det_vlm",
                         help="deterministic (ODL+pypdfium2) or det_vlm (+VLM, value-oracle gated); default det_vlm")
     parser.add_argument("--no-vlm", action="store_true", help="alias for --mode deterministic")
     parser.add_argument("--diagnose", action="store_true", help="run D-1 diagnosis first, save a profile, and use the recommended mode")
     parser.add_argument("--use-profile", action="store_true", help="use a stored SourceProfile's mode (skip diagnosis) if one exists for --source-id")
-    parser.add_argument("--profiles-dir", default=None, help="profile store; default $ODL_VL_PROFILE_DIR or ./profiles")
+    parser.add_argument("--profiles-dir", default=None, help="profile store; default $PARSE_ANYTHING_PROFILE_DIR or ./profiles")
+    parser.add_argument("--ontology", default=None,
+                        help="document ontology family (ontology/<family>.md) driving node role/zone tagging; default 'default'")
     parser.add_argument("--sample-size", type=int, default=4, help="pages D-1 samples when --diagnose (default 4)")
     parser.add_argument("--source-id", default="default", help="source (document stream) id; output groups by it")
     parser.add_argument("--external-id", default=None, help="caller-provided document id, preserved in metadata")
@@ -178,6 +183,8 @@ def _parse_args(argv):
                         help="skip the chapter/section/subsection hierarchy (sections[] tree + #/##/### in Markdown)")
     parser.add_argument("--no-describe-figures", action="store_true",
                         help="det_vlm: skip the VLM text description generated for each cropped vector chart")
+    parser.add_argument("--no-chunks", action="store_true",
+                        help="skip building document.chunks.jsonl (the small-to-big parent/child retrieval chunks)")
     parser.add_argument("--primary", choices=["gemini", "paddle"], default="gemini",
                         help="det_vlm primary transcriber: gemini (grounded) or paddle (doc-specialised)")
     parser.add_argument("--prompt", default=None, help="det_vlm: custom base prompt (overrides default)")

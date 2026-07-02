@@ -3,8 +3,8 @@ from __future__ import annotations
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.crosspage import continuation_groups, continues
-from odl_vl.pipeline.triage import Route
+from parse_anything.pipeline.crosspage import continuation_groups, continues
+from parse_anything.pipeline.triage import Route
 
 
 def _draw_table(c, rows, cols_x, y_start, y_step=28):

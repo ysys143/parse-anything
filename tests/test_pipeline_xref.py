@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.output import _resolve_cross_references
+from parse_anything.pipeline.output import _resolve_cross_references
 
 
 def test_cross_references_link_intext_mentions_robust_to_wrap_and_dashes():

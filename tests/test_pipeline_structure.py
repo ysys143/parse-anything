@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlParagraph, OdlTable
-from odl_vl.pipeline.structure import _merge_blocks, build_graph
+from parse_anything.pipeline.odl_extract import OdlDocument, OdlImage, OdlPage, OdlParagraph, OdlTable
+from parse_anything.pipeline.structure import _merge_blocks, build_graph
 
 
 def _para(eid, order, text, kind="paragraph", font=None):

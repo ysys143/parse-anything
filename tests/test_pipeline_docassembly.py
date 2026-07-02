@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.output import _assemble_document
+from parse_anything.pipeline.output import _assemble_document
 
 
 def test_stitches_midsentence_page_break_with_invisible_marker():
@@ -49,7 +49,7 @@ def test_caption_opening_a_page_is_not_folded_into_prior_prose():
 
 
 def test_consolidate_merges_split_caption_and_source_into_figure_unit():
-    from odl_vl.pipeline.output import _consolidate_figure_units
+    from parse_anything.pipeline.output import _consolidate_figure_units
     md = "\n\n".join([
         "**Fig 2. Title.** (A) head part ending mid",       # caption head, above the image
         "![Fig 2](assets/f.png)",                            # image
@@ -66,19 +66,19 @@ def test_consolidate_merges_split_caption_and_source_into_figure_unit():
 
 
 def test_consolidate_leaves_a_sourceless_figure_untouched():
-    from odl_vl.pipeline.output import _consolidate_figure_units
+    from parse_anything.pipeline.output import _consolidate_figure_units
     md = "![Fig 9](a.png)\n\n**Fig 9. X.** caption text\n\nbody text here now"
     assert _consolidate_figure_units(md) == md  # no Source line nearby -> no-op, never eats the body
 
 
 def test_stitch_rejoins_a_paragraph_split_around_a_figure():
-    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    from parse_anything.pipeline.output import _stitch_broken_paragraphs
     md = "the class boundary at the\n\nunbiased value (B=0) and does not update the choices"
     assert "boundary at the unbiased value" in _stitch_broken_paragraphs(md)
 
 
 def test_stitch_does_not_merge_an_equation_or_a_new_paragraph():
-    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    from parse_anything.pipeline.output import _stitch_broken_paragraphs
     md1 = "the class probabilities, as follows:\n\n$$p(x) = 1$$"    # display equation -> keep separate
     assert _stitch_broken_paragraphs(md1) == md1
     md2 = "This sentence is complete.\n\nThe next paragraph begins here."  # capital start -> new paragraph
@@ -88,7 +88,7 @@ def test_stitch_does_not_merge_an_equation_or_a_new_paragraph():
 def test_consolidate_below_merges_a_wrapped_caption_tail_and_source():
     # a caption BELOW the image that wraps (head ends mid-sentence, a lower-case tail follows) with a
     # Source after it -> head + tail + source fold into one caption unit (the Fig 1 arrangement).
-    from odl_vl.pipeline.output import _consolidate_figure_units
+    from parse_anything.pipeline.output import _consolidate_figure_units
     md = "\n\n".join([
         "![Fig 1](a.png)",                                   # image first
         "**Fig 1. Title.** the black arrows depict, where a decision-maker",   # caption head, mid-sentence
@@ -102,7 +102,7 @@ def test_consolidate_below_merges_a_wrapped_caption_tail_and_source():
 def test_figure_unit_floats_out_of_a_paragraph_it_splits():
     # a body paragraph split around a floating figure (marker + image + caption run between its halves) is
     # completed across the run, and the figure re-emerges AFTER the finished paragraph (the Fig 2 case).
-    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    from parse_anything.pipeline.output import _stitch_broken_paragraphs
     md = "\n\n".join([
         "the PSEs of the retrospective",                     # body head, ends mid-sentence
         "<!-- page 10 -->",                                  # page marker, part of the float run
@@ -120,7 +120,7 @@ def test_figure_unit_floats_out_of_a_paragraph_it_splits():
 
 
 def test_adjacent_cjk_blocks_are_not_merged():
-    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    from parse_anything.pipeline.output import _stitch_broken_paragraphs
     # a grid of Korean cards (each a complete label + description, no terminal period) must stay separate:
     # CJK has no letter case, so a 'lower-case = continuation' signal cannot tell items apart -- two merely
     # ADJACENT CJK blocks are never merged.
@@ -129,7 +129,7 @@ def test_adjacent_cjk_blocks_are_not_merged():
 
 
 def test_cjk_paragraph_split_by_a_figure_is_still_rejoined():
-    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    from parse_anything.pipeline.output import _stitch_broken_paragraphs
     # but when a figure floats between the two halves of ONE Korean paragraph, that IS a real split -> join
     md = "\n\n".join([
         "경계는 다음 값으로 이동한다",                              # Korean head, ends mid-sentence
@@ -142,7 +142,7 @@ def test_cjk_paragraph_split_by_a_figure_is_still_rejoined():
 
 
 def test_stitch_never_glues_body_onto_a_figure_unit():
-    from odl_vl.pipeline.output import _stitch_broken_paragraphs
+    from parse_anything.pipeline.output import _stitch_broken_paragraphs
     md = "![Fig 3](f.png)\n\n**Fig 3. Title.** caption. Source: https://doi.org/x.g003\n\nand more body text here"
     out = _stitch_broken_paragraphs(md)
     assert "g003 and more body" not in out                   # a figure unit never absorbs a body block
@@ -153,7 +153,7 @@ def test_image_glued_to_trailing_body_is_detached_and_paragraph_reflows():
     # interleave glues an image to the body block just below it (the paragraph above the figure, which
     # wraps around it). Detach the image (text above the figure comes first), then the reflow completes the
     # paragraph across the figure and floats the figure after it -- the Fig 6 arrangement.
-    from odl_vl.pipeline.output import (_detach_image_from_trailing_text,
+    from parse_anything.pipeline.output import (_detach_image_from_trailing_text,
                                         _consolidate_figure_units, _stitch_broken_paragraphs)
     md = "\n\n".join([
         "# Section",

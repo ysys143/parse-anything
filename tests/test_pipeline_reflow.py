@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.reflow import reflow_markdown
+from parse_anything.pipeline.reflow import reflow_markdown
 
 
 def test_cjk_softwrap_joins_without_space():

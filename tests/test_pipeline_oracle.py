@@ -5,9 +5,9 @@ import json
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.oracle import fabrication_flags
-from odl_vl.pipeline.run import run_document
-from odl_vl.providers import HttpResponse
+from parse_anything.pipeline.oracle import fabrication_flags
+from parse_anything.pipeline.run import run_document
+from parse_anything.providers import HttpResponse
 
 
 def test_fabrication_flags_flags_only_unsourced_numbers():

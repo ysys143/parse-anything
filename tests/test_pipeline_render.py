@@ -5,7 +5,7 @@ import io
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from odl_vl.pipeline.render import page_count, render_page_png
+from parse_anything.pipeline.render import page_count, render_page_png
 
 
 def _make_pdf(path, *, pages: int = 1) -> str:

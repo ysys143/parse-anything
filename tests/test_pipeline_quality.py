@@ -4,7 +4,7 @@ import io
 
 from PIL import Image, ImageDraw, ImageFilter
 
-from odl_vl.pipeline.quality import is_low_quality, laplacian_variance
+from parse_anything.pipeline.quality import is_low_quality, laplacian_variance
 
 
 def _png(img: Image.Image) -> bytes:

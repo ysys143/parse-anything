@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol, TextIO
 
-from odl_vl.providers import ProviderHttpClient, SafeTransport, Transport, UrllibTransport
+from parse_anything.providers import ProviderHttpClient, SafeTransport, Transport, UrllibTransport
 
 
 class Sleeper(Protocol):

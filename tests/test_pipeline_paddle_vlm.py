@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from odl_vl.pipeline.paddle_vlm import PaddleError, make_transcriber, transcribe
-from odl_vl.providers import HttpResponse
+from parse_anything.pipeline.paddle_vlm import PaddleError, make_transcriber, transcribe
+from parse_anything.providers import HttpResponse
 
 _BASE = "https://paddleocr.aistudio-app.com"
 

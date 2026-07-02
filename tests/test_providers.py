@@ -6,7 +6,7 @@ import json
 import urllib.error
 from dataclasses import dataclass, field
 
-from odl_vl.providers import (
+from parse_anything.providers import (
     DEFAULT_GEMINI_MODEL,
     DEFAULT_PADDLE_MODEL,
     GeminiGenerateContentRequest,
@@ -146,7 +146,7 @@ def test_build_paddle_submit_request_uses_safe_default_model():
 def test_build_gemini_request_attaches_image_as_base64_inline_data():
     import base64
 
-    from odl_vl.providers import GeminiInlineImage
+    from parse_anything.providers import GeminiInlineImage
 
     image_bytes = b"\x89PNG\r\n\x1a\nrealpixels"
     spec = GeminiGenerateContentRequest(

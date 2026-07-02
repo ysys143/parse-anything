@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from fixtures.figure_cases import FIGURE_CASES
-from odl_vl.pipeline.vecfig import _cluster, _in_table, _page_figures
+from parse_anything.pipeline.vecfig import _cluster, _in_table, _page_figures
 
 
 @pytest.mark.parametrize("case", FIGURE_CASES, ids=lambda c: c.name)

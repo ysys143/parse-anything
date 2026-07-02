@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from odl_vl.pipeline.catalog import build_index, query
+from parse_anything.pipeline.catalog import build_index, query
 
 
 def _write_doc(root, source, docid, *, external=None, n_flags=0, n_tables=1):

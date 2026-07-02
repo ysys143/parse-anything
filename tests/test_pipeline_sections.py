@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.sections import (
+from parse_anything.pipeline.sections import (
     apply_heading_levels, build_sections, heading_levels, strip_page_furniture,
 )
 
@@ -103,7 +103,7 @@ def test_vlm_headed_table_figure_caption_is_de_headed():
 
 
 def test_strip_page_furniture_removes_running_headers_and_pagenum_leak():
-    from odl_vl.pipeline.textalign import norm_block
+    from parse_anything.pipeline.textalign import norm_block
     p0 = "# 第1章 概要\n\n## 第4節 課題\n\n本文A これは十分に長い本文です\n\n## 6 セメント産業の現状\n\n128"
     p1 = "# 第1章 概要\n\n## 第4節 課題\n\nもっと本文 これも十分に長い本文です\n\n129"
     # ODL keeps the body + the one-off section, filters the running headers (第1章/第4節) -> they are absent

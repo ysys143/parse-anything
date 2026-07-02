@@ -16,7 +16,9 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from ..export import ChunkRecord, Provenance, SemanticView, StructureExport
 from .frontmatter import consolidate_front_matter
 from .outline import resolve_heading_authority
 from .pageno import extract_printed_page_numbers, printed_to_index
@@ -25,6 +27,9 @@ from .run import DocumentResult
 from .sections import _assign_heading_levels, apply_heading_levels, build_sections, strip_page_furniture
 from .structure import build_graph
 from .textalign import common_prefix_len, norm_block
+
+if TYPE_CHECKING:
+    from .ontology import ChunkPolicy, Ontology
 
 
 def document_dir(out_root: str | Path, result: DocumentResult) -> Path:
@@ -430,9 +435,17 @@ def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
     return out
 
 
+def _default_ontology():
+    """The 'default' document ontology, loaded from the ontology dir bundled inside the package (ships in
+    the wheel, so this works for an installed library as well as a source checkout; cwd-independent)."""
+    from .ontology import bundled_ontology_root, load_ontology
+    return load_ontology("default", bundled_ontology_root())
+
+
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
                   arithmetic: bool = True, inline_figures: bool = True, headings: bool = True,
-                  describe_figure: "Callable[[bytes, str | None], str] | None" = None) -> None:
+                  describe_figure: "Callable[[bytes, str | None], str] | None" = None,
+                  ontology: "Ontology | None" = None, chunk: bool = True) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -451,6 +464,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     blocks_by_page: dict[int, tuple] = {}
     chart_noise: dict[int, set[str]] = {}
     slide_images: dict[int, str] = {}   # slide-deck mode: one rendered page image per page
+    onto = ontology or _default_ontology()   # injected document ontology (role/zone vocabulary + rules)
     if result.meta is not None and result.structure is not None:
         labels_by_page = {p.page_index: p.labels for p in result.pages}
         pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
@@ -524,10 +538,15 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         chart_noise = _chart_internal_noise(figures, blocks_by_page)  # legend/axis/year labels to drop
         _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
         _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
+        from .ontology import compute_font_ranks, tag_nodes
+        font_ranks = compute_font_ranks(blocks)
+        npages = result.meta.n_pages
+        tag_nodes(blocks, tables, figures, onto, font_ranks, is_landscape=bool(slide_images), n_pages=npages)  # role + zone
         if headings:  # R13 section hierarchy: cascade authority -> levels -> sections tree + md #
             page_labels = extract_printed_page_numbers(pdf_path, result.meta.n_pages) if pdf_path else {}
             authority = resolve_heading_authority(pdf_path, result.structure)
-            level_map, style_levels = _assign_heading_levels(blocks, authority, printed_to_index(page_labels))
+            level_map, style_levels = _assign_heading_levels(blocks, authority, printed_to_index(page_labels),
+                                                             onto, font_ranks, npages)   # + unnumbered admission
             sections, section_by_node = build_sections(blocks, tables, figures, level_map)
             for node in (*blocks, *tables, *figures):
                 if node["id"] in section_by_node:
@@ -584,7 +603,11 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     _write_jsonl(out / "results.jsonl", results)
 
     if result.meta is not None:
-        _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels)
+        _write_document_json(out, result, pages_meta, blocks, tables, figures, sections, page_labels, onto)
+        sem, provmap = _write_semantic_json(out, result, pages_meta, blocks, tables, figures, sections,
+                                            onto, md_by_index)   # clean layered view (semantic + provenance)
+        if chunk:            # R16: build-time small-to-big chunks (index children, return the section parent)
+            _write_chunks(out, build_chunks(sem, provmap, sem["document_id"], onto.chunking))
         _write_tables(out, tables)
 
 
@@ -762,9 +785,411 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
         doc.close()
 
 
+_SEMANTIC_CONTEXT = {"doco": "http://purl.org/spar/doco/", "deo": "http://purl.org/spar/deo/"}
+
+
+def _zones_summary(blocks: list[dict], tables: list[dict], figures: list[dict]) -> list[dict]:
+    """zone -> the pages it covers, ordered by first appearance (min page)."""
+    zpages: dict[str, list[int]] = {}
+    for n in (*blocks, *tables, *figures):
+        z = n.get("zone")
+        pg = n.get("page") or (n.get("pages") or [None])[0]
+        if z and pg is not None and pg not in zpages.setdefault(z, []):
+            zpages[z].append(pg)
+    return [{"zone": z, "pages": sorted(p)} for z, p in sorted(zpages.items(), key=lambda kv: min(kv[1]))]
+
+
+_DISPLAY_EQ = re.compile(r"\$\$(.+?)\$\$", re.S)   # a display equation in the VLM markdown
+# a whole line that is a single $...$ (or $$...$$) math span -- a display equation the VLM wrapped in single $.
+_STANDALONE_EQ = re.compile(r"^\s*\$\$?(?P<tex>.+?)\$\$?\s*$")
+# math-display markers: a standalone $-line is a display equation only if it carries a relation/operator
+# (or is long), so a lone inline symbol on its own line is not mistaken for one.
+_MATHY = re.compile(r"=|\\leq|\\geq|\\neq|\\approx|\\sum|\\int|\\prod|\\frac|\\cdot|\\times|\\log")
+# a bibliographic entry marker at the head of a reference: '[12]' / '12.' / '(12)' / '12)' / a circled digit.
+# Numeric/circled markers are language-neutral, so the split works for EN/KR/JP reference lists alike.
+_REF_MARKER = re.compile(r"^\s*(?:\[(\d+)\]|\((\d+)\)|(\d+)[.)]|([①-⑳]))\s+")
+
+
+def _looks_like_display_latex(tex: str) -> bool:
+    """A harvested standalone-$ line is a display equation only if it reads like one (a relation/operator,
+    or a non-trivial length) -- keeps a lone '$x$' or '$\\theta$' line from becoming a spurious equation."""
+    return bool(_MATHY.search(tex)) or len(tex) >= 15
+
+
+def _display_equations_by_page(page_markdown: dict[int, str]) -> dict[int, list[str]]:
+    """page_index -> [latex, ...] for the display equations in that page's VLM markdown: both ``$$...$$``
+    blocks AND standalone lines that are a single ``$...$`` span (the VLM often wraps a display equation in
+    single ``$``). The clean VLM LaTeX is harvested here so the equation is a first-class node even when the
+    deterministic text layer only had glyph-garbled fragments of it."""
+    out: dict[int, list[str]] = {}
+    for pi, md in page_markdown.items():
+        eqs = [m.group(1).strip() for m in _DISPLAY_EQ.finditer(md) if m.group(1).strip()]
+        for line in md.splitlines():
+            if "$$" in line:                                     # already captured by the block scan above
+                continue
+            m = _STANDALONE_EQ.match(line)
+            if m:
+                tex = m.group("tex").strip().rstrip(" .,;")
+                if tex and _looks_like_display_latex(tex):
+                    eqs.append(tex)
+        if eqs:
+            out[pi] = eqs
+    return out
+
+
+def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict], sections: list[dict],
+                    pages_content: list, meta: dict, ontology: "Ontology",
+                    page_markdown: dict[int, str] | None = None) -> tuple[dict, dict]:
+    """Pure builder: (semantic_doc, provenance) from the graph. The semantic view is agent-clean -- each
+    node carries only id/type(role)/zone/level?/text|latex|label/... with NO geometry; bbox/order/font_size/
+    regions go to the provenance map keyed by node id. Captions are promoted to first-class ``caption``
+    nodes (``caption_of`` -> its figure/table, which gets a ``caption_ref``); display equations from the
+    VLM markdown become ``equation`` nodes (``latex``), placed at page granularity.
+
+    pages_content: list[(page_index, [node_id, ...])] in reading order per page.
+    """
+    prov: dict[object, dict] = {}
+
+    def demote(nid: object, n: dict, keys: tuple) -> None:
+        p = {k: n[k] for k in keys if n.get(k) is not None}
+        if p:
+            prov[nid] = {**prov.get(nid, {}), **p}
+
+    sec_level = {s["block_id"]: s["level"] for s in sections}      # a heading node shows its section level
+    nodes: list[dict] = []
+    for b in blocks:
+        demote(b["id"], b, ("page", "order", "bbox", "font_size"))
+        node = {"id": b["id"], "type": b.get("role") or b.get("type"), "zone": b.get("zone"),
+                "text": b.get("text", "")}
+        if b["id"] in sec_level:
+            node["level"] = sec_level[b["id"]]
+        for k in ("refs", "section"):
+            if b.get(k):
+                node[k] = b[k]
+        nodes.append(node)
+    for t in tables:
+        demote(t["id"], t, ("order",))
+        if t.get("regions"):
+            prov.setdefault(t["id"], {})["regions"] = t["regions"]
+        node = {"id": t["id"], "type": t.get("role", "table"), "zone": t.get("zone"), "label": t.get("label"),
+                "n_rows": t.get("n_rows"), "n_cols": t.get("n_cols"),
+                "cells": [[{k: v for k, v in c.items() if k != "bbox"} for c in row] for row in t.get("cells", [])],
+                "views": t.get("views")}
+        for k in ("section", "refs"):
+            if t.get(k):
+                node[k] = t[k]
+        nodes.append(node)
+    # De-dup figure origins for the clean view: a VLM-reported figure (source=vlm, no raster) is dropped when
+    # a raster figure (odl_image/vector) already carries the same label -- ODL didn't miss it, so the VLM node
+    # is a same-page duplicate or a text-mention phantom. VLM figures with a UNIQUE label are kept (ODL genuinely
+    # missed them). Layer 0 document.json keeps ALL origins (loss-aware); this is the clean projection.
+    def _fig_source(f: dict) -> str:                              # unify the 3 figure origins into one source tag
+        fid = str(f["id"])
+        return f.get("source") or ("vlm" if "_vlm" in fid else "vector" if "_vec" in fid else "odl_image")
+    raster_labels = {f.get("label") for f in figures if _fig_source(f) != "vlm" and f.get("label")}
+    vlm_desc: dict = {}
+    figures_kept: list = []
+    for f in figures:
+        if _fig_source(f) == "vlm" and f.get("label") in raster_labels:
+            if f.get("description"):                              # keep the dropped VLM figure's description by
+                vlm_desc.setdefault(f["label"], f["description"])  # grafting it onto the surviving raster figure
+            continue
+        figures_kept.append(f)
+    for f in figures_kept:
+        demote(f["id"], f, ("page", "order", "bbox"))
+        source = _fig_source(f)
+        node = {"id": f["id"], "type": f.get("role", "figure"), "zone": f.get("zone"), "label": f.get("label"),
+                "kind": f.get("kind"), "source": source, "file": f.get("file")}
+        desc = f.get("description") or (vlm_desc.get(f.get("label")) if source != "vlm" else None)
+        if desc:
+            node["description"] = desc
+        for k in ("section", "refs"):
+            if f.get(k):
+                node[k] = f[k]
+        nodes.append(node)
+
+    # Caption promotion: a figure/table's caption becomes a `caption` node (re-typed existing caption block,
+    # else synthesized); the figure/table references it via `caption_ref` (no duplicated caption text).
+    node_by_id = {n["id"]: n for n in nodes}
+    synth_caps: dict[object, str] = {}                            # host id -> synthesized caption node id
+    for src in (*figures_kept, *tables):
+        fid, cid, cap = src["id"], src.get("caption_id"), src.get("caption")
+        host = node_by_id.get(fid)
+        if cid and cid in node_by_id:                             # caption is already a block node -> re-type
+            cnode = node_by_id[cid]
+            cnode["type"] = "caption"
+            cnode["caption_of"] = fid
+            if host is not None:
+                host["caption_ref"] = cid
+        elif cap:                                                 # caption lived only as a field -> synthesize
+            cnid = f"{fid}_cap"
+            nodes.append({"id": cnid, "type": "caption", "zone": src.get("zone"), "caption_of": fid,
+                          "label": src.get("label"), "text": cap})
+            synth_caps[fid] = cnid
+            if host is not None:
+                host["caption_ref"] = cnid
+
+    # References parsing: inside the references zone, each entry is one bibliographic reference -> re-type
+    # it `reference`, lifting the leading marker ([12]/12./①) when present. Entries that begin '12.' are
+    # tagged `heading` by the numbering rule, so headings are included here too; only the zone's own
+    # section heading ('References'/'참고문헌') is spared. Numeric/circled markers -> language-neutral.
+    section_block_ids = {s["block_id"] for s in sections}
+    for n in nodes:
+        if (n.get("zone") == "references" and n["id"] not in section_block_ids
+                and n.get("type") in ("paragraph", "list_item", "heading")):
+            n["type"] = "reference"
+            m = _REF_MARKER.match(n.get("text", ""))
+            if m:
+                n["marker"] = next(g for g in m.groups() if g)
+
+    # Equation promotion: extract display equations from the VLM markdown as `equation` nodes, woven into
+    # the reading order at page granularity (per-node placement needs the Phase-3 prose bridge).
+    from collections import Counter
+    page_zone: dict[int, str] = {}
+    for b in blocks:
+        page_zone.setdefault(b.get("page"), []).append(b.get("zone"))  # type: ignore[arg-type]
+    page_zone = {pg: (Counter(z for z in zs if z).most_common(1)[0][0] if any(zs) else ontology.default_zone)
+                 for pg, zs in page_zone.items()}
+    eqs_by_page = _display_equations_by_page(page_markdown) if page_markdown else {}
+    eq_ids_by_page: dict[int, list[str]] = {}
+    for pi, latexes in eqs_by_page.items():
+        ids = []
+        for k, latex in enumerate(latexes):
+            nid = f"eq_p{pi + 1}_{k}"
+            nodes.append({"id": nid, "type": "equation", "zone": page_zone.get(pi + 1, ontology.default_zone),
+                          "display": True, "latex": latex})
+            ids.append(nid)
+        eq_ids_by_page[pi] = ids
+
+    # Reading order references only ids that still exist in the nodes[] pool. It excludes `furniture`
+    # (extraction noise / glyph-garbled math debris -- kept in the pool but out of the reading flow) AND ids
+    # that were dropped from the pool (e.g. a de-duplicated VLM figure whose id is still in the raw page
+    # content) so no dangling reference is emitted. A SYNTHESIZED caption (field-only) is woven in right
+    # after its host figure/table so its text reaches the chunks.
+    present_ids = {n["id"] for n in nodes}
+    furniture_ids = {n["id"] for n in nodes if n.get("zone") == "furniture"}
+    reading_order: list = []
+    for pi, content in pages_content:
+        for nid in content:
+            if nid not in present_ids or nid in furniture_ids:
+                continue
+            reading_order.append(nid)
+            cap = synth_caps.get(nid)
+            if cap and cap not in furniture_ids:
+                reading_order.append(cap)
+        reading_order.extend(eq_ids_by_page.get(pi, []))
+
+    sec_clean = [{"id": s["id"], "heading": s["heading"], "level": s["level"], "zone": s.get("zone"),
+                  "heading_ref": s["block_id"], "parent": s["parent"], "children": s["children"],
+                  "content": s["content"]} for s in sections]
+    title = next((b.get("text") for b in blocks if b.get("role") == "title"), None) \
+        or (meta.get("producer") or {}).get("title")
+    doc = {
+        "document_id": meta.get("document_id"), "content_sha256": meta.get("content_sha256"),
+        "original_filename": meta.get("original_filename"), "source": meta.get("source"),
+        "n_pages": meta.get("n_pages"), "mode": meta.get("mode"),
+        "@context": _SEMANTIC_CONTEXT, "profile": ontology.profile_stamp(),
+        "metadata": {"title": title},
+        "zones": _zones_summary(blocks, tables, figures),
+        "sections": sec_clean, "nodes": nodes, "reading_order": reading_order,
+    }
+    return doc, prov
+
+
+def _write_semantic_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
+                         blocks: list[dict], tables: list[dict], figures: list[dict],
+                         sections: list[dict], ontology: "Ontology",
+                         page_markdown: dict[int, str] | None = None) -> tuple[dict, dict]:
+    """Emit the agent-clean layered artifacts: document.semantic.json (no geometry) + a provenance sidecar;
+    return the (semantic doc, provenance) so the chunker can consume them without a re-read."""
+    pages_content = [(p.page_index, pages_meta.get(p.page_index, {}).get("content", []))
+                     for p in result.pages if p.route != "folded"]
+    doc, prov = _build_semantic(blocks, tables, figures, sections, pages_content, result.meta.to_dict(),
+                                ontology, page_markdown)
+    # Producer-backed seam (§5): serialize the Layer-2 artifacts THROUGH the export contracts, so the
+    # bytes on disk are SemanticView/Provenance.to_dict() output (the contract is the schema authority).
+    (out / "document.semantic.json").write_text(
+        json.dumps(SemanticView.from_dict(doc).to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "document.provenance.json").write_text(
+        json.dumps(Provenance(prov=prov, profile=ontology.profile_stamp()).to_dict(),
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+    return doc, prov      # return the RAW builder output so the chunker consumes it without a re-parse
+
+
+# --------------------------------------------------------------------------------------------------
+# Built-in chunking (R16, Phase 3): small-to-big, structure-first
+# --------------------------------------------------------------------------------------------------
+_CJK_TOK = re.compile(r"[぀-ヿ㐀-鿿가-힣]")   # CJK: ~1 token per char
+_EQ_PAGE = re.compile(r"eq_p(\d+)_")
+_SENTENCE = re.compile(r"(?<=[.!?。！？])\s+")   # sentence boundary for splitting an oversized paragraph
+
+
+def _approx_tokens(text: str) -> int:
+    """A tokenizer-free size estimate for chunk boundaries: CJK chars count ~1 token each; other text
+    ~1.3 tokens/word. The exact tokenizer name is stored on each chunk so a consumer can re-count."""
+    cjk = len(_CJK_TOK.findall(text))
+    words = len(_CJK_TOK.sub(" ", text).split())
+    return int(cjk + round(words * 1.3))
+
+
+def _chunk_node_text(n: dict) -> str:
+    """The embeddable/display text for a node: equations render their LaTeX, atomics a labelled stub."""
+    t = n.get("type")
+    if t == "equation":
+        return n.get("latex", "")
+    if t == "table":
+        return f"[{n.get('label') or 'Table'}]"
+    if t == "figure":
+        return f"[{n.get('label') or 'Figure'}] {n.get('caption') or n.get('description') or ''}".strip()
+    return n.get("text", "")
+
+
+def build_chunks(sem: dict, prov: dict, doc_id: str, policy: "ChunkPolicy") -> list[dict]:
+    """Small-to-big chunks from the semantic view. A PARENT chunk = one section (its heading + own
+    content) or, for section-less content, a page group. CHILD chunks token-pack the parent's prose on
+    node boundaries (never mid-node); atomics (table/figure/equation) are kept whole as their own child.
+    Children carry the heading breadcrumb (``embedding_text``) and prev/next links; index the children,
+    return the parent. Pure: (semantic doc, provenance, doc id, policy) -> chunk list."""
+    from collections import Counter
+
+    nodes = {n["id"]: n for n in sem.get("nodes", [])}
+    sections = sem.get("sections", [])
+    sec_by_id = {s["id"]: s for s in sections}
+
+    node_page: dict[object, int] = {}                        # node -> page (from provenance / synthesised id)
+    for nid, p in prov.items():
+        pg = p.get("page") or (p["regions"][0]["page"] if p.get("regions") else None)
+        if pg is not None:
+            node_page[nid] = pg
+    for n in sem.get("nodes", []):
+        nid = n["id"]
+        if nid in node_page:
+            continue
+        m = _EQ_PAGE.match(str(nid))
+        if m:
+            node_page[nid] = int(m.group(1))
+        elif n.get("caption_of") in node_page:
+            node_page[nid] = node_page[n["caption_of"]]
+
+    node_section: dict[object, object] = {}
+    for s in sections:
+        node_section[s["heading_ref"]] = s["id"]
+        for nid in s.get("content", []):
+            node_section[nid] = s["id"]
+
+    def breadcrumb(sid: object) -> list:
+        out, seen = [], set()
+        while sid and sid not in seen:
+            seen.add(sid)
+            s = sec_by_id.get(sid)
+            if not s:
+                break
+            out.append(s["heading"])
+            sid = s.get("parent")
+        return list(reversed(out))
+
+    def span(ids: list) -> list:
+        ps = [node_page[i] for i in ids if i in node_page]
+        return [min(ps), max(ps)] if ps else [None, None]
+
+    def disp(ids: list) -> str:
+        return "\n".join(t for t in (_chunk_node_text(nodes[i]) for i in ids) if t)
+
+    # partition reading order into parent units (consecutive same-section, or a page group of orphans)
+    units: list[tuple] = []
+    for nid in sem.get("reading_order", []):
+        if nid not in nodes:
+            continue
+        sid = node_section.get(nid)
+        key = ("sec", sid) if sid else ("page", node_page.get(nid))
+        if not units or units[-1][0] != key:
+            units.append((key, []))
+        units[-1][1].append(nid)
+
+    chunks: list[dict] = []
+    child_order: list[str] = []
+    keep_atomic = set(policy.keep_atomic)
+    for seq, (key, ids) in enumerate(units, 1):
+        sid = key[1] if key[0] == "sec" else None
+        crumb = breadcrumb(sid) if sid else []
+        zc = Counter(nodes[i].get("zone") for i in ids if nodes[i].get("zone"))
+        zone = zc.most_common(1)[0][0] if zc else "body"
+        pid = f"c{seq:04d}p"
+        pdisp = disp(ids)
+        parent = {"id": pid, "level": "parent", "doc_id": doc_id,
+                  "structural_type": "section" if sid else "page", "zone": zone, "heading_path": crumb,
+                  "display_text": pdisp, "source_refs": {"nodes": list(ids), "pages": span(ids)},
+                  "token_count": _approx_tokens(pdisp), "tokenizer": policy.tokenizer, "children": []}
+        chunks.append(parent)
+        buf: list = []
+        cnum = 0
+        prev_was_text = False
+
+        def emit(node_ids: list, ctype: str, text: str | None = None) -> None:
+            nonlocal cnum, prev_was_text
+            cnum += 1
+            cid = f"c{seq:04d}_{cnum}"
+            t = disp(node_ids) if text is None else text
+            # source_refs.{nodes,pages} is the canonical Layer-0 back-reference (§6): for an atomic child
+            # the single node id in nodes[] IS the table/figure/equation ref, so no per-type ref field.
+            child = {"id": cid, "level": "child", "doc_id": doc_id, "parent_id": pid, "structural_type": ctype,
+                     "zone": zone, "heading_path": crumb, "display_text": t,
+                     "embedding_text": (" > ".join(crumb) + "\n" + t).strip() if crumb else t,
+                     "node_types": [nodes[i]["type"] for i in node_ids],
+                     "source_refs": {"nodes": list(node_ids), "pages": span(node_ids)},
+                     "token_count": _approx_tokens(t), "tokenizer": policy.tokenizer,
+                     "prev": None, "next": None, "is_continuation": ctype == "text" and prev_was_text,
+                     "atomic": ctype in keep_atomic}
+            chunks.append(child)
+            parent["children"].append(cid)
+            child_order.append(cid)
+            prev_was_text = ctype == "text"
+
+        def emit_oversized(nid: object) -> None:                 # one paragraph over budget -> sentence windows
+            win: list[str] = []
+            for s in _SENTENCE.split(_chunk_node_text(nodes[nid])):
+                win.append(s)
+                if _approx_tokens(" ".join(win)) >= policy.child_tokens:
+                    emit([nid], "text", " ".join(win))
+                    win = []
+            if win:
+                emit([nid], "text", " ".join(win))
+
+        for i in ids:
+            if nodes[i]["type"] in keep_atomic:
+                if buf:
+                    emit(buf, "text")
+                    buf = []
+                emit([i], nodes[i]["type"])
+            elif not buf and _approx_tokens(_chunk_node_text(nodes[i])) >= policy.child_tokens:
+                emit_oversized(i)                                # a single paragraph exceeds the budget alone
+            else:
+                buf.append(i)
+                if _approx_tokens(disp(buf)) >= policy.child_tokens:
+                    emit(buf, "text")
+                    buf = []
+        if buf:
+            emit(buf, "text")
+
+    by_id = {c["id"]: c for c in chunks}                     # link leaves in reading order (prev/next)
+    for a, b in zip(child_order, child_order[1:]):
+        by_id[a]["next"] = b
+        by_id[b]["prev"] = a
+    return chunks
+
+
+def _write_chunks(out: Path, chunks: list[dict]) -> None:
+    # Producer-backed seam (§5): the bytes written are ChunkRecord.to_dict() output, so the export
+    # contract is the emission's schema authority (round-trip == schema-regression guard).
+    with (out / "document.chunks.jsonl").open("w", encoding="utf-8") as f:
+        for c in chunks:
+            f.write(json.dumps(ChunkRecord.from_dict(c).to_dict(), ensure_ascii=False) + "\n")
+
+
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
-                         sections: list[dict], page_labels: dict[int, str | None]) -> None:
+                         sections: list[dict], page_labels: dict[int, str | None],
+                         ontology: "Ontology | None" = None) -> None:
     """Emit the R12/R13 graph: per-page reading-order ``content`` (id stream) + typed id lists, the
     document-level ``blocks``/``tables``/``figures``/``sections`` registries keyed by stable id, and
     each page's printed ``page_label``."""
@@ -782,11 +1207,29 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
         }
         for p in result.pages if p.route != "folded"
     ]
-    doc["sections"] = sections
-    doc["blocks"] = blocks
-    doc["tables"] = tables
-    doc["figures"] = figures
+    # Layer 0 is the byte-compatible extraction graph: role/zone (Layer 1) and heading_level/odl_role
+    # (transient admission signals) are NOT inlined on nodes -- they live in a non-destructive `roles`
+    # overlay keyed by node id (integration-plan §3-①). Serialize stripped COPIES so the shared node
+    # dicts (also consumed by the semantic view / chunker) are not mutated.
+    def _l0(n: dict) -> dict:
+        return {k: v for k, v in n.items() if k not in ("role", "zone", "heading_level", "odl_role")}
+    doc["sections"] = [_l0(s) for s in sections]
+    doc["blocks"] = [_l0(b) for b in blocks]
+    doc["tables"] = [_l0(t) for t in tables]
+    doc["figures"] = [_l0(f) for f in figures]
+    if ontology is not None:   # additive top-level: injected ontology + Layer-1 role overlay + zone summary
+        doc["@context"] = _SEMANTIC_CONTEXT
+        doc["ontology"] = ontology.profile_stamp()
+        doc["roles"] = {n["id"]: {"role": n["role"], "confidence": 1.0, "by": "ontology"}
+                        for n in (*blocks, *tables, *figures) if n.get("role")}
+        doc["zones"] = _zones_summary(blocks, tables, figures)
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    if ontology is not None:
+        # Producer-backed seam (§5): a typed, contract-tagged structure view of the (loss-aware) document.json,
+        # giving StructureExport a live producer. Lossy-by-design -- keys outside the dataclasses are dropped
+        # here but preserved in document.json (the source of truth). from_dict consumes the flat doc directly.
+        (out / "document.structure.json").write_text(
+            json.dumps(StructureExport.from_dict(doc).to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _write_tables(out: Path, tables: list[dict]) -> None:

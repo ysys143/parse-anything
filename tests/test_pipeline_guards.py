@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.guards import (
+from parse_anything.pipeline.guards import (
     extract_numbers,
     normalize_number,
     ratio_holds,

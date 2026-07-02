@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.odl_extract import OdlDocument, OdlPage, OdlParagraph
-from odl_vl.pipeline.outline import parse_printed_toc, resolve_heading_authority
+from parse_anything.pipeline.odl_extract import OdlDocument, OdlPage, OdlParagraph
+from parse_anything.pipeline.outline import parse_printed_toc, resolve_heading_authority
 
 
 def _p(text):

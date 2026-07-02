@@ -16,8 +16,8 @@ _SRC = _REPO / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from odl_vl.cli_support import Runtime  # noqa: E402
-from odl_vl.pipeline.catalog import build_index, query  # noqa: E402
+from parse_anything.cli_support import Runtime  # noqa: E402
+from parse_anything.pipeline.catalog import build_index, query  # noqa: E402
 
 
 def run_cli(argv, runtime: Runtime) -> int:

@@ -60,7 +60,7 @@
 
 ## 2. VLM 엔드투엔드 모델군 (핵심 비교군)
 
-> "odl-vl"(vision-language)의 맥락에서 가장 직접적인 비교 대상. 페이지 이미지를 단일 모델이 구조화 출력으로 변환.
+> "parse-anything"(vision-language)의 맥락에서 가장 직접적인 비교 대상. 페이지 이미지를 단일 모델이 구조화 출력으로 변환.
 
 ### 2.1 Marker (Datalab / Vik Paruchuri)
 - **성격**: 엄밀히는 **파이프라인**(Datalab의 **Surya** 모델군 조합 + 선택적 LLM 보정). PDF/이미지/오피스 → Markdown/JSON/HTML/chunks.
@@ -265,7 +265,7 @@
 - **자가 평가 편향**: OmniDocBench=OpenDataLab(=MinerU), ParseBench=LlamaIndex(=LlamaParse) 등 운영사가 자사 제품을 포함합니다.
 - **코드 ≠ 가중치 라이선스**: 다수 모델이 코드와 가중치 라이선스가 다릅니다. 상업 도입 전 **가중치 라이선스 원문**을 반드시 확인하십시오(특히 dots.ocr, GOT-OCR, Marker, MinerU).
 - **수치 출처**: arXiv/HuggingFace/일부 벤더 페이지의 403로 인해 일부 벤치·가격은 2차출처·검색 스니펫 기반입니다(본문 *표시*). 정밀 감사 시 출처 URL을 직접 확인하십시오.
-- **"odl-vl" 관련**: OpenDataLoader 공식 조직에는 "vl/vision-language" 제품이 없습니다(8개 저장소 중 없음). 본 저장소 `ysys143/odl-vl`은 사용자 프로젝트로 보이며, OpenDataLoader의 하이브리드 모드(SmolVLM 활용)와 일맥상통하나 상류 제품은 아닙니다.
+- **"parse-anything" 관련**: OpenDataLoader 공식 조직에는 "vl/vision-language" 제품이 없습니다(8개 저장소 중 없음). 본 저장소 `ysys143/parse-anything`은 사용자 프로젝트로 보이며, OpenDataLoader의 하이브리드 모드(SmolVLM 활용)와 일맥상통하나 상류 제품은 아닙니다.
 
 ---
 

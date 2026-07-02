@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.run import DocumentResult, PageOutcome
-from odl_vl.pipeline.scorecard import PageGold, score_document
+from parse_anything.pipeline.run import DocumentResult, PageOutcome
+from parse_anything.pipeline.scorecard import PageGold, score_document
 
 
 def _result() -> DocumentResult:

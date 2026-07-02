@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.odl_extract import OdlParagraph
-from odl_vl.pipeline.output import interleave_figures
+from parse_anything.pipeline.odl_extract import OdlParagraph
+from parse_anything.pipeline.output import interleave_figures
 
 
 def _block(text: str, top_y: float) -> OdlParagraph:

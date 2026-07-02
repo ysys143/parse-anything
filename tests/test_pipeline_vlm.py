@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from odl_vl.pipeline.vlm import VlmError, transcribe_image, transcribe_images
-from odl_vl.providers import HttpResponse
+from parse_anything.pipeline.vlm import VlmError, transcribe_image, transcribe_images
+from parse_anything.providers import HttpResponse
 
 
 class _FakeClient:

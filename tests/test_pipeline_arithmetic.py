@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from odl_vl.pipeline.arithmetic import check_table_arithmetic
+from parse_anything.pipeline.arithmetic import check_table_arithmetic
 
 
 def test_arithmetic_invariant_holds():
