@@ -77,7 +77,7 @@ def test_caption_title_still_ends_at_a_real_sentence_after_an_abbreviation():
 
 
 def test_display_equation_strips_are_dropped_but_real_figures_kept():
-    from parse_anything.pipeline.output import _text_line_strip, _tiny_figure
+    from parse_anything.pipeline.output import _text_line_strip
     # a thin horizontal band a text line or two tall = a display equation ODL mis-detected as a figure
     assert _text_line_strip([100, 500, 456, 527])      # 356 x 27 -> equation strip
     assert _text_line_strip([100, 500, 503, 518])      # 403 x 18 -> equation strip

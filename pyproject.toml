@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "parse-anything"
 version = "0.1.0"
-description = "ODL VLM parsing experiments"
+description = "Deterministic-first, ontology-driven PDF parsing into agent-ready layered artifacts + RAG chunks"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -29,3 +29,15 @@ packages = ["src/parse_anything"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 addopts = ["-p", "no:html"]
+
+[tool.ruff]
+# worktree-b / worktree-c are auxiliary git worktrees checked out inside the repo, not this tree's source.
+extend-exclude = ["worktree-*"]
+
+[tool.pyright]
+# Resolve first-party (src/parse_anything) + third-party imports (pypdfium2/PIL/... declared in
+# dependencies) against the uv-managed virtualenv, so the type checker doesn't report phantom
+# "could not be resolved" errors.
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src"]

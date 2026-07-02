@@ -88,7 +88,8 @@ def _body(payload: str) -> HttpResponse:
 
 def test_poll_job_returns_complete_with_body():
     client = _client([_body('{"data":{"state":"queued"}}'), _body('{"data":{"state":"done"}}')])
-    clock = (lambda c=count(): float(next(c)))
+    def clock(c=count()):
+        return float(next(c))
     outcome = poll_job(
         client=client,
         build_request=lambda: object(),  # type: ignore[arg-type]
@@ -104,7 +105,8 @@ def test_poll_job_returns_complete_with_body():
 
 def test_poll_job_reports_http_error():
     client = _client([HttpResponse(status_code=500, body=b"")])
-    clock = (lambda c=count(): float(next(c)))
+    def clock(c=count()):
+        return float(next(c))
     outcome = poll_job(
         client=client,
         build_request=lambda: object(),  # type: ignore[arg-type]

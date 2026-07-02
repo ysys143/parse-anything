@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -398,7 +398,7 @@ def _stitch_broken_paragraphs(markdown: str) -> str:
     return "\n\n".join(out)
 
 
-def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
+def _assemble_document(pages: Sequence[tuple[str | None, str]]) -> str:
     """Assemble per-page Markdown into one continuous document. The page boundary is a physical PDF
     artifact, not document structure, so a sentence wrapped across it is STITCHED back (the same
     continuation rule reflow uses within a page, plus a terminator check since the page break carries
@@ -670,7 +670,7 @@ def _bind_vector_captions(figures: list[dict], blocks: list[dict]) -> None:
     for f in figures:
         if f.get("source") != "vector" or not f.get("bbox"):
             continue
-        fx0, _fy0, fx1, fy1 = f["bbox"]
+        fx0, _, fx1, fy1 = f["bbox"]
         page_caps = caps_by_page.get(f["page"], [])
         caps = [b for b in page_caps if not (b["bbox"][2] < fx0 or b["bbox"][0] > fx1)] or page_caps
         if not caps:
