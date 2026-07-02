@@ -22,7 +22,6 @@ param(
 $ErrorActionPreference = 'Stop'
 $Owner = 'ysys143'
 $Repo  = 'parse-anything'
-$BinDir = Join-Path $InstallDir 'bin'
 
 function Info($m) { Write-Host "  $m" }
 function Die($m)  { Write-Error $m; exit 1 }
@@ -34,16 +33,16 @@ function Add-UserPath($dir) {
     [Environment]::SetEnvironmentVariable('Path', $new, 'User')
     Info "added $dir to your user PATH"
   }
-  $env:Path = "$dir;$env:Path"   # make it usable in this session too
+  $env:Path = "$dir;$env:Path"   # usable in this session too
 }
 
 function Do-Uninstall {
-  foreach ($c in 'parse-anything','parse','pa') {
-    $p = Join-Path $BinDir "$c.cmd"
-    if (Test-Path $p) { Remove-Item $p -Force; Info "removed $p" }
+  foreach ($c in 'parse','pa') {
+    $p = Join-Path $InstallDir "$c.cmd"
+    if (Test-Path $p) { Remove-Item $p -Force }
   }
   if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force; Info "removed $InstallDir" }
-  Info "a '$BinDir' entry may remain in your user PATH; remove it manually if desired"
+  Info "a '$InstallDir' entry may remain in your user PATH; remove it manually if desired"
 }
 
 function Do-Install {
@@ -58,41 +57,35 @@ function Do-Install {
     if (-not $Version) { Die "could not resolve the latest release (pass -Version)" }
   }
 
-  $asset = "parse-anything-$Version-$platform.zip"
+  $asset = "parse-anything-$Version-$platform.tar.gz"
   $base  = "https://github.com/$Owner/$Repo/releases/download/$Version"
   $tmp   = Join-Path ([System.IO.Path]::GetTempPath()) ("pa-" + [guid]::NewGuid())
   New-Item -ItemType Directory -Path $tmp -Force | Out-Null
   try {
-    $zip = Join-Path $tmp 'pkg.zip'
+    $tgz = Join-Path $tmp 'pkg.tar.gz'
     Info "downloading $asset"
-    Invoke-WebRequest "$base/$asset" -OutFile $zip
+    Invoke-WebRequest "$base/$asset" -OutFile $tgz
 
     try {
       $shaFile = Join-Path $tmp 'pkg.sha256'
       Invoke-WebRequest "$base/$asset.sha256" -OutFile $shaFile
-      $expected = ((Get-Content $shaFile -Raw) -split '\s+')[0].Trim()
-      $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-      if ($actual -ne $expected.ToLower()) { Die "checksum mismatch (expected $expected, got $actual)" }
+      $expected = ((Get-Content $shaFile -Raw) -split '\s+')[0].Trim().ToLower()
+      $actual = (Get-FileHash $tgz -Algorithm SHA256).Hash.ToLower()
+      if ($actual -ne $expected) { Die "checksum mismatch (expected $expected, got $actual)" }
       Info "checksum ok"
     } catch { Write-Warning "no checksum published for $asset; skipping verification" }
 
     Info "installing to $InstallDir"
     if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    Expand-Archive -Path $zip -DestinationPath $InstallDir -Force
-    # strip a single top-level directory if the archive has one
-    $top = Get-ChildItem $InstallDir
-    if ($top.Count -eq 1 -and $top[0].PSIsContainer) {
-      Get-ChildItem $top[0].FullName | Move-Item -Destination $InstallDir -Force
-      Remove-Item $top[0].FullName -Recurse -Force
-    }
+    tar -xzf $tgz -C $InstallDir --strip-components=1   # Windows 10+ ships bsdtar
 
-    $exe = Join-Path $BinDir 'parse-anything.exe'
+    $exe = Join-Path $InstallDir 'parse-anything.exe'
     if (-not (Test-Path $exe)) { Die "bundle layout unexpected: $exe not found" }
     foreach ($c in 'parse','pa') {   # .cmd shims for the aliases
-      Set-Content -Path (Join-Path $BinDir "$c.cmd") -Value "@echo off`r`n`"$exe`" %*" -Encoding ASCII
+      Set-Content -Path (Join-Path $InstallDir "$c.cmd") -Value "@echo off`r`n`"$exe`" %*" -Encoding ASCII
     }
-    Add-UserPath $BinDir
+    Add-UserPath $InstallDir
 
     & $exe --help | Out-Null
     Write-Host "`nparse-anything $Version installed. Try:  parse-anything --pdf doc.pdf --out out\ --mode deterministic"
