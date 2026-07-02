@@ -18,7 +18,8 @@ dependencies = [
 
 [project.scripts]
 parse-anything = "parse_anything.cli:main"
-pa = "parse_anything.cli:main"        # short alias
+parse = "parse_anything.cli:main"     # short alias
+pa = "parse_anything.cli:main"        # shortest alias
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "reportlab>=4"]   # reportlab: generate tiny PDFs for tests (no committed binaries)
