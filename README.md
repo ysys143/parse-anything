@@ -135,6 +135,7 @@ The fixture work is metadata-only in this slice. The initial eight fixture famil
 
 - [Agent-ready schema and chunking](docs/agent-ready-schema-and-chunking.md): design proposal for a clean agent/RAG-ready layer over the loss-aware `document.json`, a runtime-injectable document ontology (semantic roles), in-module structure/semantic-aware hierarchical chunking, and the RAG/graph integration strategy (LightRAG delegate-not-wrap, Mode 1/2, repo/package boundary).
 - [Export contracts](docs/export-contracts.md): the two versioned public surfaces — Layer 2 chunk export (Mode 1 / RAG) and Layer 0+1 structure export (Mode 2 / KG) — with the stability policy. Types in `src/odl_vl/export/`.
+- [Integration plan PR #3 × PR #4](docs/integration-plan-pr3-pr4.md): how the versioned contract layer (PR #3) and the pipeline emission (PR #4) reconcile — contract-as-seam, layer reassignment of the divergences, contract v1.1 deltas, emission wiring, and the merge strategy.
 - [Measurement findings](docs/measurement-findings.md): prototype evidence (renderer, layer choice, hallucination, oracle, cross-page, triage, orientation, table structure) behind the pipeline design.
 - [Relative performance validation plan](docs/relative-performance-validation-plan.md): benchmark plan for proving ODL-VL improvements against PyMuPDF/PyMuPDF4LLM, ODL, Tesseract, PaddleOCR official API, and Gemini direct.
 - [External orchestrator architecture](docs/orchestrator-architecture.md): historical -- the design of the removed page-level scaffold, superseded by the PDF pipeline.
