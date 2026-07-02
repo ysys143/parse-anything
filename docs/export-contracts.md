@@ -74,7 +74,7 @@ assert check_compatible(payload["contract"], STRUCTURE_CONTRACT)  # 같은 name 
 | `role` | str \| null | 의미 역할(§2.2). `drop` 정책 role은 레코드 자체가 없음 |
 | `heading_path` | str[] | 상위 heading breadcrumb |
 | `text` | str | clean 텍스트(표=md, 수식=LaTeX, furniture 제거) |
-| `token_count` | int | **소비자 토크나이저 정렬**(§9.5, 기본 tiktoken/`cl100k_base`) |
+| `token_count` | int | 모델-무관 **추정치 + 토크나이저 이름 기록**. fit 보장은 소비자 설정 토크나이저 기준(§9.5). tiktoken은 목표 아님(LightRAG 기본일 뿐) |
 | `atomic` | bool | 표/그림/수식 = 분할 금지 단위 |
 | `source_refs` | `{nodes[], pages[]}` | **Layer 0 왕복**: 인용·bbox 그라운딩 |
 | `refs` | str[] | cross-ref로 연결된 노드 id |

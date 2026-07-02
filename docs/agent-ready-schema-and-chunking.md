@@ -247,7 +247,7 @@ build_graph (기존)
 
 ## 8. 열린 결정 사항
 
-1. ~~토크나이저 기준~~ → **해소(§9.5).** 청크 `token_count`는 **소비자 토크나이저에 정렬**한다(LightRAG 기본 tiktoken/`cl100k_base`). 온톨로지 프로파일의 `tokenizer` 필드로 명시. 불일치 시 소비자 재카운트에 맡긴다.
+1. ~~토크나이저 기준~~ → **해소(§9.5).** 청크 `token_count`는 우리 packing용 **모델-무관 추정치 + 토크나이저 이름 기록**이다(PR #4 방식). 실제 fit 보장(1b precondition)은 **소비자가 설정한 토크나이저** 기준(Gemini·로컬·무엇이든 — 임베딩/LLM 모델이 정의). **tiktoken은 목표가 아니라 LightRAG의 *기본* Tokenizer일 뿐**(우리 스택은 Gemini/Paddle). 온톨로지 프로파일의 `tokenizer` 필드로 명시.
 2. `document.agent.json`(문서 뷰)과 `chunks.jsonl`(검색 단위) 중 우선 구현 순서.
 3. VLM disambiguation을 role 분류에 어느 선까지 허용할지(비용 vs 정확도) — 기본은 결정론-only.
 4. 온톨로지 `base.md`의 공통 role 최소 집합 확정.
