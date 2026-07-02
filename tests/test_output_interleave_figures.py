@@ -30,9 +30,9 @@ def test_figure_inserted_after_nearest_block_above():
     blocks = (_block("Section One", 800.0), _block("Section Two", 500.0))
     out = interleave_figures(md, [_fig("f002", 480.0)], blocks)  # figure just below Section Two
     lines = out.split("\n")
-    i_two = next(i for i, l in enumerate(lines) if "Section Two" in l)
-    i_ref = next(i for i, l in enumerate(lines) if "assets/f002.png" in l)
-    i_one = next(i for i, l in enumerate(lines) if "Section One" in l)
+    i_two = next(i for i, ln in enumerate(lines) if "Section Two" in ln)
+    i_ref = next(i for i, ln in enumerate(lines) if "assets/f002.png" in ln)
+    i_one = next(i for i, ln in enumerate(lines) if "Section One" in ln)
     assert i_one < i_two < i_ref  # ref lands after Section Two, not Section One
 
 
@@ -44,9 +44,9 @@ def test_anchor_matches_longest_prefix_when_vlm_resplits():
     blocks = (_block("El titular o representante The owner or representative", 416.8),)
     out = interleave_figures(md, [_fig("f002", 386.8)], blocks)
     lines = out.split("\n")
-    i_anchor = next(i for i, l in enumerate(lines) if "El titular o representante" in l)
-    i_ref = next(i for i, l in enumerate(lines) if "assets/f002.png" in l)
-    i_date = next(i for i, l in enumerate(lines) if "19/02/2026" in l)
+    i_anchor = next(i for i, ln in enumerate(lines) if "El titular o representante" in ln)
+    i_ref = next(i for i, ln in enumerate(lines) if "assets/f002.png" in ln)
+    i_date = next(i for i, ln in enumerate(lines) if "19/02/2026" in ln)
     assert i_anchor < i_ref <= i_date  # ref placed in reading order, not dumped at the end
 
 
@@ -57,10 +57,10 @@ def test_figure_not_inserted_inside_table():
     blocks = (_block("Header A Header B", 400.0),)
     out = interleave_figures(md, [_fig("f001", 386.0)], blocks)
     lines = out.split("\n")
-    i_hdr = next(i for i, l in enumerate(lines) if "Header A" in l)
+    i_hdr = next(i for i, ln in enumerate(lines) if "Header A" in ln)
     assert ":---" in lines[i_hdr + 1]  # separator stays directly under the header -> table intact
-    i_ref = next(i for i, l in enumerate(lines) if "assets/f001.png" in l)
-    i_row = next(i for i, l in enumerate(lines) if "row1" in l)
+    i_ref = next(i for i, ln in enumerate(lines) if "assets/f001.png" in ln)
+    i_row = next(i for i, ln in enumerate(lines) if "row1" in ln)
     assert i_ref > i_row  # ref placed after the table body, not inside it
 
 
