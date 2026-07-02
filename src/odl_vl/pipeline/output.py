@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..export import ChunkRecord, Provenance, SemanticView
 from .frontmatter import consolidate_front_matter
 from .outline import resolve_heading_authority
 from .pageno import extract_printed_page_numbers, printed_to_index
@@ -952,10 +953,14 @@ def _write_semantic_json(out: Path, result: DocumentResult, pages_meta: dict[int
                      for p in result.pages if p.route != "folded"]
     doc, prov = _build_semantic(blocks, tables, figures, sections, pages_content, result.meta.to_dict(),
                                 ontology, page_markdown)
-    (out / "document.semantic.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Producer-backed seam (§5): serialize the Layer-2 artifacts THROUGH the export contracts, so the
+    # bytes on disk are SemanticView/Provenance.to_dict() output (the contract is the schema authority).
+    (out / "document.semantic.json").write_text(
+        json.dumps(SemanticView.from_dict(doc).to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "document.provenance.json").write_text(
-        json.dumps({"profile": ontology.profile_stamp(), "prov": prov}, ensure_ascii=False, indent=2), encoding="utf-8")
-    return doc, prov
+        json.dumps(Provenance(prov=prov, profile=ontology.profile_stamp()).to_dict(),
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+    return doc, prov      # return the RAW builder output so the chunker consumes it without a re-parse
 
 
 # --------------------------------------------------------------------------------------------------
@@ -1058,10 +1063,10 @@ def build_chunks(sem: dict, prov: dict, doc_id: str, policy: "ChunkPolicy") -> l
         zone = zc.most_common(1)[0][0] if zc else "body"
         pid = f"c{seq:04d}p"
         pdisp = disp(ids)
-        parent = {"chunk_id": pid, "level": "parent", "doc_id": doc_id, "type": "section" if sid else "page",
-                  "zone": zone, "section_path": crumb, "display_text": pdisp, "node_ids": list(ids),
-                  "page_span": span(ids), "token_count": _approx_tokens(pdisp), "tokenizer": policy.tokenizer,
-                  "children": []}
+        parent = {"id": pid, "level": "parent", "doc_id": doc_id,
+                  "structural_type": "section" if sid else "page", "zone": zone, "heading_path": crumb,
+                  "display_text": pdisp, "source_refs": {"nodes": list(ids), "pages": span(ids)},
+                  "token_count": _approx_tokens(pdisp), "tokenizer": policy.tokenizer, "children": []}
         chunks.append(parent)
         buf: list = []
         cnum = 0
@@ -1072,18 +1077,16 @@ def build_chunks(sem: dict, prov: dict, doc_id: str, policy: "ChunkPolicy") -> l
             cnum += 1
             cid = f"c{seq:04d}_{cnum}"
             t = disp(node_ids) if text is None else text
-            child = {"chunk_id": cid, "level": "child", "doc_id": doc_id, "parent_id": pid, "type": ctype,
-                     "zone": zone, "section_path": crumb, "display_text": t,
+            # source_refs.{nodes,pages} is the canonical Layer-0 back-reference (§6): for an atomic child
+            # the single node id in nodes[] IS the table/figure/equation ref, so no per-type ref field.
+            child = {"id": cid, "level": "child", "doc_id": doc_id, "parent_id": pid, "structural_type": ctype,
+                     "zone": zone, "heading_path": crumb, "display_text": t,
                      "embedding_text": (" > ".join(crumb) + "\n" + t).strip() if crumb else t,
-                     "node_ids": list(node_ids), "node_types": [nodes[i]["type"] for i in node_ids],
-                     "page_span": span(node_ids), "token_count": _approx_tokens(t), "tokenizer": policy.tokenizer,
-                     "prev": None, "next": None, "is_continuation": ctype == "text" and prev_was_text}
-            if ctype == "table":
-                child["table_ref"] = node_ids[0]
-            elif ctype == "figure":
-                child["figure_refs"] = list(node_ids)
-            elif ctype == "equation":
-                child["equation_refs"] = list(node_ids)
+                     "node_types": [nodes[i]["type"] for i in node_ids],
+                     "source_refs": {"nodes": list(node_ids), "pages": span(node_ids)},
+                     "token_count": _approx_tokens(t), "tokenizer": policy.tokenizer,
+                     "prev": None, "next": None, "is_continuation": ctype == "text" and prev_was_text,
+                     "atomic": ctype in keep_atomic}
             chunks.append(child)
             parent["children"].append(cid)
             child_order.append(cid)
@@ -1115,7 +1118,7 @@ def build_chunks(sem: dict, prov: dict, doc_id: str, policy: "ChunkPolicy") -> l
         if buf:
             emit(buf, "text")
 
-    by_id = {c["chunk_id"]: c for c in chunks}               # link leaves in reading order (prev/next)
+    by_id = {c["id"]: c for c in chunks}                     # link leaves in reading order (prev/next)
     for a, b in zip(child_order, child_order[1:]):
         by_id[a]["next"] = b
         by_id[b]["prev"] = a
@@ -1123,9 +1126,11 @@ def build_chunks(sem: dict, prov: dict, doc_id: str, policy: "ChunkPolicy") -> l
 
 
 def _write_chunks(out: Path, chunks: list[dict]) -> None:
+    # Producer-backed seam (§5): the bytes written are ChunkRecord.to_dict() output, so the export
+    # contract is the emission's schema authority (round-trip == schema-regression guard).
     with (out / "document.chunks.jsonl").open("w", encoding="utf-8") as f:
         for c in chunks:
-            f.write(json.dumps(c, ensure_ascii=False) + "\n")
+            f.write(json.dumps(ChunkRecord.from_dict(c).to_dict(), ensure_ascii=False) + "\n")
 
 
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
@@ -1149,13 +1154,21 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
         }
         for p in result.pages if p.route != "folded"
     ]
-    doc["sections"] = sections
-    doc["blocks"] = blocks
-    doc["tables"] = tables
-    doc["figures"] = figures
-    if ontology is not None:   # declare which injected ontology + version produced this tagging (R15)
+    # Layer 0 is the byte-compatible extraction graph: role/zone (Layer 1) and heading_level/odl_role
+    # (transient admission signals) are NOT inlined on nodes -- they live in a non-destructive `roles`
+    # overlay keyed by node id (integration-plan §3-①). Serialize stripped COPIES so the shared node
+    # dicts (also consumed by the semantic view / chunker) are not mutated.
+    def _l0(n: dict) -> dict:
+        return {k: v for k, v in n.items() if k not in ("role", "zone", "heading_level", "odl_role")}
+    doc["sections"] = [_l0(s) for s in sections]
+    doc["blocks"] = [_l0(b) for b in blocks]
+    doc["tables"] = [_l0(t) for t in tables]
+    doc["figures"] = [_l0(f) for f in figures]
+    if ontology is not None:   # additive top-level: injected ontology + Layer-1 role overlay + zone summary
         doc["@context"] = _SEMANTIC_CONTEXT
         doc["ontology"] = ontology.profile_stamp()
+        doc["roles"] = {n["id"]: {"role": n["role"], "confidence": 1.0, "by": "ontology"}
+                        for n in (*blocks, *tables, *figures) if n.get("role")}
         doc["zones"] = _zones_summary(blocks, tables, figures)
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
 
