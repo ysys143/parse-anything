@@ -29,13 +29,30 @@ One run writes a set of layered artifacts under `<out>/<source_id>/<document_id>
 
 All run artifacts are git-ignored.
 
-## Quickstart
+## Install
 
-Requires Python ≥ 3.11 and **Java 17** (for the `opendataloader-pdf` structure layer).
+**Prebuilt, self-contained** — no Python or Java needed. Installs `parse-anything` (aliases `parse`, `pa`)
+under `~/.local` and adds it to your PATH. Re-run to update; add `-s -- --uninstall` to remove.
 
 ```bash
-uv pip install -e ".[dev]"     # installs the `parse-anything` command (short aliases `parse`, `pa`)
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/ysys143/parse-anything/main/install.sh | sh
 ```
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/ysys143/parse-anything/main/install.ps1 | iex
+```
+
+> The prebuilt installer pulls a release bundle, so it works once a version is tagged on
+> [Releases](https://github.com/ysys143/parse-anything/releases). Until then, install from source.
+
+**From source** (dev; needs Python ≥ 3.11 and **Java 17** for the `opendataloader-pdf` layer):
+
+```bash
+uv pip install -e ".[dev]"     # installs the `parse-anything` command (aliases `parse`, `pa`)
+```
+
+## Quickstart
 
 ```bash
 # deterministic only -- no network, no keys
