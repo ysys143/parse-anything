@@ -22,10 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14,       platform: darwin-arm64 }
-          - { os: macos-13,       platform: darwin-x86_64 }
+          - { os: macos-14,       platform: darwin-arm64 }    # Apple Silicon
           - { os: ubuntu-latest,  platform: linux-x86_64 }
           - { os: windows-latest, platform: windows-x86_64 }
+          # Intel macOS (darwin-x86_64) dropped -- add back a `{ os: macos-13, platform: darwin-x86_64 }`
+          # entry here if it is needed; install.sh already maps that platform string.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
