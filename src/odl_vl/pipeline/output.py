@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..export import ChunkRecord, Provenance, SemanticView
+from ..export import ChunkRecord, Provenance, SemanticView, StructureExport
 from .frontmatter import consolidate_front_matter
 from .outline import resolve_heading_authority
 from .pageno import extract_printed_page_numbers, printed_to_index
@@ -1171,6 +1171,12 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
                         for n in (*blocks, *tables, *figures) if n.get("role")}
         doc["zones"] = _zones_summary(blocks, tables, figures)
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    if ontology is not None:
+        # Producer-backed seam (§5): a typed, contract-tagged structure view of the (loss-aware) document.json,
+        # giving StructureExport a live producer. Lossy-by-design -- keys outside the dataclasses are dropped
+        # here but preserved in document.json (the source of truth). from_dict consumes the flat doc directly.
+        (out / "document.structure.json").write_text(
+            json.dumps(StructureExport.from_dict(doc).to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _write_tables(out: Path, tables: list[dict]) -> None:

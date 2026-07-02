@@ -34,14 +34,16 @@
 ## 2. 목표 최종 상태 — 파일 × 레이어 맵
 
 ```
-Layer 0  document.json            원본 추출. geometry 인라인. role/zone 없음(byte-compat). 소스 오브 트루스.
+Layer 0  document.json            원본 추출. geometry 인라인. role/zone 없음(byte-compat). 소스 오브 트루스(무손실).
+Layer 0+1 document.structure.json  StructureExport 타입드 뷰: roles/zones/@context 포함, 식별자 평면. lossy-by-design.
 Layer 1  roles / zones (overlay)  node id → RoleAssignment / zone. 비파괴. 온톨로지 바뀌면 재계산.
 Layer 2  document.semantic.json   clean 투영: role 인라인 해소, geometry 제거, 수식 latex, 표 md.
          document.provenance.json  geometry 사이드카(같은 node id). loss-aware 유지.
 Chunks   document.chunks.jsonl     parent(섹션)/child(token-pack, atomic whole) + embedding_text/prev/next.
 ```
 
-계약(`src/odl_vl/export/`)은 위 각 표면을 **버전드 타입으로 덮고**, emission이 그 타입을 통해 직렬화한다.
+계약(`src/odl_vl/export/`)은 위 각 표면을 **버전드 타입으로 덮고**, emission이 그 타입을 통해 직렬화한다
+(`document.json`만은 무손실 원본이라 hand-built로 두고, 타입드 뷰는 `document.structure.json`으로 병행 emit).
 
 ## 3. Divergence 판정 → 구체 목표
 
@@ -127,7 +129,12 @@ Chunks   document.chunks.jsonl     parent(섹션)/child(token-pack, atomic whole
 
 ## 9. 열린 결정 (통합 시)
 
-1. Layer 0 표면 이름: 기존 `document.json` 유지 vs `document.structure.json` 신설(계약명 `odl-vl.structure`와 정렬).
-2. `SemanticView`/`Provenance`의 독립 버전 vs `StructureExport` 버전과 동기.
-3. tokenizer 실측 카운트 도입 시점(현재 tokenizer-free 추정 + 이름 기록, §9.5) — 소비자 정렬 원칙 유지.
-4. PR #3 처리: close(1안) vs 선머지(2안). 권장 1안.
+1. **[해결]** Layer 0 표면: `document.json`(loss-aware raw SoT, hand-built) **유지** + `document.structure.json`
+   **신설**(`StructureExport.from_dict(doc).to_dict()`, 계약 `odl-vl.structure` 1.1). raw는 무손실로 두고
+   타입드·버전드 뷰를 별도 파일로 제공(옵션 C). `StructureExport`는 식별자를 top-level로 펼치는 **평면**으로
+   정렬(`SemanticView`/`document.json`과 동형).
+2. **[해결→독립 유지]** `SemanticView`/`Provenance`는 **독립 버전**(각 1.0), `StructureExport`/`ChunkRecord`는
+   1.1. 표면별 소비자(Mode 1↔semantic/chunks, Mode 2↔structure)의 진화 속도가 달라 독립이 seam 취지에 부합.
+3. **[해결→현행 유지]** tokenizer는 tokenizer-free 추정 + 이름 기록 유지(§9.5). 실측 카운트는 소비자 요구 시
+   `--tokenizer` opt-in으로 후속 도입(무거운 의존성을 lean 코어에 넣지 않음).
+4. **[해결]** PR #3 처리: close(1안). PR #4 통합 브랜치가 계약을 흡수, PR #3은 "superseded by #4"로 close.

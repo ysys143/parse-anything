@@ -244,12 +244,23 @@ class RoleAssignment:
         return _from_dict(cls, d)
 
 
+# Envelope keys are contract-controlled; everything else in a structure payload is flat identity meta
+# (document_id/content_sha256/n_pages/mode/...) collected into ``document`` on from_dict -- so the
+# serialized form spreads identity at the top level, matching the flat document.json (integration §3-③).
+_STRUCTURE_ENVELOPE = frozenset(
+    {"contract", "@context", "ontology", "pages", "sections", "blocks", "tables", "figures", "roles", "zones"}
+)
+
+
 @dataclass(frozen=True)
 class StructureExport:
-    """Layer 0+1 surface. ``document`` is ``DocumentMeta.to_dict()``; ``roles`` is the Layer 1
-    overlay keyed by node id (empty until role classification runs); ``ontology`` records the
-    injected profile+version (or None)."""
-    document: dict[str, Any]
+    """Layer 0+1 surface (``document.structure.json``): the typed, contract-tagged view of the flat
+    ``document.json``. ``document`` holds the flat identity meta (``DocumentMeta.to_dict()``), spread
+    back to the top level on serialization; ``roles`` is the Layer 1 overlay keyed by node id (empty
+    until role classification runs); ``ontology`` records the injected profile+version (or None). This
+    is a lossy TYPED projection (``from_dict`` drops keys outside the dataclasses) -- the loss-aware
+    source of truth stays ``document.json`` itself."""
+    document: dict[str, Any] = field(default_factory=dict)
     pages: list[PageEntry] = field(default_factory=list)
     sections: list[Section] = field(default_factory=list)
     blocks: list[Block] = field(default_factory=list)
@@ -264,7 +275,7 @@ class StructureExport:
         return _compact({
             "contract": contract_tag(STRUCTURE_CONTRACT),
             "@context": self.context,
-            "document": self.document,
+            **self.document,
             "ontology": self.ontology,
             "pages": [p.to_dict() for p in self.pages],
             "sections": [s.to_dict() for s in self.sections],
@@ -278,7 +289,7 @@ class StructureExport:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "StructureExport":
         return cls(
-            document=d.get("document", {}),
+            document={k: v for k, v in d.items() if k not in _STRUCTURE_ENVELOPE},
             context=d.get("@context"),
             ontology=d.get("ontology"),
             pages=[PageEntry.from_dict(x) for x in d.get("pages", [])],

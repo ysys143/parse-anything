@@ -12,9 +12,11 @@ import json
 from odl_vl.export import (
     PROVENANCE_CONTRACT,
     SEMANTIC_CONTRACT,
+    STRUCTURE_CONTRACT,
     ChunkRecord,
     Provenance,
     SemanticView,
+    StructureExport,
     contract_tag,
 )
 from odl_vl.pipeline.docmeta import DocumentMeta
@@ -50,6 +52,19 @@ def test_document_json_layer0_is_byte_compat_with_overlay(tmp_path):
             assert not any(k in n for k in banned), f"{name} node inlines {set(n) & set(banned)}"
     assert doc["roles"] and all({"role", "confidence", "by"} <= set(v) for v in doc["roles"].values())
     assert "zones" in doc and "@context" in doc and "ontology" in doc
+
+
+def test_document_structure_json_is_a_typed_structure_view(tmp_path):
+    out = _emit(tmp_path)
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    struct = json.loads((out / "document.structure.json").read_text(encoding="utf-8"))
+    assert struct["contract"] == contract_tag(STRUCTURE_CONTRACT)
+    assert StructureExport.from_dict(struct).to_dict() == struct    # the file IS the contract's serialization
+    assert struct["document_id"] == doc["document_id"]              # identity spread flat, mirrors document.json
+    # typed view stays faithful to the loss-aware source of truth: same node ids, role still NOT inlined
+    assert [b["id"] for b in struct["blocks"]] == [b["id"] for b in doc["blocks"]]
+    assert all("role" not in b for b in struct["blocks"])
+    assert struct["roles"] == doc["roles"] and struct["zones"] == doc["zones"]
 
 
 # ---- Layer 2: emission == contract.to_dict() (idempotent round-trip) --------------------------------

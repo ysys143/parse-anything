@@ -34,7 +34,11 @@ assert check_compatible(payload["contract"], STRUCTURE_CONTRACT)  # 같은 name 
 ## Structure export (Layer 0+1)
 
 `build_graph`(`pipeline/structure.py`) + `DocumentMeta.to_dict()`(`pipeline/docmeta.py`) 출력에 정합.
-즉 이 계약은 새 포맷을 발명하지 않고 **현재 출력을 문서화**한다.
+즉 이 계약은 새 포맷을 발명하지 않고 **현재 출력을 문서화**한다. 파이프라인은 이를
+**`document.structure.json`**으로 emit한다(`StructureExport.from_dict(document.json_dict).to_dict()`).
+이는 loss-aware `document.json`의 **타입드 뷰**다 — dataclass 밖 키는 여기서 드롭되지만(lossy-by-design)
+원본 `document.json`에는 보존된다. 식별자는 `SemanticView`/`document.json`과 동일하게 **top-level에 평면**으로
+펼친다(v1.1, `document` 래핑 아님).
 
 최상위:
 
@@ -42,7 +46,7 @@ assert check_compatible(payload["contract"], STRUCTURE_CONTRACT)  # 같은 name 
 |---|---|---|
 | `contract` | `{name, version}` | `odl-vl.structure` / `1.1` |
 | `@context` | object \| null | JSON-LD `@context`(portable IR, v1.1). 없으면 생략 |
-| `document` | object | `DocumentMeta.to_dict()` (identity·provenance·mode·diagnostic) |
+| `document_id`, `content_sha256`, `n_pages`, `mode`, … | — | flat identity(`DocumentMeta.to_dict()`를 top-level로 펼침) |
 | `ontology` | `{profile, version}` \| null | 주입된 온톨로지(§2.4). 미분류면 null |
 | `pages` | `PageEntry[]` | 페이지별 reading-order id 스트림 |
 | `sections` | `Section[]` | 장/절 트리(parent-child) |
@@ -136,9 +140,11 @@ parent 섹션을 반환한다.
 ## 비목표
 
 - 계약은 **직렬화 형태**를 정의하지, 생산 순서/스테이지를 정의하지 않는다(그건 §6).
-- **v1.1부터 producer가 붙었다**: `output.py`가 `document.semantic.json`/`document.provenance.json`/
-  `document.chunks.jsonl`을 각각 `SemanticView`/`Provenance`/`ChunkRecord`의 `.to_dict()`로 직렬화한다
-  (§5). 따라서 계약 라운드트립 테스트(`Contract.from_dict(read).to_dict() == read`)가 곧 emission 스키마
-  회귀 테스트다(`tests/test_export_emission.py`). `document.json`(Layer 0)은 byte-compat 유지를 위해
-  hand-built로 두되 `StructureExport`가 그 표면을 계약으로 덮는다(§9 열린결정: 라우팅 여부).
+- **v1.1부터 네 표면 모두 producer가 붙었다**: `output.py`가 `document.structure.json`/
+  `document.semantic.json`/`document.provenance.json`/`document.chunks.jsonl`을 각각 `StructureExport`/
+  `SemanticView`/`Provenance`/`ChunkRecord`의 `.to_dict()`로 직렬화한다(§5). 따라서 계약 라운드트립 테스트
+  (`Contract.from_dict(read).to_dict() == read`)가 곧 emission 스키마 회귀 테스트다
+  (`tests/test_export_emission.py`). `document.json`(Layer 0)은 loss-aware source of truth이므로 고정 타입
+  게이트를 통과시키지 않고 hand-built로 남기며, `document.structure.json`이 그 **타입드·버전드 뷰**를 제공한다
+  (원본은 무손실, 뷰는 계약-정합).
 - JSON Schema 별도 배포는 후속(현재는 dataclass가 source of truth, 테스트가 스펙-코드 동기화 보증).
