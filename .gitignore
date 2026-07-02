@@ -237,3 +237,6 @@ ledger.jsonl
 
 # Local measurement prototypes + data (incl. private documents). Never committed.
 .local/
+
+# macOS Finder metadata
+.DS_Store
