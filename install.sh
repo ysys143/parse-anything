@@ -148,7 +148,7 @@ do_install() {
   tar -xzf "$tmp/pkg.tar.gz" -C "$DATA_DIR" --strip-components=1
 
   mkdir -p "$BIN_DIR"
-  launcher="$DATA_DIR/bin/parse-anything"
+  launcher="$DATA_DIR/parse-anything"          # PyInstaller onedir: exe at the bundle root (jre/ is a sibling)
   [ -e "$launcher" ] || err "bundle layout unexpected: $launcher not found"
   for cmd in $COMMANDS; do ln -sf "$launcher" "$BIN_DIR/$cmd"; done
   info "linked: $COMMANDS -> $launcher"

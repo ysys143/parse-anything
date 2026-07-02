@@ -1,0 +1,109 @@
+name: release
+
+# Builds a self-contained bundle per platform (frozen Python via PyInstaller + a trimmed JRE via jlink,
+# so the binary needs no system Python or Java) and attaches the tarballs + sha256 to the GitHub Release.
+# Triggered by pushing a `v*` tag; the tag is what install.sh / install.ps1 download.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "release tag to build (e.g. v0.1.0); must already exist"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,       platform: darwin-arm64 }
+          - { os: macos-13,       platform: darwin-x86_64 }
+          - { os: ubuntu-latest,  platform: linux-x86_64 }
+          - { os: windows-latest, platform: windows-x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Resolve tag
+        id: ver
+        shell: bash
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install app + PyInstaller
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+
+      - name: Build trimmed JRE (jlink)
+        shell: bash
+        run: |
+          # java.se covers java.*/javax.* (desktop/xml/naming/logging/...) veraPDF needs; jdk.unsupported = sun.misc.Unsafe.
+          # If a run hits a missing-module error, widen --add-modules here.
+          "$JAVA_HOME/bin/jlink" --add-modules java.se,jdk.unsupported \
+            --strip-debug --no-header-files --no-man-pages --compress=2 \
+            --output jre
+
+      - name: Freeze (PyInstaller onedir)
+        shell: bash
+        run: |
+          # --collect-submodules parse_anything: cli.py imports pipeline.* lazily inside functions, which
+          # PyInstaller's static analysis would miss. --collect-data pulls the bundled ontology md + ODL jar.
+          pyinstaller --noconfirm --onedir --name parse-anything \
+            --collect-submodules parse_anything \
+            --collect-data parse_anything \
+            --collect-all pypdfium2 \
+            --collect-all PIL \
+            --collect-all numpy \
+            --collect-data opendataloader_pdf \
+            --collect-submodules opendataloader_pdf \
+            --collect-data pdf_inspector \
+            packaging/entry.py
+
+      - name: Assemble bundle
+        id: pack
+        shell: bash
+        run: |
+          tag="${{ steps.ver.outputs.tag }}"
+          name="parse-anything-${tag}-${{ matrix.platform }}"
+          cp -R jre "dist/parse-anything/jre"          # ship the JRE next to the frozen exe
+          mv "dist/parse-anything" "dist/${name}"
+          mkdir -p out
+          tar -C dist -czf "out/${name}.tar.gz" "${name}"
+          python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" \
+            "out/${name}.tar.gz" > "out/${name}.tar.gz.sha256"
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.platform }}
+          path: out/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: dist/*
+          fail_on_unmatched_files: true
