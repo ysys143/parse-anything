@@ -338,15 +338,22 @@ Stage 2 (그들 or 우리)       graph 구축 — 각 툴이 자기 방식대로
 ### 9.5 Mode 1 — text/chunks 출력의 세 옵션  `[확정 인터페이스]`
 
 Mode 1은 그래프 없는 RAG-agnostic 출력이다. **청크 경계를 누가 소유하나**의 스펙트럼으로 세 옵션을 구분한다.
-이 세 옵션은 곧 **retrieval 측정 하네스**다 — 1a(청킹 안 함=귀무가설) vs 1c vs 1b를 A/B 해서 데이터가 default를
-고르게 한다(아래 "1c 기본"은 성능 우위가 아니라 최소-커플링·degrade-safe에 근거한 공학적 default이며, 어느
-옵션도 아직 최선으로 *입증*되진 않았다).
+이 세 옵션은 곧 **retrieval 측정 하네스**다 — 1a(청킹 안 함=귀무가설) vs 1c vs 1b를 A/B 해서 데이터가 최종
+default를 고르게 한다(어느 옵션도 아직 최선으로 *입증*되진 않았다). **default는 경로별로 다르다**(실측 근거 §9.5
+caveat): **1st-party 품질 경로**(우리 emission→LightRAG, Mode 2/KG, 인용 그라운딩)는 **`1b`** — 정확 경계+원자
+보장+안정 chunk id(메타 왕복 최적), oversize 원자는 우리가 미리 hard-split. **agnostic 견고성 경로**(통제 못 하는
+미지 소비자)는 **`1c`** — 유일한 실이점은 degrade-safety(마커 무시 소비자에게 1a로 안전 강등), 대가는 원자 silent 파괴.
 
 | 옵션 | 경계 소유 | 산출 | LightRAG 호출 |
 |---|---|---|---|
 | **1a. no chunk** | 소비자 | `document.md`(클린·합본·furniture 제거) | `ainsert(md)` |
-| **1c. no chunk + hint** (기본) | 공유: 우리=원자성/안전seam, 소비자=사이징 | `document.md` + soft seam 마커 | `ainsert(md, split_by_character=SEAM, split_by_character_only=False)` |
-| **1b. chunk** | 우리 | `chunks.jsonl` + 델리미터 직렬화 | `ainsert(txt, split_by_character=SENTINEL, split_by_character_only=True)` |
+| **1c. no chunk + hint** (agnostic 기본) | 공유: 우리=원자성/안전seam, 소비자=사이징 | `document.md` + soft seam 마커 | `ainsert(md, split_by_character=SEAM, split_by_character_only=False)` |
+| **1b. chunk** (1st-party 기본) | 우리 | `chunks.jsonl` + 델리미터 직렬화 | `ainsert(txt, split_by_character=SENTINEL, split_by_character_only=True)` |
+
+> **실험 후 재평가 (§9.5 caveat 근거).** `1b`와 `1c`는 **fit하는 세그먼트에선 출력이 완전히 동일**하고 **오직
+> oversize 원자에서만 갈린다** — `1b`=fail-loud(raise), `1c`=silent mid-atomic 분할. fail-loud > silent-corrupt라
+> 청킹을 소유하는 우리 경로에선 `1b`가 낫다(크기를 아니 oversize 원자를 미리 hard-split하면 에러도 거의 안 남).
+> `1c`는 통제 못 하는 소비자용 안전빵(degrade-safe)일 뿐. → 앞선 "1c flat default"는 정정됨.
 
 - **1a** — 소비자가 강한 청커 보유 / long-context 직접 주입 / 비RAG 용도. 우리 값 = 문서레벨 정제(페이지걸친
   stitching, reading order, furniture 제거), 경계 아님.
@@ -497,8 +504,9 @@ odl-vl[kg] (subpackage)  extractor 포트 + fusion + KG IR.  무거운 deps 여�
   주입). 새 문서종류 = 파일 추가, 코드 0.
 - **청킹**: 이 모듈에서. section 트리·reading order·원자 경계·cross-ref·furniture 제거를 살려서. opt-in.
 - **통합**: Stage 1(파싱·청킹) ⟂ Stage 2(그래프). RAG-agnostic 코어 + 얇은 opt-in 어댑터.
-  - **Mode 1**(그래프 없음) `[확정 인터페이스]`: `1a` no-chunk / `1c` hint(기본, degrade-safe) / `1b` chunk(원자
-    보장·메타 왕복 최적). 이 3옵션 = retrieval 측정 하네스(1a=귀무가설). 지금 build 대상.
+  - **Mode 1**(그래프 없음) `[확정 인터페이스]`: `1a` no-chunk / `1c` hint(agnostic 기본, degrade-safe·원자 silent
+    파괴) / `1b` chunk(**1st-party 기본**: 원자 보장·메타 왕복 최적, oversize는 fail-loud). 1b·1c는 oversize
+    원자에서만 갈림 → 우리 경로엔 1b. 이 3옵션 = retrieval 측정 하네스(1a=귀무가설). 지금 build 대상.
   - **Mode 2**(우리 KG) `[build 유예]`: Extractor 포트(반환형 엔진: LangChain/GraphRAG/자체) ⊕ 결정론 구조 =
     grounded KG IR. portable IR까지만, query 레이어 없음(비경쟁). 설계 확정, 코드는 §8 지표 이후.
 - **build 순서**: 확정 인터페이스(§9.4–9.5) + 측정(§8 골든셋)을 먼저. role taxonomy 확장·Mode 2·리포 분리는
