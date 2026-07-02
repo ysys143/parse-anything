@@ -24,6 +24,7 @@ rules:
   - {id: front-matter-metadata, when: {all: [{page_frac: {lte: 0.2}}, {text_matches: '(?i)^\s*(?:open\s+access|citation\s*:|received\s*:|accepted\s*:|published\s*:|revised\s*:|copyright\b|competing\s+interests\b|conflict\s+of\s+interest|funding\s*:|data\s+availability|abbreviations\s*:|academic\s+editor\b|peer\s+review\s+history|correspondence\s*:|doi\s*:|issn\s*:|©)'}]}, then: {zone: metadata}}
   - {id: references-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+)?(?:references|bibliography|works\s+cited|literature\s+cited|참고\s*문헌|参考文献)\s*$'}]}, then: {zone: references, opens_zone: true}}
   - {id: appendix-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+|appendix\s+)?(?:appendix|supplementary|supporting\s+information|부록|附録)\b'}]}, then: {zone: appendix, opens_zone: true}}
+  - {id: toc-zone, when: {text_matches: '(?i)^\s*(?:contents|table\s+of\s+contents|목차|目次)\s*$'}, then: {zone: toc}}
   - {id: numbered-heading, when: {classify_numbering: not_null}, then: {type: heading, level: from_numbering}}
   - {id: prose-heading, when: {any: [{odl_type: {eq: heading}}, {odl_role: {in: [Subtitle, Sectiontitle, Sectionheader]}}, {odl_heading_level: {gte: 1}}]}, then: {type: heading, level: from_font_rank}}
   - {id: list-item, when: {odl_type: {eq: list item}}, then: {type: list_item}}

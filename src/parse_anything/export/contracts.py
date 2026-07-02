@@ -342,6 +342,7 @@ class ChunkRecord:
 
     def to_dict(self) -> dict[str, Any]:
         return _compact({
+            "contract": contract_tag(CHUNK_CONTRACT),   # each JSONL line self-describes -> check_compatible-able
             "id": self.id, "level": self.level, "parent_id": self.parent_id, "doc_id": self.doc_id,
             "structural_type": self.structural_type, "zone": self.zone, "role": self.role,
             "heading_path": self.heading_path or None, "children": self.children or None,

@@ -119,6 +119,15 @@ def test_chunk_contract_is_minor_bumped_and_still_major_1():
     assert check_compatible({"name": "parse-anything.chunks", "version": "1.0"}, CHUNK_CONTRACT)   # old consumer ok
 
 
+def test_chunk_record_carries_contract_tag_so_jsonl_lines_are_gateable():
+    # every payload must carry its {name, version} tag; a chunks.jsonl line is self-describing so a
+    # consumer can check_compatible() per line (design doc contract-tag policy).
+    d = ChunkRecord(id="c1", doc_id="d", structural_type="text", token_count=1).to_dict()
+    assert d["contract"] == contract_tag(CHUNK_CONTRACT)
+    assert check_compatible(d["contract"], CHUNK_CONTRACT)
+    assert ChunkRecord.from_dict(d).to_dict() == d                # contract stamped fresh, round-trip stable
+
+
 def _semantic() -> SemanticView:
     return SemanticView(
         document={"document_id": "abc123", "content_sha256": "abc123ff", "n_pages": 2, "mode": "det_vlm"},

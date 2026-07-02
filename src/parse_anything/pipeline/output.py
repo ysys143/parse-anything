@@ -913,6 +913,7 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
     # Caption promotion: a figure/table's caption becomes a `caption` node (re-typed existing caption block,
     # else synthesized); the figure/table references it via `caption_ref` (no duplicated caption text).
     node_by_id = {n["id"]: n for n in nodes}
+    synth_caps: dict[object, str] = {}                            # host id -> synthesized caption node id
     for src in (*figures_kept, *tables):
         fid, cid, cap = src["id"], src.get("caption_id"), src.get("caption")
         host = node_by_id.get(fid)
@@ -926,6 +927,7 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
             cnid = f"{fid}_cap"
             nodes.append({"id": cnid, "type": "caption", "zone": src.get("zone"), "caption_of": fid,
                           "label": src.get("label"), "text": cap})
+            synth_caps[fid] = cnid
             if host is not None:
                 host["caption_ref"] = cnid
 
@@ -963,10 +965,18 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
 
     # Reading order excludes `furniture` (extraction noise / glyph-garbled math debris): it stays in the
     # nodes[] pool (loss-aware) but leaves the reading flow, so the reading view and the chunks are clean.
+    # A SYNTHESIZED caption (field-only, not its own page block) is woven in right after its host figure/table
+    # so its text reaches the chunks (an existing caption block is already in the page content).
     furniture_ids = {n["id"] for n in nodes if n.get("zone") == "furniture"}
     reading_order: list = []
     for pi, content in pages_content:
-        reading_order.extend(nid for nid in content if nid not in furniture_ids)
+        for nid in content:
+            if nid in furniture_ids:
+                continue
+            reading_order.append(nid)
+            cap = synth_caps.get(nid)
+            if cap and cap not in furniture_ids:
+                reading_order.append(cap)
         reading_order.extend(eq_ids_by_page.get(pi, []))
 
     sec_clean = [{"id": s["id"], "heading": s["heading"], "level": s["level"], "zone": s.get("zone"),

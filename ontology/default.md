@@ -21,7 +21,7 @@ rules:
   - {id: doc-title, when: {all: [{page_index: {eq: 0}}, {odl_role: {in: [Doctitle, Title]}}]}, then: {type: title, zone: cover}}
   - {id: references-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+)?(?:references|bibliography|works\s+cited|literature\s+cited|참고\s*문헌|参考文献)\s*$'}]}, then: {zone: references, opens_zone: true}}
   - {id: appendix-zone, when: {all: [{page_frac: {gte: 0.4}}, {text_matches: '(?i)^\s*(?:\d+\.?\s+|appendix\s+)?(?:appendix|supplementary|supporting\s+information|부록|附録)\b'}]}, then: {zone: appendix, opens_zone: true}}
-  - {id: toc-zone, when: {text_matches: '(?i)^\s*(?:contents|table\s+of\s+contents|목차|目次)\s*$'}, then: {zone: toc, opens_zone: true}}
+  - {id: toc-zone, when: {text_matches: '(?i)^\s*(?:contents|table\s+of\s+contents|목차|目次)\s*$'}, then: {zone: toc}}
   - {id: front-matter-metadata, when: {all: [{page_frac: {lte: 0.2}}, {text_matches: '(?i)^\s*(?:open\s+access|citation\s*:|received\s*:|accepted\s*:|published\s*:|revised\s*:|copyright\b|competing\s+interests\b|conflict\s+of\s+interest|funding\s*:|data\s+availability|abbreviations\s*:|academic\s+editor\b|peer\s+review\s+history|correspondence\s*:|doi\s*:|issn\s*:|©)'}]}, then: {zone: metadata}}
   - {id: numbered-heading, when: {classify_numbering: not_null}, then: {type: heading, level: from_numbering}}
   - {id: prose-heading, when: {any: [{odl_type: {eq: heading}}, {odl_role: {in: [Subtitle, Sectiontitle, Sectionheader]}}, {odl_heading_level: {gte: 1}}]}, then: {type: heading, level: from_font_rank}}
@@ -53,8 +53,10 @@ Every content node is tagged on two orthogonal axes:
    is harvested from the VLM markdown (standalone `$…$` display lines), so these deterministic-layer
    fragments are redundant debris. Targets EN/KR/JP docs (no legitimate eth/thorn); not a glyph rewrite.
 1. `doc-title` — a page-1 block ODL tagged as `Doctitle`/`Title` is the document title (zone `cover`).
-2. `references-zone` / `appendix-zone` / `toc-zone` — a heading whose text names the section opens that
-   zone for the nodes that follow (independent of whether the heading itself is admitted as a section).
+2. `references-zone` / `appendix-zone` — a back-matter heading whose text names the section opens that
+   zone for the nodes that follow, to the end of the document (they are the only spanning front/back zones).
+   `toc-zone` tags ONLY the `Contents`/`목차` line itself (no `opens_zone`): a table of contents has no
+   closing marker before the body, so spanning it would mislabel the whole document as `toc`.
 2b. `front-matter-metadata` — near the document front (`page_frac <= 0.2`), journal furniture labels
    (OPEN ACCESS, Citation:, Received/Accepted/Published:, Copyright/©, Competing interests, Funding:,
    Data Availability, Abbreviations:, Academic Editor, DOI:, ISSN:, …) are tagged `zone: metadata` for

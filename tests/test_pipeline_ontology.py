@@ -37,7 +37,7 @@ def test_classify_axes_for_common_nodes():
     assert role_zone({"odl_type": "heading", "text": "References", "page_frac": 0.9})[1:] == ("references", True)
     assert role_zone({"odl_type": "heading", "text": "6. References", "page_frac": 0.95})[1:] == ("references", True)
     assert role_zone({"odl_type": "heading", "text": "References", "page_frac": 0.1})[1:] == (None, False)  # early TOC mention -> no open
-    assert role_zone({"odl_type": "heading", "text": "Contents"})[1:] == ("toc", True)   # toc is early, not gated
+    assert role_zone({"odl_type": "heading", "text": "Contents"})[1:] == ("toc", False)  # toc tags only its own line (no span)
     assert o.classify({"odl_type": "paragraph", "text": "1.2 Method details"}).role == "heading"    # numbered
     assert o.classify({"odl_type": "heading", "text": "Introduction"}).role == "heading"            # prose
     assert o.classify({"odl_type": "paragraph", "text": "We present a pipeline."}).role == "paragraph"
@@ -203,6 +203,20 @@ def test_tag_nodes_zone_spans_from_a_references_heading():
     zones = {b["id"]: b["zone"] for b in blocks}
     assert zones == {"b1": "body", "b2": "references", "b3": "references", "b4": "references"}
     assert blocks[0]["role"] == "paragraph"
+
+
+def test_toc_zone_does_not_span_to_the_body():
+    # a table of contents has no closing marker before the body -> toc must NOT open a spanning zone,
+    # else every body node after "Contents" is mislabeled toc (regression guard).
+    blocks = [
+        {"id": "t", "type": "heading", "page": 1, "order": 1, "text": "Contents"},
+        {"id": "b1", "type": "paragraph", "page": 2, "order": 2, "text": "Body text after the ToC."},
+        {"id": "b2", "type": "paragraph", "page": 3, "order": 3, "text": "More body."},
+    ]
+    tag_nodes(blocks, [], [], _load(), n_pages=3)
+    zones = {b["id"]: b["zone"] for b in blocks}
+    assert zones["t"] == "toc"                                   # only the Contents line is toc
+    assert zones["b1"] == "body" and zones["b2"] == "body"       # body is not swept into toc
 
 
 def test_prose_admission_vetoes_equations_symbols_and_chart_labels():

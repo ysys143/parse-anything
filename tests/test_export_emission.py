@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 from parse_anything.export import (
+    CHUNK_CONTRACT,
     PROVENANCE_CONTRACT,
     SEMANTIC_CONTRACT,
     STRUCTURE_CONTRACT,
@@ -17,6 +18,7 @@ from parse_anything.export import (
     Provenance,
     SemanticView,
     StructureExport,
+    check_compatible,
     contract_tag,
 )
 from parse_anything.pipeline.docmeta import DocumentMeta
@@ -93,6 +95,7 @@ def test_chunks_jsonl_lines_are_chunk_records(tmp_path):
     assert lines, "expected at least one chunk"
     for c in lines:
         assert ChunkRecord.from_dict(c).to_dict() == c             # each line IS ChunkRecord.to_dict()
+        assert c["contract"] == contract_tag(CHUNK_CONTRACT) and check_compatible(c["contract"], CHUNK_CONTRACT)
         assert {"id", "doc_id", "structural_type", "level", "source_refs"} <= set(c)
         assert set(c["source_refs"]) == {"nodes", "pages"}
         assert isinstance(c["tokenizer"], str) and c["tokenizer"]  # tokenizer name recorded (counts are tokenizer-specific)

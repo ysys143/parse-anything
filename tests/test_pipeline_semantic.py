@@ -98,6 +98,16 @@ def test_no_markdown_means_no_equation_nodes():
     assert not any(n["type"] == "equation" for n in doc["nodes"])
 
 
+def test_synthesized_caption_is_woven_into_reading_order():
+    # a field-only caption becomes a synthesized `caption` node -> it must enter the reading order (right
+    # after its host) so its text reaches the chunks, not just the (chunk-less) node pool.
+    figs = [{"id": "f1", "role": "figure", "type": "figure", "zone": "body", "label": "Fig 1",
+             "caption": "Fig 1. Important result", "caption_id": None, "page": 1, "order": 1}]
+    doc, _, nodes = _sem([], figures=figs, pages_content=[(0, ["f1"])])
+    assert doc["reading_order"] == ["f1", "f1_cap"]              # woven right after the host figure
+    assert nodes["f1_cap"]["text"] == "Fig 1. Important result"  # caption text is retrievable, not dropped
+
+
 def test_furniture_nodes_leave_reading_order_but_stay_in_the_pool():
     blocks = [_blk("p1", text="Real body sentence."), _blk("junk", zone="furniture", text="a1111 a1111 a1111")]
     doc, _, nodes = _sem(blocks, pages_content=[(0, ["p1", "junk"])])
