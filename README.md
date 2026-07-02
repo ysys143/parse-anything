@@ -1,141 +1,134 @@
 # parse-anything
 
-ODL-VL parsing experiments for evaluating a deterministic parsing front with VLM/OCR provider fallbacks. This repository currently documents and scaffolds the initial development loop; it does not claim production readiness.
+Deterministic-first, ontology-driven PDF parsing into **agent-ready layered artifacts + RAG chunks**.
 
-## Provider Decision
+`parse-anything` turns a PDF into a clean, tagged document graph and ready-to-embed chunks. Structure
+(chapters/sections, tables, figures, equations, references) is recovered **deterministically** — from
+numbering, the PDF outline / printed table of contents, and geometry — and is *never* hallucinated. The
+semantic role of each node (title / heading / paragraph / caption / reference / …) and its zone
+(cover / metadata / body / references / appendix / furniture) come from an **external, runtime-injectable
+ontology**, so the tagging generalises across document families and languages (validated on EN and KR
+papers/reports). A VLM (Gemini or PaddleOCR) is used only when configured, and only for visual structure /
+transcription — gated by a born-digital value oracle so it can never invent numbers.
 
-Initial development is limited to **PaddleOCR official API** and **Gemini direct**.
+## What you get
 
-- PaddleOCR official API is the primary OCR/VLM provider path for PaddleOCR-VL style jobs.
-- Gemini direct is included as a comparison VLM provider and fallback candidate.
-- Ollama, GLM-OCR, and NGC/Nemotron are deferred until the provider interface, ledger, and fixture bake-off are stable.
-- API keys and live provider credentials must stay in local environment configuration only and must not be committed.
+One run writes a set of layered artifacts under `<out>/<source_id>/<document_id>/`
+(`document_id` = content hash, so re-processing is idempotent):
 
-See [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md) for the full decision record, provider environment-variable names, routing notes, and fixture strategy.
+| Artifact | Layer | What it is |
+|---|---|---|
+| `document.md` | — | Human-readable assembled Markdown (equations as `$…$`, figures inlined) |
+| `document.json` | 0 | **Loss-aware source of truth**: raw extraction graph with geometry inline (bbox/order/font), identity + provenance, per-page reading order, blocks/tables/figures/sections. Plus a non-destructive top-level `roles`/`zones`/`@context`/`ontology` overlay |
+| `document.structure.json` | 0+1 | Typed, contract-tagged view of Layer 0 (`StructureExport`) |
+| `document.semantic.json` | 2 | **Clean projection**: a flat `nodes[]` pool with role inlined and NO geometry, the section tree, `zones[]`, `metadata.title`, and a flat `reading_order` (`SemanticView`) |
+| `document.provenance.json` | 2 | Geometry sidecar (`bbox`/`order`/`font_size`/`regions`) keyed by the same node id (`Provenance`) |
+| `document.chunks.jsonl` | chunks | **Small-to-big RAG chunks**: a parent per section (or page group) + token-packed children, atomics kept whole (`ChunkRecord`) |
+| `tables/` · `assets/` · `pages/` | — | Per-table JSON+MD, cropped figure images, per-page Markdown |
+| `ledger.jsonl` · `results.jsonl` | — | Per-page route/flags |
 
-## Target PDF Pipeline
+All run artifacts are git-ignored.
 
-The full target is not just per-page OCR. It is a PDF pipeline that renders pages,
-keeps deterministic text/table/bbox data as the source of truth, escalates only
-when explicit processing-depth triggers require OCR/VLM, reconstructs complex and
-page-spanning tables, and writes both readable Markdown and loss-aware JSON. The
-mandatory target contract is documented in [PDF pipeline requirements](docs/pdf-pipeline-requirements.md).
-The processing-tier boundary and domain-adaptation requirements are documented
-in [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md).
+## Quickstart
 
-## Setup
-
-Install the package and test dependency in editable mode:
+Requires Python ≥ 3.11 and **Java 17** (for the `opendataloader-pdf` structure layer).
 
 ```bash
 uv pip install -e ".[dev]"
 ```
 
-Prepare local provider configuration outside git-tracked files. `.env.example` documents the expected variable names only; keep actual values in a local `.env`, shell, CI secret store, or deployment secret store.
-
-## Offline Development Checks
-
-Run deterministic tests and syntax checks without network access:
-
-```bash
-python3 -m pytest
-python3 -m compileall src tests scripts
-```
-
-Run focused checks for the provider layer:
-
-```bash
-python3 -m pytest tests/test_config.py tests/test_providers.py tests/test_normalizers.py tests/test_paddle_jobs.py tests/test_smoke_cli.py tests/test_fixture_manifest.py
-```
-
-Run focused checks for the PDF pipeline:
-
-```bash
-python3 -m pytest tests/test_pipeline_*.py tests/test_pdf_to_markdown_cli.py
-```
-
-## Dry Configuration Checks
-
-These commands inspect provider configuration presence and selected non-secret metadata only. They must not print key values.
-
-```bash
-python3 scripts/parse_anything_smoke.py --provider gemini --dry-config
-python3 scripts/parse_anything_smoke.py --provider paddle --dry-config
-```
-
-## Optional Live Smoke Checks
-
-Run live smoke checks only when local environment variables are already configured. These commands call external services and may fail because of local auth, provider availability, quota, or network state.
-
-```bash
-python3 scripts/parse_anything_smoke.py --provider gemini --live
-python3 scripts/parse_anything_smoke.py --provider paddle --live --demo-url https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png
-```
-
-The live smoke commands report pass/fail status without printing API keys, signed result URLs, full response bodies, or local `.env` contents.
-
-## PDF Pipeline (`pdf_to_markdown`)
-
-The CLI is **diagnose-then-configure**, not runtime routing (per-page auto-routing was
-measured to be a false-positive gamble — [F16/F17](docs/measurement-findings.md)). It runs a
-source in a configured **mode**, both modes using ODL (structure / clean text) + pypdfium2
-(value completeness / bbox):
-
-- **`deterministic`** — ODL text + tables, with a pypdfium2 value-completeness backstop
-  (`odl_dropped_number:<v>` flags). No network, no keys.
-- **`det_vlm`** — adds the VLM for visual structure, reconciled; the born-digital **value
-  oracle** (pypdfium2) gates VLM numbers (`unsourced_number:<v>`), and the scan-legibility gate
-  lets a degraded scan abstain (`illegible_low_quality`). The **mode is the lever** — `det_vlm`
-  with no `GEMINI_API_KEY` is a loud error, never a silent downgrade.
-
 ```bash
 # deterministic only -- no network, no keys
-python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --mode deterministic
+uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --mode deterministic
 
-# accuracy mode -- needs GEMINI_API_KEY
-python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --mode det_vlm
+# accuracy mode -- adds the VLM (needs GEMINI_API_KEY in .env)
+uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --mode det_vlm
 
-# let D-1 diagnose the source and pick the mode (saves a reusable SourceProfile)
-python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --diagnose
-python3 scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --use-profile
+# pick the ontology family (default | paper) and/or skip chunk building
+uv run --no-sync python scripts/pdf_to_markdown.py --pdf paper.pdf --out out/ --source-id papers \
+  --mode det_vlm --ontology paper --no-chunks
 ```
 
-**Output** lands under `<out>/<source_id>/<document_id>/` (`document_id` = content hash, so
-re-processing is idempotent): `document.md`, `document.json` (loss-aware source of truth —
-identity, provenance, pages, tables/figures with bbox + original labels), `tables/`, `assets/`,
-`pages/`, `ledger.jsonl`, `results.jsonl`. Run artifacts are git-ignored.
+Provider keys live only in a local `.env` (auto-loaded; see `.env.example` for the variable names) — never
+committed. `det_vlm` without a `GEMINI_API_KEY` is a **loud error, never a silent downgrade**.
 
-### Source diagnosis (D-1 / D-2)
+### Visualize the output
 
 ```bash
-# D-1: built-in VLM diagnostic -> recommended mode + evidence (JSON)
-python3 scripts/diagnose_source.py --pdf doc.pdf
-
-# D-2: assemble a review bundle for a flagship agent (oracle position) -> SourceProfile
-python3 scripts/diagnose_prepare.py --pdf doc.pdf --out bundle/   # see docs/diagnostic-d2.md
+uv run --no-sync python scripts/build_viewer.py --dir out/mydocs/<document_id>/
 ```
 
-D-1 measures deterministic-vs-VLM token divergence + scan fraction + (structure-aware-sampled)
-table/figure presence and recommends `deterministic` vs `det_vlm` with evidence; D-2 is for
-hard sources / per-domain threshold calibration. Both emit a persisted `SourceProfile`.
+Writes a self-contained, double-clickable `viewer.html` (semantic nodes / section tree / small-to-big
+chunks / zones + stats / figure gallery + equations & references; KaTeX with a raw-LaTeX fallback).
 
-See [processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md) (§2.5–2.6, P7),
-[PDF pipeline requirements](docs/pdf-pipeline-requirements.md) (§3.4, §4, §7), and
-[D-2 diagnostic](docs/diagnostic-d2.md).
+## Modes
 
-> The earlier ODL-like-JSON external orchestrator scaffold has been **removed** and
-> superseded by this pipeline. The shared provider layer (`config`, `providers`,
-> `paddle_jobs`, `normalizers`, `cli_support`) and the smoke CLI are retained.
+The CLI is **diagnose-then-configure**, not per-page runtime routing (auto-routing measured as a
+false-positive gamble — see [measurement findings](docs/measurement-findings.md)). Both modes use ODL
+(structure / clean text) + pypdfium2 (value completeness / bbox):
 
-## Fixture Plan
+- **`deterministic`** — ODL text + tables with a pypdfium2 value-completeness backstop
+  (`odl_dropped_number:<v>` flags). No network, no keys.
+- **`det_vlm`** — adds the VLM for visual structure, reconciled; the born-digital **value oracle**
+  (pypdfium2) gates VLM numbers (`unsourced_number:<v>`), and the scan-legibility gate lets a degraded
+  scan abstain (`illegible_low_quality`). **The mode is the lever.**
 
-The fixture work is metadata-only in this slice. The initial eight fixture families and page-level golden schema contract live under [`tests/fixtures/`](tests/fixtures/README.md). The fixture sufficiency and discriminativeness criteria are documented in [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md#5-fixture-and-golden-set-strategy).
+Let D-1 measure the source and pick the mode (saving a reusable `SourceProfile`):
 
-## Design Notes
+```bash
+uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --diagnose
+uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --use-profile
+```
 
-- [Measurement findings](docs/measurement-findings.md): prototype evidence (renderer, layer choice, hallucination, oracle, cross-page, triage, orientation, table structure) behind the pipeline design.
-- [Relative performance validation plan](docs/relative-performance-validation-plan.md): benchmark plan for proving ODL-VL improvements against PyMuPDF/PyMuPDF4LLM, ODL, Tesseract, PaddleOCR official API, and Gemini direct.
-- [External orchestrator architecture](docs/orchestrator-architecture.md): historical -- the design of the removed page-level scaffold, superseded by the PDF pipeline.
-- [PDF pipeline requirements](docs/pdf-pipeline-requirements.md): mandatory full-pipeline behavior for rendering, processing-depth routing, complex/page-spanning tables, VLM inputs, numeric guards, outputs, validation, and provider/privacy constraints.
-- [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md): deterministic/VLM/human boundaries, escalation policy, and domain calibration tooling.
-- [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md): PaddleOCR official API + Gemini direct 개발 결정, provider key 계약, fixture/golden-set 전략.
+D-1 (`scripts/diagnose_source.py`) measures deterministic-vs-VLM token divergence + scan fraction +
+table/figure presence; D-2 (`scripts/diagnose_prepare.py`) assembles a review bundle for hard sources /
+per-domain threshold calibration. See [D-2 diagnostic](docs/diagnostic-d2.md).
+
+## Ontology-driven tagging
+
+The node-type + zone vocabulary and the signal→role/zone rules live in
+`src/parse_anything/ontology/<family>.md` (Markdown + YAML frontmatter), bundled in the wheel. Two families
+ship (`default`, `paper`); select one with `--ontology <family>`.
+
+- **Rule engine** = ordered, first-match-per-axis rules over a fixed, tested predicate registry
+  (`page_index`, `page_frac`, `odl_type`, `odl_role`, `classify_numbering`, `text_matches`,
+  `text_degenerate`, `font_rank`, …). No `eval`, no code injection.
+- **Structure is deterministic** (numbering / outline authority / geometry); the ontology only assigns
+  role + zone. Adding a document family = a new `ontology/<family>.md`, not a code change.
+- Front-matter, extraction noise, and glyph-garbled math debris are zoned out of the body; references are
+  split into per-entry nodes; captions and display equations are promoted to first-class nodes.
+
+## Versioned export contracts
+
+`src/parse_anything/export/` defines the stable, versioned surfaces the pipeline emits through, so a
+downstream consumer (RAG ingestion, KG builder) binds to a contract, not to internal shapes:
+
+- `StructureExport` (`parse-anything.structure`), `SemanticView` (`parse-anything.semantic`),
+  `Provenance` (`parse-anything.provenance`), `ChunkRecord` (`parse-anything.chunks`).
+- Every payload carries a `{name, version}` tag; `from_dict` drops unknown keys (forward-compat);
+  `check_compatible` gates on the major version.
+- `output.py` serializes each artifact through its contract's `.to_dict()`, so the contract round-trip is
+  the emission's schema-regression test. See [export contracts](docs/export-contracts.md).
+
+## Development
+
+```bash
+cd tests && uv run --no-sync python -m pytest -q      # full suite
+uv run --with ruff ruff check .                       # lint
+```
+
+## Design docs
+
+- [Agent-ready schema and chunking](docs/agent-ready-schema-and-chunking.md) — the layered-artifact +
+  ontology + small-to-big chunking design.
+- [Export contracts](docs/export-contracts.md) — the versioned Layer-0/1/2 + chunk surfaces.
+- [PDF pipeline requirements](docs/pdf-pipeline-requirements.md) — the mandatory full-pipeline contract
+  (rendering, processing-depth, complex/page-spanning tables, numeric guards, outputs, privacy).
+- [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md) — deterministic / VLM /
+  human boundaries and per-domain calibration.
+- [Measurement findings](docs/measurement-findings.md) — prototype evidence behind the design.
+- [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md) — PaddleOCR official API + Gemini
+  direct decision, provider key contract, fixture/golden-set strategy.
+
+> Not production-ready; interfaces may change. Provider credentials must stay in local environment
+> configuration only and must never be committed.
