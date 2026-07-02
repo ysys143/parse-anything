@@ -43,7 +43,7 @@ def test_split_flow_respects_nesting_and_quotes():
 
 def test_split_kv_uses_first_top_level_colon():
     assert O._split_kv("a: b") == ("a", "b")
-    assert O._split_kv("id: odl:ontology/x") == ("id", "odl:ontology/x")
+    assert O._split_kv("id: pa:ontology/x") == ("id", "pa:ontology/x")
     assert O._split_kv("when: {t: {eq: 1}}") == ("when", "{t: {eq: 1}}")
     with pytest.raises(ValueError):
         O._split_kv("no colon here")

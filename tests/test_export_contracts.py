@@ -123,7 +123,7 @@ def _semantic() -> SemanticView:
     return SemanticView(
         document={"document_id": "abc123", "content_sha256": "abc123ff", "n_pages": 2, "mode": "det_vlm"},
         context={"doco": "http://purl.org/spar/doco/"},
-        profile={"id": "odl:ontology/paper", "version": "1.0.0"},
+        profile={"id": "pa:ontology/paper", "version": "1.0.0"},
         metadata={"title": "A Paper"},
         zones=[{"zone": "body", "pages": [1, 2]}],
         sections=[{"id": "s1", "heading": "1 Intro", "level": 1, "heading_ref": "h", "children": [], "content": ["p"]}],
@@ -149,7 +149,7 @@ def test_semantic_view_round_trip_is_lossless():
 def test_provenance_stamps_contract_and_joins_by_node_id():
     prov = Provenance(prov={"h": {"page": 1, "bbox": [0, 0, 10, 10], "order": 0},
                             "p": {"page": 1, "bbox": [0, 20, 10, 30], "font_size": 11.0}},
-                      profile={"id": "odl:ontology/paper"})
+                      profile={"id": "pa:ontology/paper"})
     d = prov.to_dict()
     assert d["contract"] == contract_tag(PROVENANCE_CONTRACT)
     assert set(d["prov"]) == {"h", "p"} and d["prov"]["h"]["bbox"] == [0, 0, 10, 10]

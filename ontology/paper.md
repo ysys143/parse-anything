@@ -1,5 +1,5 @@
 ---
-id: odl:ontology/paper
+id: pa:ontology/paper
 version: 1.0.0
 conformsTo: https://sparontologies.github.io/doco/
 default_zone: body

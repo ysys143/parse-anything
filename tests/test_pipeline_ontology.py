@@ -16,7 +16,7 @@ def _load(family: str = "default"):
 
 def test_ontology_load_parses_frontmatter_subset():
     o = _load("default")
-    assert o.id == "odl:ontology/default" and o.version == "1.0.0"
+    assert o.id == "pa:ontology/default" and o.version == "1.0.0"
     assert len(o.sha256) == 64                                   # bytes hashed for provenance
     assert "body" in o.zones and "references" in o.zones and "cover" in o.zones
     assert o.node_types["figure"].atomic is True                # nested flow map parsed
