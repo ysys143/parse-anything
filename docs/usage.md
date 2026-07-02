@@ -49,10 +49,14 @@ Provider keys live only in a local `.env` (auto-loaded; never commit them). Reco
 
 ## CLI
 
-### `pdf_to_markdown` — the pipeline
+### `parse-anything` — the pipeline
+
+After `uv pip install -e .` (or `pip install parse-anything`), the pipeline is the **`parse-anything`**
+console command (short alias **`pa`**). From a source checkout without an install, the legacy
+`python scripts/pdf_to_markdown.py …` path still works.
 
 ```
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf <PDF> [options]
+parse-anything --pdf <PDF> [options]
 ```
 
 The CLI is **diagnose-then-configure**: it runs one source in one configured **mode** for the whole
@@ -100,19 +104,19 @@ document (no per-page runtime routing).
 
 ```bash
 # deterministic — no keys
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id docs --mode deterministic
+parse-anything --pdf doc.pdf --out out/ --source-id docs --mode deterministic
 
 # det_vlm with the paper ontology, no chunk file
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf paper.pdf --out out/ --source-id papers \
+parse-anything --pdf paper.pdf --out out/ --source-id papers \
   --mode det_vlm --ontology paper --no-chunks
 
 # PaddleOCR as the primary transcriber (needs PADDLE_* env)
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf scan.pdf --out out/ --source-id scans \
+parse-anything --pdf scan.pdf --out out/ --source-id scans \
   --mode det_vlm --primary paddle
 
 # diagnose the source, save a profile, then reuse it on the next run
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id docs --diagnose
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc2.pdf --out out/ --source-id docs --use-profile
+parse-anything --pdf doc.pdf --out out/ --source-id docs --diagnose
+parse-anything --pdf doc2.pdf --out out/ --source-id docs --use-profile
 ```
 
 ### Output artifacts

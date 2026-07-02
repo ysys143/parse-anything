@@ -16,6 +16,10 @@ dependencies = [
     "opendataloader-pdf>=2.4", # ODL structure + clean-text layer (REQUIRES Java 17) -- F17, processing-tiers §2.6
 ]
 
+[project.scripts]
+parse-anything = "parse_anything.cli:main"
+pa = "parse_anything.cli:main"        # short alias
+
 [project.optional-dependencies]
 dev = ["pytest>=8", "reportlab>=4"]   # reportlab: generate tiny PDFs for tests (no committed binaries)
 # Mode 2 (our KG output) seam -- design doc §10. Heavy extractor/graph deps live behind this

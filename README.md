@@ -34,18 +34,18 @@ All run artifacts are git-ignored.
 Requires Python ≥ 3.11 and **Java 17** (for the `opendataloader-pdf` structure layer).
 
 ```bash
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev]"     # installs the `parse-anything` command (short alias `pa`)
 ```
 
 ```bash
 # deterministic only -- no network, no keys
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --mode deterministic
+parse-anything --pdf doc.pdf --out out/ --source-id mydocs --mode deterministic
 
 # accuracy mode -- adds the VLM (needs GEMINI_API_KEY in .env)
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --mode det_vlm
+parse-anything --pdf doc.pdf --out out/ --source-id mydocs --mode det_vlm
 
 # pick the ontology family (default | paper) and/or skip chunk building
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf paper.pdf --out out/ --source-id papers \
+parse-anything --pdf paper.pdf --out out/ --source-id papers \
   --mode det_vlm --ontology paper --no-chunks
 ```
 
@@ -103,8 +103,8 @@ false-positive gamble — see [measurement findings](docs/measurement-findings.m
 Let D-1 measure the source and pick the mode (saving a reusable `SourceProfile`):
 
 ```bash
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --diagnose
-uv run --no-sync python scripts/pdf_to_markdown.py --pdf doc.pdf --out out/ --source-id mydocs --use-profile
+parse-anything --pdf doc.pdf --out out/ --source-id mydocs --diagnose
+parse-anything --pdf doc.pdf --out out/ --source-id mydocs --use-profile
 ```
 
 D-1 (`scripts/diagnose_source.py`) measures deterministic-vs-VLM token divergence + scan fraction +
