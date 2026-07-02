@@ -134,9 +134,9 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
             prompt = _FIG_DESCRIBE_PROMPT + (f"\nThe figure's caption is: {caption}" if caption else "")
             return transcribe_image(png, prompt, api_key=key, client=client)
 
-    from parse_anything.pipeline.ontology import load_ontology  # R15: injected node/zone ontology (family-selectable)
+    from parse_anything.pipeline.ontology import bundled_ontology_root, load_ontology  # R15: injected node/zone ontology
 
-    ontology = load_ontology(args.ontology or "default", _REPO / "ontology")
+    ontology = load_ontology(args.ontology or "default", bundled_ontology_root())
     write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic,
                   inline_figures=not args.no_inline_figures, headings=not args.no_headings,
                   describe_figure=describe_figure, ontology=ontology, chunk=not args.no_chunks)

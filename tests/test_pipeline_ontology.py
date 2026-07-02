@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from parse_anything.pipeline.ontology import compute_font_ranks, load_ontology, tag_nodes
+from parse_anything.pipeline.ontology import (bundled_ontology_root, compute_font_ranks, load_ontology,
+                                              tag_nodes)
 from parse_anything.pipeline.sections import _assign_heading_levels, build_sections
 
-_ONTOLOGY_DIR = Path(__file__).resolve().parents[1] / "ontology"
+_ONTOLOGY_DIR = bundled_ontology_root()
 
 
 def _load(family: str = "default"):
     return load_ontology(family, _ONTOLOGY_DIR)
+
+
+def test_bundled_ontologies_live_inside_the_package():
+    # the default families must ship in the wheel -> they live under parse_anything/ontology, not the repo root
+    root = bundled_ontology_root()
+    assert (root / "default.md").is_file() and (root / "paper.md").is_file()
+    assert root.name == "ontology" and root.parent.name == "parse_anything"
 
 
 def test_ontology_load_parses_frontmatter_subset():

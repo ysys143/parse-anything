@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from parse_anything.pipeline.ontology import load_ontology
+from parse_anything.pipeline.ontology import bundled_ontology_root, load_ontology
 from parse_anything.pipeline.output import (_build_semantic, _display_equations_by_page, _zones_summary)
 
-_ONTOLOGY_DIR = Path(__file__).resolve().parents[1] / "ontology"
-_ONTO = load_ontology("default", _ONTOLOGY_DIR)
+_ONTO = load_ontology("default", bundled_ontology_root())
 _META = {"document_id": "d", "content_sha256": "s", "original_filename": "f.pdf", "source": {},
          "n_pages": 1, "mode": "det_vlm", "producer": {}}
 
@@ -167,6 +164,15 @@ def test_vlm_figure_deduped_when_raster_shares_label():
     _, _, nodes = _sem([], figures=figs, pages_content=[(0, ["p5_205", "p5_vlm1"])])
     assert "p5_205" in nodes and "p5_vlm1" not in nodes          # raster kept, VLM dup dropped
     assert sum(1 for n in nodes.values() if n.get("label") == "Fig 2") == 1
+
+
+def test_deduped_figure_leaves_no_dangling_reading_order_id():
+    # the raw page content still lists the dropped VLM figure id -> reading_order must not reference it
+    # (it is gone from the nodes[] pool), else a consumer joining reading_order<->nodes breaks.
+    figs = [_fig("p5_205", "Fig 2", file="assets/p5_205.png"), _fig("p5_vlm1", "Fig 2", page=5)]
+    doc, _, nodes = _sem([], figures=figs, pages_content=[(0, ["p5_205", "p5_vlm1"])])
+    assert "p5_vlm1" not in nodes and "p5_vlm1" not in doc["reading_order"]   # dropped -> not referenced
+    assert set(doc["reading_order"]).issubset(set(nodes))                     # no dangling ids at all
 
 
 def test_vlm_only_figure_kept_when_label_is_unique():

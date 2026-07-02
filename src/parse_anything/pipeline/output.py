@@ -435,13 +435,11 @@ def _assemble_document(pages: list[tuple[str | None, str]]) -> str:
     return out
 
 
-_ONTOLOGY_ROOT = Path(__file__).resolve().parents[3] / "ontology"   # <repo>/ontology/<family>.md
-
-
 def _default_ontology():
-    """The 'default' document ontology, loaded from the repo's ontology dir (cwd-independent)."""
-    from .ontology import load_ontology
-    return load_ontology("default", _ONTOLOGY_ROOT)
+    """The 'default' document ontology, loaded from the ontology dir bundled inside the package (ships in
+    the wheel, so this works for an installed library as well as a source checkout; cwd-independent)."""
+    from .ontology import bundled_ontology_root, load_ontology
+    return load_ontology("default", bundled_ontology_root())
 
 
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
@@ -963,15 +961,17 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
             ids.append(nid)
         eq_ids_by_page[pi] = ids
 
-    # Reading order excludes `furniture` (extraction noise / glyph-garbled math debris): it stays in the
-    # nodes[] pool (loss-aware) but leaves the reading flow, so the reading view and the chunks are clean.
-    # A SYNTHESIZED caption (field-only, not its own page block) is woven in right after its host figure/table
-    # so its text reaches the chunks (an existing caption block is already in the page content).
+    # Reading order references only ids that still exist in the nodes[] pool. It excludes `furniture`
+    # (extraction noise / glyph-garbled math debris -- kept in the pool but out of the reading flow) AND ids
+    # that were dropped from the pool (e.g. a de-duplicated VLM figure whose id is still in the raw page
+    # content) so no dangling reference is emitted. A SYNTHESIZED caption (field-only) is woven in right
+    # after its host figure/table so its text reaches the chunks.
+    present_ids = {n["id"] for n in nodes}
     furniture_ids = {n["id"] for n in nodes if n.get("zone") == "furniture"}
     reading_order: list = []
     for pi, content in pages_content:
         for nid in content:
-            if nid in furniture_ids:
+            if nid not in present_ids or nid in furniture_ids:
                 continue
             reading_order.append(nid)
             cap = synth_caps.get(nid)

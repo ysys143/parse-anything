@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from parse_anything.pipeline import ontology as O
-from parse_anything.pipeline.ontology import (compute_font_ranks, load_ontology, node_signals, tag_nodes)
+from parse_anything.pipeline.ontology import (bundled_ontology_root, compute_font_ranks, load_ontology,
+                                              node_signals, tag_nodes)
 
 
 def _load_fm(tmp_path, frontmatter: str, name: str = "t"):
@@ -276,8 +277,21 @@ def test_node_signals_shape():
     assert node_signals(blk, n_pages=6)["page_frac"] == 0.5     # page 3 of 6 -> mid-document
 
 
+def test_classify_numbering_predicate_specs():
+    # `classify_numbering` tests a bool (is the text numbering-prefixed). A dict/scalar spec must test that
+    # bool directly -- {eq: true} requires numbering, {eq: false}/false require its ABSENCE.
+    m = O._match
+    numbered = {"text": "1.2 Methods"}      # numbering-prefixed -> has == True
+    plain = {"text": "Just prose here."}    # not numbered      -> has == False
+    assert m({"classify_numbering": "not_null"}, numbered) and not m({"classify_numbering": "not_null"}, plain)
+    assert m({"classify_numbering": {"eq": True}}, numbered) and not m({"classify_numbering": {"eq": True}}, plain)
+    assert m({"classify_numbering": {"eq": False}}, plain) and not m({"classify_numbering": {"eq": False}}, numbered)
+    assert m({"classify_numbering": True}, numbered) and not m({"classify_numbering": True}, plain)
+    assert m({"classify_numbering": False}, plain) and not m({"classify_numbering": False}, numbered)
+
+
 def test_tag_nodes_roles_zones_and_spanning():
-    onto = load_ontology("default", __import__("pathlib").Path(__file__).resolve().parents[1] / "ontology")
+    onto = load_ontology("default", bundled_ontology_root())
     blocks = [
         {"id": "b1", "type": "paragraph", "page": 1, "order": 1, "text": "Body here."},
         {"id": "b2", "type": "heading", "page": 2, "order": 2, "text": "References"},

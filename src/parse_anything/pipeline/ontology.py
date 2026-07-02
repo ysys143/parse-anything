@@ -187,10 +187,17 @@ def _match(clause: Any, signals: dict[str, Any]) -> bool:
             if _match(spec, signals):
                 return False
         elif key == "classify_numbering":
-            # special primitive: is the node's text a recognised numbering-prefixed heading?
+            # special primitive: is the node's text a recognised numbering-prefixed heading? `has` is a bool;
+            # the spec tests it directly -- `not_null`/bare-true require numbering, `{eq: false}`/bare-false
+            # require its absence, `{eq: true}` requires its presence.
             has = classify_numbering(signals.get("text") or "") is not None
-            want = True if spec == "not_null" else bool(_cmp(has, spec) if isinstance(spec, dict) else spec)
-            if has != want:
+            if spec == "not_null":
+                ok = has
+            elif isinstance(spec, dict):
+                ok = _cmp(has, spec)                 # e.g. {eq: true} -> has is True; {eq: false} -> has is False
+            else:
+                ok = (has == bool(spec))             # scalar true/false
+            if not ok:
                 return False
         elif key == "text_degenerate":
             # special primitive: is the node's text degenerate extraction noise? (see _is_degenerate_text)
@@ -484,6 +491,12 @@ def tag_nodes(blocks: list[dict], tables: list[dict], figures: list[dict], ontol
         else:
             n["zone"] = current_zone
         n["role"] = v.role or _ODL_TYPE_TO_ROLE.get(t or "", "paragraph")
+
+
+def bundled_ontology_root() -> Path:
+    """The ontology directory bundled INSIDE the installed package (``parse_anything/ontology``), so the
+    default families ship in the wheel and load without a source checkout."""
+    return Path(__file__).resolve().parent.parent / "ontology"
 
 
 def ontology_path(root: str | Path, family: str) -> Path:
