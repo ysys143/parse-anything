@@ -318,7 +318,11 @@ file_path}`만 유지하고, `chunks_vdb.meta_fields = {full_doc_id, content, fi
    role/bbox/refs 복원(인용·필터).
 3. **그래프 엣지는 custom_kg(C) 별도 콜.** table→section·cross-ref 엣지는 청킹 경로로는 절대 안 들어간다.
 
-### 9.4 책임 분리: Stage 1 ⟂ Stage 2
+> **성숙도 태그(§9.4–9.6).** `[확정 인터페이스]` = 검증된 LightRAG mechanics(§9.2–9.3)에 근거한 설계로,
+> 지금 build 대상이자 retrieval 측정의 하네스다. `[build 유예]` = 설계는 확정하되 코드는 retrieval 정량
+> 지표(§8 골든셋)가 나온 뒤로 미룬다. 유예 대상은 스키마 정교화지, 아래 인터페이스가 아니다.
+
+### 9.4 책임 분리: Stage 1 ⟂ Stage 2  `[확정 인터페이스]`
 
 **Stage 1(파싱·청킹, 우리)과 Stage 2(그래프 구축, 그들)를 분리한다.** 이는 옳을 뿐 아니라 생태계가 강제한다
 (§9.8: 그래프 툴 4개 중 3개가 Stage 2를 통째로 소유하고 Stage 1 출력만 받는다). 또한 **그래프가 필요 없는
@@ -331,9 +335,12 @@ Stage 1 (우리, 재사용 코어)  parse + chunk → 클린 마크다운 + chun
 Stage 2 (그들 or 우리)       graph 구축 — 각 툴이 자기 방식대로.  === Mode 2(우리 KG) / delegate(그들 KG)
 ```
 
-### 9.5 Mode 1 — text/chunks 출력의 세 옵션
+### 9.5 Mode 1 — text/chunks 출력의 세 옵션  `[확정 인터페이스]`
 
 Mode 1은 그래프 없는 RAG-agnostic 출력이다. **청크 경계를 누가 소유하나**의 스펙트럼으로 세 옵션을 구분한다.
+이 세 옵션은 곧 **retrieval 측정 하네스**다 — 1a(청킹 안 함=귀무가설) vs 1c vs 1b를 A/B 해서 데이터가 default를
+고르게 한다(아래 "1c 기본"은 성능 우위가 아니라 최소-커플링·degrade-safe에 근거한 공학적 default이며, 어느
+옵션도 아직 최선으로 *입증*되진 않았다).
 
 | 옵션 | 경계 소유 | 산출 | LightRAG 호출 |
 |---|---|---|---|
@@ -358,7 +365,10 @@ Mode 1은 그래프 없는 RAG-agnostic 출력이다. **청크 경계를 누가 
 최종 청크가 우리와 1:1이 아니므로 **section/block 레벨 사이드카**(role per 섹션·블록)를 주고 소비자가
 텍스트/offset으로 매핑. 리치 메타 왕복은 `1b`가 최적.
 
-### 9.6 Mode 2 — 우리 KG 출력 (extractor 추상화 + fusion)
+### 9.6 Mode 2 — 우리 KG 출력 (extractor 추상화 + fusion)  `[build 유예]`
+
+> 설계는 확정, 코드는 retrieval 지표(§8) 이후. Mode 1 인터페이스가 안정화·측정되기 전에 KG/extractor/fusion을
+> 먼저 짓지 않는다(적대 리뷰의 "측정 없는 정교화 동결"이 겨눈 지점). Mode 2는 Stage 1의 `1b` 청크를 입력으로 쓴다.
 
 Mode 2는 우리가 소유하는 KG를 산출하는 모드다. **비경쟁 조건**: (i) **portable·중립 KG IR**까지만 내고,
 (ii) **retrieval/query 레이어는 만들지 않는다.** KG 아티팩트는 LightRAG 등의 *입력*이지 경쟁물이 아니다
@@ -474,9 +484,12 @@ odl-vl[kg] (subpackage)  extractor 포트 + fusion + KG IR.  무거운 deps 여�
   주입). 새 문서종류 = 파일 추가, 코드 0.
 - **청킹**: 이 모듈에서. section 트리·reading order·원자 경계·cross-ref·furniture 제거를 살려서. opt-in.
 - **통합**: Stage 1(파싱·청킹) ⟂ Stage 2(그래프). RAG-agnostic 코어 + 얇은 opt-in 어댑터.
-  - **Mode 1**(그래프 없음): `1a` no-chunk / `1c` hint(기본, degrade-safe) / `1b` chunk(원자 보장·메타 왕복 최적).
-  - **Mode 2**(우리 KG): Extractor 포트(반환형 엔진: LangChain/GraphRAG/자체) ⊕ 결정론 구조 = grounded KG IR.
-    portable IR까지만, query 레이어 없음(비경쟁).
+  - **Mode 1**(그래프 없음) `[확정 인터페이스]`: `1a` no-chunk / `1c` hint(기본, degrade-safe) / `1b` chunk(원자
+    보장·메타 왕복 최적). 이 3옵션 = retrieval 측정 하네스(1a=귀무가설). 지금 build 대상.
+  - **Mode 2**(우리 KG) `[build 유예]`: Extractor 포트(반환형 엔진: LangChain/GraphRAG/자체) ⊕ 결정론 구조 =
+    grounded KG IR. portable IR까지만, query 레이어 없음(비경쟁). 설계 확정, 코드는 §8 지표 이후.
+- **build 순서**: 확정 인터페이스(§9.4–9.5) + 측정(§8 골든셋)을 먼저. role taxonomy 확장·Mode 2·리포 분리는
+  측정 뒤로 유예 — "측정 없는 정교화 동결". 계약 코어(§10)는 측정의 인프라이자 seam이라 유예 대상 아님.
 - **LightRAG**: delegate-not-wrap. 공개 표면(`ainsert` 텍스트 > `custom_kg` > 내부)만 추종. extractor-plug 아님(용접).
   `custom_kg`는 구조 시딩 보조로만. 메타 천장은 A/B 동일.
 - **패키지**: `odl-vl` core(lean) + `odl-vl[kg]`(무거움, opt-in), 단방향 import 강제. 두 export 계약 public·버전링.
