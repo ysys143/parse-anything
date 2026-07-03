@@ -189,6 +189,26 @@
       "max_tokens": 8192,
       "params": "885M (vision enc-dec VLM)",
       "notes": "Swapped in for nemotron-ocr-v2 (C). Real markdown VLM, vLLM-served. Thin custom image = FROM vllm-openai:v0.14.1 + albumentations/timm/open_clip_torch + baked chat_template. v1.2 REQUIRES the 4-token prompt + skip_special_tokens=false. L4/Ada not on NVIDIA's validated list -> smoke-test first. max_tokens 9000->8192 (model ctx caps at 9000, request overflowed)."
+    },
+    {
+      "id": "PaddlePaddle/PaddleOCR-VL",
+      "backend": "vllm_docker",
+      "vllm_image": "vllm/vllm-openai:latest",
+      "served_name": "model",
+      "serve_args": [
+        "--dtype",
+        "bfloat16",
+        "--max-model-len",
+        "16384",
+        "--gpu-memory-utilization",
+        "0.85"
+      ],
+      "trust_remote_code": true,
+      "prompt": "OCR:",
+      "extra_body": {},
+      "max_tokens": 8192,
+      "params": "0.9B (ERNIE-4.5-VL)",
+      "notes": "parse-anything's native paddle backend. Serves on vllm latest (trust_remote_code). NOTE: vLLM /v1 is ELEMENT-level recognition; full-page markdown needs the official paddleocr doc_parser layout pipeline. Here run single-shot 'OCR:' on the full page -> underrepresents its structured/pipeline mode."
     }
   ]
 }
