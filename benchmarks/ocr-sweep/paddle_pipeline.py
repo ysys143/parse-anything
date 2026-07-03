@@ -66,7 +66,7 @@ def main() -> None:
     args = ap.parse_args()
 
     from paddleocr import PaddleOCRVL
-    pipeline = PaddleOCRVL(vl_rec_backend="vllm", vl_rec_server_url=args.server_url)
+    pipeline = PaddleOCRVL(vl_rec_backend="vllm-server", vl_rec_server_url=args.server_url)
 
     pages = render_all(args.pdf)
     raw_model_dir = os.path.join(args.raw_dir, sanitize(args.model_id))
