@@ -24,7 +24,7 @@
     {
       "id": "nanonets/Nanonets-OCR2-3B",
       "backend": "vllm_docker",
-      "vllm_image": "vllm/vllm-openai:latest",
+      "vllm_image": "vllm/vllm-openai:v0.11.2",
       "served_name": "model",
       "serve_args": [
         "--dtype",
@@ -41,7 +41,7 @@
       "extra_body": {},
       "max_tokens": 15000,
       "params": "3.75B (Qwen2.5-VL-3B)",
-      "notes": "Stock Qwen2.5-VL arch. Card recommends max_tokens 15000. On L4 it ran to max_tokens (~413s/page) -> investigating EOS/stop-token behavior rather than hacking the cap. {U2610}/{U2611} = checkbox glyphs."
+      "notes": "Stock Qwen2.5-VL arch. PINNED to v0.11.2: vllm-openai:latest produced '!' garbage (Qwen2.5-VL regression); v0.11.2 works (same image as olmOCR). {U2610}/{U2611}=checkbox glyphs."
     },
     {
       "id": "deepseek-ai/DeepSeek-OCR",
