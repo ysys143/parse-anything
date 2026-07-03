@@ -28,7 +28,11 @@ import re
 
 import pypdfium2 as pdfium
 
-_TAG = re.compile(r"<[^>]+>")                 # html tags
+# Real HTML/XML tags only: require a letter, '/', or '!' right after '<' so mathematical
+# inequalities ("P < 0.05", "n > 30") are NOT mistaken for an opening tag whose greedy [^>]*
+# would swallow the text (and its numbers) up to the next unrelated '>'. (Fixes a scoring bug
+# that silently deleted stats blocks -- e.g. p-values -- on documents using < / >.)
+_TAG = re.compile(r"</?[A-Za-z!][^>]*>")      # html/xml tags & comments (not < / > operators)
 _MD = re.compile(r"[#*_`>|\\]|!\[[^\]]*\]\([^)]*\)|\[\[[^\]]*\]\]")  # md/grounding markup
 _WS = re.compile(r"\s+")
 _NUM = re.compile(r"\d[\d,\.]{3,}")           # >= 4-char numeric tokens (years, stats, ids)
