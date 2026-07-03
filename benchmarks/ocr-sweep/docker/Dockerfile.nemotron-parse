@@ -1,0 +1,14 @@
+# Thin custom image for nvidia/NVIDIA-Nemotron-Parse-v1.2 (swapped in for nemotron-ocr-v2).
+# It is vLLM-served, but the base vllm-openai image lacks its extra deps and the chat template,
+# so we layer them on. Keeps the base ENTRYPOINT (OpenAI api_server that accepts --model ...),
+# matching how the other vLLM models are launched.
+#   docker build -t pa-ocr/nemotron-parse -f docker/Dockerfile.nemotron-parse .
+FROM vllm/vllm-openai:v0.14.1
+
+# Extra runtime deps required by the model's remote code (per NVIDIA model card, vLLM path).
+RUN python3 -m pip install --no-cache-dir albumentations timm open_clip_torch
+
+# Bake the chat template the serve command references (avoids a runtime fetch race).
+RUN python3 -m pip install --no-cache-dir "huggingface_hub[cli]" && \
+    huggingface-cli download nvidia/NVIDIA-Nemotron-Parse-v1.2 chat_template.jinja \
+        --local-dir /opt/nemotron

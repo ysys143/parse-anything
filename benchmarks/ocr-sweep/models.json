@@ -1,0 +1,100 @@
+{
+  "_comment": "Single source of truth for the 7-model parse-anything OCR sweep on an L4. Each entry drives BOTH the runner and the shim (prompt + extra_body + max_tokens). backend=vllm_docker -> `docker run <vllm_image> --model <id> <serve_args>`; backend=custom_docker -> `docker build -f <dockerfile>` then run <docker_run_cmd> (Unlimited-OCR = native_wrapper.py; Nemotron-Parse = vLLM+extras). Prompts/versions verbatim from model cards (2026-07 research). NOTE: the Nanonets prompt stores checkbox glyphs as ASCII sentinels {U2610}/{U2611}; the shim restores chr(0x2610)/chr(0x2611) before sending.",
+  "models": [
+    {
+      "id": "zai-org/GLM-OCR",
+      "backend": "vllm_docker",
+      "vllm_image": "vllm/vllm-openai:v0.12.0",
+      "served_name": "model",
+      "serve_args": ["--dtype", "bfloat16", "--max-model-len", "16384", "--gpu-memory-utilization", "0.85"],
+      "trust_remote_code": false,
+      "prompt": "Text Recognition:",
+      "extra_body": {},
+      "max_tokens": 8192,
+      "params": "0.9B",
+      "notes": "GLM family, native glm_ocr arch. Fits L4 trivially."
+    },
+    {
+      "id": "nanonets/Nanonets-OCR2-3B",
+      "backend": "vllm_docker",
+      "vllm_image": "vllm/vllm-openai:v0.11.0",
+      "served_name": "model",
+      "serve_args": ["--dtype", "bfloat16", "--max-model-len", "32768", "--gpu-memory-utilization", "0.90", "--limit-mm-per-prompt", "{\"image\": 1}"],
+      "trust_remote_code": false,
+      "prompt": "Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using {U2610} and {U2611} for check boxes.",
+      "extra_body": {},
+      "max_tokens": 15000,
+      "params": "3.75B (Qwen2.5-VL-3B)",
+      "notes": "Stock Qwen2.5-VL arch; any recent vllm works. {U2610}/{U2611} = checkbox glyphs."
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-OCR",
+      "backend": "vllm_docker",
+      "vllm_image": "vllm/vllm-openai:latest",
+      "served_name": "model",
+      "serve_args": ["--logits_processors", "vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor", "--no-enable-prefix-caching", "--mm-processor-cache-gb", "0", "--max-model-len", "8192", "--gpu-memory-utilization", "0.85", "--dtype", "bfloat16"],
+      "trust_remote_code": false,
+      "prompt": "<|grounding|>Convert the document to markdown.",
+      "extra_body": {"skip_special_tokens": false, "vllm_xargs": {"ngram_size": 30, "window_size": 90, "whitelist_token_ids": [128821, 128822]}},
+      "max_tokens": 8192,
+      "params": "3B MoE (~570M active)",
+      "notes": "Needs upstream vllm with native deepseek_ocr; VALIDATE version on first run (0.11.0 reportedly failed). Hardcodes GUNDAM mode."
+    },
+    {
+      "id": "allenai/olmOCR-2-7B-1025-FP8",
+      "backend": "vllm_docker",
+      "vllm_image": "vllm/vllm-openai:v0.11.2",
+      "served_name": "model",
+      "serve_args": ["--max-model-len", "16384", "--gpu-memory-utilization", "0.85", "--limit-mm-per-prompt", "{\"video\": 0}", "--disable-log-requests"],
+      "trust_remote_code": false,
+      "prompt": "Attached is one page of a document that you must process. Just return the plain text representation of this document as if you were reading it naturally. Convert equations to LateX and tables to HTML.\nIf there are any figures or charts, label them with the following markdown syntax ![Alt text describing the contents of the figure](page_startx_starty_width_height.png)\nReturn your output as markdown, with a front matter section on top specifying values for the primary_language, is_rotation_valid, rotation_correction, is_table, and is_diagram parameters.",
+      "extra_body": {},
+      "max_tokens": 8000,
+      "target_longest_image_dim": 1288,
+      "params": "7B FP8 (Qwen2.5-VL)",
+      "notes": "FP8 W8A8 auto-detected; L4 (sm89) supports it natively. Do NOT pass --quantization. olmocr renders pages at longest-dim 1288."
+    },
+    {
+      "id": "datalab-to/chandra-ocr-2",
+      "backend": "vllm_docker",
+      "vllm_image": "vllm/vllm-openai:v0.17.0",
+      "served_name": "model",
+      "serve_args": ["--dtype", "bfloat16", "--max-model-len", "18000", "--max-num-seqs", "16", "--max-num-batched-tokens", "2048", "--gpu-memory-utilization", "0.85", "--enable-prefix-caching", "--mm-processor-kwargs", "{\"min_pixels\": 3136, \"max_pixels\": 6291456}"],
+      "trust_remote_code": false,
+      "prompt": "OCR this image to HTML, arranged as layout blocks.  Each layout block should be a div with the data-bbox attribute representing the bounding box of the block in x0 y0 x1 y1 format.  Bboxes are normalized 0-1000. The data-label attribute is the label for the block.\n\nUse the following labels:\n- Caption / Footnote / Equation-Block / List-Group / Page-Header / Page-Footer / Image / Section-Header / Table / Text / Complex-Block / Code-Block / Form / Table-Of-Contents / Figure / Chemical-Block / Diagram / Bibliography / Blank-Page",
+      "extra_body": {"top_p": 0.1},
+      "max_tokens": 12384,
+      "html_to_markdown": true,
+      "params": "4-5B (Qwen3.5 hybrid)",
+      "notes": "Needs vllm 0.17.0 (qwen3_5 arch). Outputs HTML -> post-convert to markdown. Chandra client normally does this; we capture raw HTML + convert in report."
+    },
+    {
+      "id": "baidu/Unlimited-OCR",
+      "backend": "custom_docker",
+      "dockerfile": "docker/Dockerfile.native",
+      "build_image": "pa-ocr/native-unlimited",
+      "docker_run_cmd": ["--models-file", "/app/models.json", "--model-id", "baidu/Unlimited-OCR", "--port", "8000", "--preload"],
+      "native_kind": "deepseek_infer",
+      "served_name": "model",
+      "prompt": "<image>document parsing.",
+      "infer_kwargs": {"base_size": 1024, "image_size": 640, "crop_mode": true, "max_length": 32768, "no_repeat_ngram_size": 35, "ngram_window": 128},
+      "trust_remote_code": true,
+      "max_tokens": 32768,
+      "params": "3.3B (DeepSeek-OCR lineage)",
+      "notes": "transformers model.infer() (NOT vllm on L4). Custom Docker image runs native_wrapper.py -> OpenAI /v1. Deps: torch2.10/transformers4.57.1/flash-attn2. VALIDATE .infer() return contract on first run."
+    },
+    {
+      "id": "nvidia/NVIDIA-Nemotron-Parse-v1.2",
+      "backend": "custom_docker",
+      "dockerfile": "docker/Dockerfile.nemotron-parse",
+      "build_image": "pa-ocr/nemotron-parse",
+      "docker_run_cmd": ["--model", "nvidia/NVIDIA-Nemotron-Parse-v1.2", "--served-model-name", "model", "--trust-remote-code", "--chat-template", "/opt/nemotron/chat_template.jinja", "--dtype", "bfloat16", "--max-num-seqs", "8", "--limit-mm-per-prompt", "{\"image\": 1}", "--port", "8000"],
+      "served_name": "model",
+      "prompt": "</s><s><predict_bbox><predict_classes><output_markdown><predict_no_text_in_pic>",
+      "extra_body": {"repetition_penalty": 1.1, "top_k": 1, "skip_special_tokens": false},
+      "max_tokens": 9000,
+      "params": "885M (vision enc-dec VLM)",
+      "notes": "Swapped in for nemotron-ocr-v2 (C). Real markdown VLM, vLLM-served. Thin custom image = FROM vllm-openai:v0.14.1 + albumentations/timm/open_clip_torch + baked chat_template. v1.2 REQUIRES the 4-token prompt + skip_special_tokens=false. L4/Ada not on NVIDIA's validated list -> smoke-test first."
+    }
+  ]
+}
