@@ -111,8 +111,8 @@
         <div class="desc">Ties GLM on the judge (4.75) when it behaves — but degenerates into a repeating "!" loop on some pages (coverage 1.9×, highest hallucination). Great or broken, per page.</div></li>
       <li><span class="pos">5</span><span class="name">olmOCR-2-FP8 <small>allenai · 7B</small></span><span class="badge b-warn">Under-delivers for 7B</span>
         <div class="desc">Best on the figure page (flags <span class="mono">is_diagram</span>), but misses a third of the document's numbers (recall 0.685) and drops headers/footers. Largest model, middling result.</div></li>
-      <li><span class="pos">6</span><span class="name">PaddleOCR-VL <small>PaddlePaddle · 0.9B</small></span><span class="badge b-warn">Needs its pipeline</span>
-        <div class="desc">parse-anything's native paddle backend. Solid on plain body text, but single-shot mode gives no LaTeX (flat unicode) and loops on the figure page. Its layout pipeline would lift this.</div></li>
+      <li><span class="pos">6</span><span class="name">PaddleOCR-VL <small>PaddlePaddle · 0.9B</small></span><span class="badge b-warn">Depends how you call it</span>
+        <div class="desc">parse-anything's native paddle backend. <b>Single-shot</b> (0.859, judge 2.75) gives no LaTeX and loops on figures. But its intended <b>layout pipeline</b> (paddleocr doc_parser + vLLM) jumps to <b>0.889 — the top objective score, above GLM</b> — with proper LaTeX and coverage back to 1.04. How you call the model matters as much as which model.</div></li>
       <li><span class="pos">7</span><span class="name">Nemotron-Parse-v1.2 <small>nvidia · 0.9B</small></span><span class="badge b-bad">Unusable here</span>
         <div class="desc">Scored 0 on all four judged pages — emits bbox tokens then collapses into hallucinated repeating tables. Needs its own postprocessing pipeline, not raw single-shot serving.</div></li>
       <li><span class="pos">—</span><span class="name">Unlimited-OCR <small>baidu · 3.3B</small></span><span class="badge b-bad">Did not deploy</span>
@@ -128,8 +128,9 @@
       <thead><tr><th>Model</th><th data-m="hi">char_sim</th><th data-m="hi">token_f1</th>
         <th data-m="hi">num_recall</th><th data-m="lo">num_halluc</th><th data-m="cov">coverage</th></tr></thead>
       <tbody>
+        <tr><td>PaddleOCR-VL · pipeline</td><td data-v=".889"></td><td data-v=".951"></td><td data-v=".947"></td><td data-v=".019" data-d="lo"></td><td data-v="1.038" data-d="cov"></td></tr>
         <tr><td>GLM-OCR</td><td data-v=".881"></td><td data-v=".955"></td><td data-v=".963"></td><td data-v=".025" data-d="lo"></td><td data-v="1.008" data-d="cov"></td></tr>
-        <tr><td>PaddleOCR-VL</td><td data-v=".859"></td><td data-v=".938"></td><td data-v=".940"></td><td data-v=".012" data-d="lo"></td><td data-v="1.531" data-d="cov"></td></tr>
+        <tr><td>PaddleOCR-VL · single-shot</td><td data-v=".859"></td><td data-v=".938"></td><td data-v=".940"></td><td data-v=".012" data-d="lo"></td><td data-v="1.531" data-d="cov"></td></tr>
         <tr><td>DeepSeek-OCR</td><td data-v=".858"></td><td data-v=".950"></td><td data-v=".956"></td><td data-v=".009" data-d="lo"></td><td data-v="1.050" data-d="cov"></td></tr>
         <tr><td>chandra-2</td><td data-v=".857"></td><td data-v=".939"></td><td data-v=".998"></td><td data-v=".014" data-d="lo"></td><td data-v="1.130" data-d="cov"></td></tr>
         <tr><td>Nanonets-OCR2</td><td data-v=".823"></td><td data-v=".930"></td><td data-v=".967"></td><td data-v=".036" data-d="lo"></td><td data-v="1.919" data-d="cov"></td></tr>
