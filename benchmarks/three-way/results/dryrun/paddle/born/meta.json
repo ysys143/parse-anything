@@ -1,0 +1,9 @@
+{
+  "parser": "paddle",
+  "doc": "born",
+  "status": "dry_run",
+  "seconds": 0.0,
+  "n_pages": 0,
+  "n_chars": 0,
+  "error": "paddle_skipped_dry_run"
+}

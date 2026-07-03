@@ -1,0 +1,9 @@
+{
+  "parser": "pa",
+  "doc": "scan",
+  "status": "error",
+  "seconds": 0.0,
+  "n_pages": 0,
+  "n_chars": 0,
+  "error": "pa_exit_1:^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/jaesolshin/Documents/GitHub/odl-vl/src/parse_anything/pipeline/odl_extract.py\", line 331, in _run_odl\n    raise OdlError(f\"odl_convert_failed:{type(exc).__name__}\") from exc\nparse_anything.pipeline.odl_extract.OdlError: odl_convert_failed:CalledProcessError\n"
+}

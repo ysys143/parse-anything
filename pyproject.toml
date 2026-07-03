@@ -22,7 +22,7 @@ parse = "parse_anything.cli:main"     # short alias
 pa = "parse_anything.cli:main"        # shortest alias
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "reportlab>=4"]   # reportlab: generate tiny PDFs for tests (no committed binaries)
+dev = ["pytest>=8", "reportlab>=4", "lightrag-hku>=1.5.4,<1.6"]   # reportlab: tiny PDFs for tests; lightrag-hku: real ingest chunker for test_lightrag_chunk_boundary
 # Mode 2 (our KG output) seam -- design doc §10. Heavy extractor/graph deps live behind this
 # extra so the lean parsing core (`pip install parse-anything`) never pulls them. Populated when the
 # Extractor port lands (LangChain LLMGraphTransformer / GraphRAG / graph store drivers).

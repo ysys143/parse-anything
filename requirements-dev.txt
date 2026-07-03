@@ -2,3 +2,4 @@
 -r requirements.txt
 pytest>=8
 reportlab>=4
+lightrag-hku>=1.5.4,<1.6   # test_lightrag_chunk_boundary: exercises the real ingest chunker (skips if absent)
