@@ -55,7 +55,7 @@
         "--mm-processor-cache-gb",
         "0",
         "--max-model-len",
-        "16384",
+        "8192",
         "--gpu-memory-utilization",
         "0.85",
         "--dtype",
@@ -74,9 +74,9 @@
           ]
         }
       },
-      "max_tokens": 8192,
+      "max_tokens": 4096,
       "params": "3B MoE (~570M active)",
-      "notes": "Needs upstream vllm with native deepseek_ocr; VALIDATE version on first run (0.11.0 reportedly failed). Hardcodes GUNDAM mode. max-model-len raised to 16384 (real-page vision tokens + output overflowed 8192 -> 400)."
+      "notes": "Needs upstream vllm with native deepseek_ocr. Model context capped at 8192; keep --max-model-len 8192 and max_tokens 4096 so (vision tokens + output) fits (larger max_tokens -> HTTP 400). Hardcodes GUNDAM mode."
     },
     {
       "id": "allenai/olmOCR-2-7B-1025-FP8",
