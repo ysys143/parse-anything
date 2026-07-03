@@ -1,7 +1,0 @@
-Evaluating the 2 scenarios for the goodness of fit to human decision-making data
-
-![Fig 6](assets/p19_1.png)
-
-Having confirmed the distinct predictions of the 2 scenarios via ex ante simulation, we evalu- ated their goodness of fit to human data. As points of reference for evaluation in the model space (Fig 6A), we created 3 reference models. The “Base” model sets the class boundary at the
-
-**Fig 6. Model goodness of fit to human choice behavior.** (A) Specification of the models constituting the model space. The color labels also apply to the rest of the panels in (B-D). (B, C) Model comparisons in goodness of fit in terms of log likelihood (B) and AICc (C). The height of bars represents the acrossparticipant average differences from the goodness of fit measures of the Base model (N = 30, mean ± SEM). Both difference measures indicate a better fit for higher values. Dashed lines in purple (Hybrid model) and gray (Fixed model) provide the reference points for evaluating the value-updating and worldupdating modelsʼ accountability of the trial-to-trial choice variability (see main text for their exact meanings). Pairwise model comparisons were performed using paired one-tailed t tests (asterisks indicate significance: , P < 0.05; , P < 0.005; , P < 10 ) (D) Model comparisons in the hierarchical Bayesian model selection measures. Height of bars, expected posterior probabilities; error bars, standard deviation of posterior probabilities. Dots marked with short dashes, protected exceedance probability. Dashed lines,

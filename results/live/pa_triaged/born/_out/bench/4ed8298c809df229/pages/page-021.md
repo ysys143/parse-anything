@@ -1,7 +1,0 @@
-![Fig 7](assets/p22_1.png)
-
-PLOS BIOLOGY | Corrective feedback on perceptual decisions
-
-**Fig 7. Ex post simulation results.** (A-C) Retrospective (left columns), prospective (middle columns), and subtractive (right columns) history effects in PSE for the human (A), value-updating (B), and worldupdating (C) decision-makers. Top and bottom rows in each panel show the PSEs associated with the toi episodes involving correct and incorrect feedback. Symbols with error bars, mean ± SEM across 30 decision-makers. See S5 Fig for the results from the Hybrid model decision-makers. (D) Frequency of PDM episodes in the human data (mean and SD across participants). (E, F) Maps of significant deviations of the value-updating (E) and world-updating (F) model agents from the human decision-makers in the retrospective (left) and prospective (right) history effects. Gray and black cells of the maps mark the insignificant and significant deviations (paired two-tailed t tests with the Bonferroni correction for multiple comparisons). Empty cells are data points with NaN values due to insufficient trials. The data underlying this figure (A, B, C, D, E, F) can be found in S1 Data.
-
-Source: https://doi.org/10.1371/journal.pbio.3002373.g007

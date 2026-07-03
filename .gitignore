@@ -238,6 +238,8 @@ ledger.jsonl
 # Regenerated benchmark and demo outputs (parse runs, RAG stores, images) — never source.
 benchmarks/**/results/
 demo/out/
+/results/
+/profiles/
 
 # Local measurement prototypes + data (incl. private documents). Never committed.
 .local/
