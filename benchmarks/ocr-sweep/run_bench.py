@@ -36,6 +36,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHIM = os.path.join(HERE, "shim_server.py")
 NATIVE = os.path.join(HERE, "native_wrapper.py")
+PREWARM = os.path.join(HERE, "prewarm.py")
 CONTAINER = "pa_ocr_runner"          # fixed name so we can always docker rm -f it
 RUNNER_PORT = 8000
 SHIM_PORT = 8099
@@ -163,16 +164,25 @@ def runner_logs(m: dict) -> str:
 
 def run_doc(model_id: str, pdf: str, out_dir: str, raw_dir: str, metrics_file: str,
             served: str, parse_extra: list[str]) -> dict:
+    models_file = os.environ["_MODELS_FILE"]
+    cache_file = os.path.join(
+        os.path.dirname(metrics_file),
+        os.path.basename(metrics_file).replace("metrics_", "cache_").replace(".jsonl", ".json"))
+    # 1) BATCHED pre-transcription: fire all pages concurrently so vLLM continuous-batches them
+    #    (keeps the GPU busy). Writes raw_<doc>/ + metrics + the cache parse-anything will replay.
+    pre = subprocess.run([sys.executable, PREWARM, "--models-file", models_file, "--model-id", model_id,
+                          "--pdf", pdf, "--openai-base", f"http://127.0.0.1:{RUNNER_PORT}/v1",
+                          "--served", served, "--raw-dir", raw_dir, "--cache-file", cache_file,
+                          "--metrics-file", metrics_file], capture_output=True, text=True)
+    log((pre.stdout or pre.stderr or "").strip().splitlines()[-1:][0] if (pre.stdout or pre.stderr).strip()
+        else "prewarm done")
+    # 2) parse-anything consumes the cache INSTANTLY via the shim in replay mode (no model calls).
     env = dict(os.environ)
     env.update({
         "SHIM_BACKEND": "openai", "SHIM_PORT": str(SHIM_PORT),
         "SHIM_PUBLIC_URL": f"http://127.0.0.1:{SHIM_PORT}",
-        "OPENAI_BASE": f"http://127.0.0.1:{RUNNER_PORT}/v1", "OPENAI_MODEL": served,
-        "SHIM_MODELS_FILE": env["_MODELS_FILE"], "SHIM_RAW_DIR": raw_dir,
-        "SHIM_METRICS_FILE": metrics_file,
+        "SHIM_MODELS_FILE": models_file, "SHIM_CACHE_FILE": cache_file,
     })
-    # Free port SHIM_PORT first: a killed prior run can leave an orphan shim that would intercept
-    # this doc's requests (wrong raw/metrics dir) and make our new shim fail to bind.
     subprocess.run(["pkill", "-f", "shim_server.py"], capture_output=True)
     time.sleep(0.5)
     shim = subprocess.Popen([sys.executable, SHIM], env=env)

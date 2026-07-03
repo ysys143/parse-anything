@@ -49,6 +49,14 @@ MAX_TOKENS = int(os.environ.get("SHIM_MAX_TOKENS", "8192"))
 # Optional: capture raw per-page model output + per-job metrics (the fair, assembly-independent signal).
 RAW_DIR = os.environ.get("SHIM_RAW_DIR", "")
 METRICS_FILE = os.environ.get("SHIM_METRICS_FILE", "")
+# Optional cache-replay: when set, return pre-transcribed cache[i] for the i-th (page-ordered)
+# request instead of calling the model. prewarm.py batches transcription; parse-anything then
+# consumes it instantly in strict page order (paddle path = 1 request/page, sequential).
+CACHE_FILE = os.environ.get("SHIM_CACHE_FILE", "")
+_CACHE: list[str] | None = None
+if CACHE_FILE and os.path.exists(CACHE_FILE):
+    with open(CACHE_FILE, encoding="utf-8") as _fh:
+        _CACHE = json.load(_fh).get("texts")
 
 _DEFAULT_PROMPT = ("Convert this document page to clean GitHub-flavored Markdown. "
                    "Render equations as LaTeX ($...$), tables as Markdown tables, and preserve reading order.")
@@ -166,7 +174,10 @@ def _record(model: str, seq: int, latency_ms: float, text: str | None, state: st
 def _run_job(job_id: str, png: bytes, model: str, seq: int) -> None:
     t0 = time.monotonic()
     try:
-        text = _infer(png, model)
+        if _CACHE is not None:                       # replay pre-transcribed page (seq is 1-based)
+            text = _CACHE[seq - 1] if 0 <= seq - 1 < len(_CACHE) else ""
+        else:
+            text = _infer(png, model)
         dt = (time.monotonic() - t0) * 1000.0
         with _LOCK:
             _JOBS[job_id] = {"state": "done", "text": text}
