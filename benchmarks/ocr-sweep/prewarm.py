@@ -46,12 +46,17 @@ def load_cfg(models_file: str, model_id: str) -> dict:
     raise SystemExit(f"model not in registry: {model_id}")
 
 
-def render_png(pdf: str, i: int, scale: float = 2.0) -> bytes:
-    doc = pdfium.PdfDocument(pdf)          # matches parse_anything.pipeline.render.render_page_png
-    pil = doc[i].render(scale=scale).to_pil()
-    buf = io.BytesIO()
-    pil.save(buf, format="PNG")
-    return buf.getvalue()
+def render_all_pngs(pdf: str, scale: float = 2.0) -> list[bytes]:
+    """Render every page to PNG bytes, SEQUENTIALLY in the caller thread. pypdfium2 is not
+    thread-safe, so we must not render concurrently (that segfaults the whole process); rendering
+    is cheap, only the network transcription needs concurrency. Matches render_page_png(scale=2.0)."""
+    doc = pdfium.PdfDocument(pdf)
+    out: list[bytes] = []
+    for i in range(len(doc)):
+        buf = io.BytesIO()
+        doc[i].render(scale=scale).to_pil().save(buf, format="PNG")
+        out.append(buf.getvalue())
+    return out
 
 
 def transcribe(png: bytes, base: str, served: str, prompt: str, extra: dict, max_tokens: int) -> str:
@@ -94,7 +99,8 @@ def main() -> None:
     prompt = _desentinel(cfg.get("prompt") or "Convert this document page to Markdown.")
     extra = cfg.get("extra_body") or {}
     max_tokens = int(cfg.get("max_tokens") or 8192)
-    n = len(pdfium.PdfDocument(args.pdf))
+    pngs = render_all_pngs(args.pdf)          # SEQUENTIAL render (pypdfium2 not thread-safe -> segfault)
+    n = len(pngs)
     raw_model_dir = os.path.join(args.raw_dir, sanitize(args.model_id))
     os.makedirs(raw_model_dir, exist_ok=True)
     os.makedirs(os.path.dirname(args.metrics_file) or ".", exist_ok=True)
@@ -102,7 +108,7 @@ def main() -> None:
     def work(i: int) -> tuple[int, str, float, str]:
         t0 = time.monotonic()
         try:
-            text = transcribe(render_png(args.pdf, i), args.openai_base, args.served, prompt, extra, max_tokens)
+            text = transcribe(pngs[i], args.openai_base, args.served, prompt, extra, max_tokens)
             return i, text, (time.monotonic() - t0) * 1000, "done"
         except Exception as exc:  # noqa: BLE001
             return i, "", (time.monotonic() - t0) * 1000, f"failed:{type(exc).__name__}"
