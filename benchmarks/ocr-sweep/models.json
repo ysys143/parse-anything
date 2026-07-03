@@ -133,32 +133,29 @@
     {
       "id": "baidu/Unlimited-OCR",
       "backend": "custom_docker",
-      "dockerfile": "docker/Dockerfile.native",
-      "build_image": "pa-ocr/native-unlimited",
+      "dockerfile": "docker/Dockerfile.unlimited",
+      "build_image": "pa-ocr/unlimited",
       "docker_run_cmd": [
-        "--models-file",
-        "/app/models.json",
-        "--model-id",
+        "--model",
         "baidu/Unlimited-OCR",
-        "--port",
-        "8000",
-        "--preload"
+        "--served-model-name",
+        "model",
+        "--trust-remote-code",
+        "--dtype",
+        "bfloat16",
+        "--max-model-len",
+        "8192",
+        "--gpu-memory-utilization",
+        "0.85"
       ],
-      "native_kind": "deepseek_infer",
       "served_name": "model",
-      "prompt": "<image>document parsing.",
-      "infer_kwargs": {
-        "base_size": 1024,
-        "image_size": 640,
-        "crop_mode": true,
-        "max_length": 32768,
-        "no_repeat_ngram_size": 35,
-        "ngram_window": 128
+      "prompt": "document parsing.",
+      "extra_body": {
+        "skip_special_tokens": false
       },
-      "trust_remote_code": true,
-      "max_tokens": 32768,
+      "max_tokens": 8192,
       "params": "3.3B (DeepSeek-OCR lineage)",
-      "notes": "transformers model.infer() (NOT vllm on L4). Custom Docker image runs native_wrapper.py -> OpenAI /v1. Deps: torch2.10/transformers4.57.1/flash-attn2. VALIDATE .infer() return contract on first run."
+      "notes": "Served via vLLM latest (arch recognized w/ trust_remote_code; needs addict/matplotlib in image). Prompt <image> placeholder injected by chat template so we send 'document parsing.' Native flash-attn path abandoned (no torch2.6 wheel)."
     },
     {
       "id": "nvidia/NVIDIA-Nemotron-Parse-v1.2",
