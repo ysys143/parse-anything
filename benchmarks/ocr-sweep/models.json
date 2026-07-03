@@ -34,16 +34,14 @@
         "--gpu-memory-utilization",
         "0.90",
         "--limit-mm-per-prompt",
-        "{\"image\": 1}",
-        "--mm-processor-kwargs",
-        "{\"max_pixels\": 1003520}"
+        "{\"image\": 1}"
       ],
       "trust_remote_code": false,
       "prompt": "Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using {U2610} and {U2611} for check boxes.",
       "extra_body": {},
-      "max_tokens": 4096,
+      "max_tokens": 15000,
       "params": "3.75B (Qwen2.5-VL-3B)",
-      "notes": "Stock Qwen2.5-VL arch; any recent vllm works. {U2610}/{U2611} = checkbox glyphs. max_tokens lowered 15000->4096 (model ran to max_tokens = 413s/page); max_pixels capped ~1MP."
+      "notes": "Stock Qwen2.5-VL arch. Card recommends max_tokens 15000. On L4 it ran to max_tokens (~413s/page) -> investigating EOS/stop-token behavior rather than hacking the cap. {U2610}/{U2611} = checkbox glyphs."
     },
     {
       "id": "deepseek-ai/DeepSeek-OCR",
