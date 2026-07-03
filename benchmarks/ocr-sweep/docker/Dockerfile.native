@@ -5,10 +5,10 @@
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
+# jammy base ships python3.10 (no python3.12 package); 3.10 runs torch2.10/transformers4.57 fine.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.12 python3-pip git ninja-build && \
-    rm -rf /var/lib/apt/lists/* && \
-    ln -sf /usr/bin/python3.12 /usr/bin/python3
+        python3 python3-pip git ninja-build && \
+    rm -rf /var/lib/apt/lists/*
 
 # Torch first (cu128 wheels), then the pinned stack from the model card research.
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
