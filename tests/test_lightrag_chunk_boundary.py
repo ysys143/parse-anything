@@ -1,6 +1,6 @@
 """Reproducible LightRAG-integration probe for the Mode 1 ``1b``/``1c`` ingest paths.
 
-This is the artifact ``docs/agent-ready-schema-and-chunking.md`` §9.5 promises: not a claim
+This is the artifact ``docs/.design/agent-ready-schema-and-chunking.md`` §9.5 promises: not a claim
 in prose but a *re-runnable* check that LightRAG's default ingest chunker
 (``chunking_by_token_size``) actually honours the chunk boundaries parse-anything owns when
 those boundaries are handed over as a ``split_by_character``-delimited stream.
@@ -34,7 +34,7 @@ try:
 except ImportError:  # pragma: no cover - older lightrag layout
     from lightrag.operate import chunking_by_token_size  # type: ignore[attr-defined,no-redef]
 from lightrag.exceptions import ChunkTokenLimitExceededError
-from lightrag.utils import Tokenizer
+from lightrag.utils import Tokenizer, sanitize_text_for_encoding
 
 from parse_anything.export import ChunkRecord
 
@@ -162,3 +162,21 @@ def test_only_true_oversize_atom_raises():
     stream = _serialize([*_prose_records(), _oversize_table_record()])
     with pytest.raises(ChunkTokenLimitExceededError):
         _chunk(stream, only=True)
+
+
+# ---------------------------------------------------------------------------------------------
+# E. The delimiter trap (found in the Docker E2E run): the tests above call the chunker directly,
+#    but the real ingest path ``ainsert`` first runs ``sanitize_text_for_encoding`` on the text.
+#    That sanitizer STRIPS ASCII control chars -- so the intuitive record-separator SENTINEL
+#    (\x1e) is silently removed before chunking, the whole document collapses into one segment,
+#    and 1b raises ``ChunkTokenLimitExceededError``. A Private Use Area code point survives, so
+#    the delimiter method must use a sanitize-surviving marker (U+E000), not a control char.
+# ---------------------------------------------------------------------------------------------
+def test_delimiter_marker_must_survive_sanitize():
+    # The trap: our unit SENTINEL would be erased on the real ainsert path.
+    assert sanitize_text_for_encoding(f"A{SENTINEL}B") == "AB", \
+        "expected the ASCII control-char SENTINEL to be stripped by sanitize (that is the trap)"
+    # The fix used by the E2E demo: a PUA marker passes through untouched.
+    pua = ""
+    assert sanitize_text_for_encoding(f"A{pua}B") == f"A{pua}B", \
+        "PUA marker must survive sanitize so ainsert(split_by_character=...) still sees the boundary"

@@ -1,6 +1,6 @@
 """Page-spanning table detection: does page N's table continue onto N+1?
 
-Evidence: docs/measurement-findings.md F9 -- the discriminating signal is column x-position
+Evidence: docs/.design/measurement-findings.md F9 -- the discriminating signal is column x-position
 match between the bottom-of-A and top-of-B tabular regions (continuation ~0.77 vs adjacent
 separate tables ~0.40). Contract: pdf-pipeline-requirements §4.
 

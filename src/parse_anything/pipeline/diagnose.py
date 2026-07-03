@@ -178,7 +178,7 @@ def prepare_bundle(
 ) -> dict[str, Any]:
     """Write D-2 review material: sample page images + per-sample deterministic text, structure,
     and (when a VLM client is given) the D-1 divergence -- the bundle a flagship agent reviews by
-    hand to write a SourceProfile (docs/diagnostic-d2.md). The agent IS the oracle position;
+    hand to write a SourceProfile (docs/.design/diagnostic-d2.md). The agent IS the oracle position;
     this only assembles what it looks at."""
     out = Path(out_dir)
     (out / "pages").mkdir(parents=True, exist_ok=True)
@@ -220,7 +220,7 @@ def prepare_bundle(
         "n_sampled": len(indices),
         "samples": samples,
         "instructions": (
-            "See docs/diagnostic-d2.md. Open each page image and compare it to deterministic_text "
+            "See docs/.design/diagnostic-d2.md. Open each page image and compare it to deterministic_text "
             "(and vlm_text if present); judge whether deterministic extraction is faithful or the "
             "source needs det_vlm; write a SourceProfile (recommended_mode, confidence, calibrated "
             "thresholds, reasons)."

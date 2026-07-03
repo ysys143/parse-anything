@@ -1,6 +1,6 @@
 """Per-page signal computation for triage (the I/O behind triage.decide_route).
 
-Evidence: docs/measurement-findings.md F10 (scan/born-digital split reliable; table
+Evidence: docs/.design/measurement-findings.md F10 (scan/born-digital split reliable; table
 detection from pdf-inspector for grids, ODL for merged-cell; image detection works) and the
 real-corpus finding that complex VECTOR figures (matplotlib-style scientific plots) carry no
 raster image object and their plot grid trips the table detector -- so we also count path

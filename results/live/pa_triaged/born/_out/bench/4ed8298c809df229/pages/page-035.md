@@ -1,0 +1,15 @@
+PLOS Biology | https://doi.org/10.1371/journal.pbio.3002373 November 8, 2023 24 / 32
+
+N×M×K. Log model evidence was obtained for each participant by multiplying AICc by −1/2 [35]. Furthermore, we took a hierarchical Bayesian model selection approach that infers the posterior over model frequencies in the population based on log model evidence values in each participant. To conclude whether a given model is the most likely model above and beyond chance, we also reported protected exceedance probabilities for each model (see Fig 6E and 6F). The random effects model selection at the group level relied on the function VBA_groupBMC.m of the Variational Bayesian Analysis toolbox (https://mbb-team.github.io/VBA-toolbox/) [63].
+
+Model recovery analysis
+
+We performed a model recovery analysis to further validate our model fitting pipeline. In the analysis, we considered the 2 competing models of interest (the world-updating and value- updating models) and the 2 reference models (the Base and Hybrid models). Using the same parameter set, we generated synthetic data for each participantʼs true stimulus sequences. For the realistic synthetic data, the parameter values were chosen based on the best-fitting parame- ter estimates from each individual. We generated 30 sets of synthetic data for each model, with 153,000 trials in each set. We then fit all 4 models to each synthetic dataset, resulting in 480 fit- ting problems. We assessed the models using the AICc-based log model evidence and com- puted exceedance probabilities. Our analysis showed that all models were distinguishable, which confirms the validity of our model fitting pipeline (S3 Fig).
+
+Ex ante and ex post model simulations
+
+We conducted ex ante model simulations to confirm and preview the value-updating and world- updating modelsʼ distinct predictions on the stimulus-dependent feedback effects under the cur- rent experimental setting. Model simulations were conducted using trial sequences (i.e., stimulus order and correct answers) identical to those administered to human participants. The model parameters used in the ex ante simulation are summarized in the Table A in S1 Appendix. Note that the 25 levels (uniformly spaced [0.15, 3.27]) of , the only parameter common to the 2 mod- els, were used. As for the other parameters specific to each model, we selected the values that gen- erated human-level task performances (see S4 Fig for details and statistical results). Simulations were repeated 100 times, resulting in the 100×N×M×K = 507,300 ~ 510,000 trials per participant. For simplicity, we assumed neither lapse trials nor any arbitrary choice bias.
+
+σm
+
+The procedure of ex post model simulations was identical to that of ex ante model simula- tions except that the best-fitting model parameters and lapse trials were used.

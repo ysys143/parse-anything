@@ -1,0 +1,19 @@
+The ex post simulation was identical to the ex ante simulation except that each decision-makerʼs best-fit model parameters were used (Table B in S1 Appendix; Materials and methods). We assessed how well the models reproduce the human history effects of feedback in 2 different ways. First, we compared the models and the humans similarly to the ex ante simulation (Fig 7A–7C). We included the PDM episodes with nonveridical feedback (symbols with dotted lines in Fig 7A–7C), though those episodes infrequently occurred (12.09 ± 0.02% (mean ± SEM) out of total toi episode trials; bars with dotted outlines in Fig 7D). As a result, we inspected the retrospective and prospective history effects, and their differences, for all the possible combinations of “stimulus,” “choice,” and “feedback” (20 PDM episodes in total), which resulted in a total of 60 PSE pairs to compare. The PSEs simulated by the world-update model closely matched the human PSEs, in both pattern and magnitude (Fig 7A and 7C), whereas those by the valueupdate model substantively deviated from the human PSEs (Fig 7A and 7B). The statistical comparison (paired two-tailed t tests with Bonferroni correction)
+
+PLOS Biology | https://doi.org/10.1371/journal.pbio.3002373 November 8, 2023 14 / 32
+
+indicates that the value-updating modelʼs PSEs significantly deviated from the corresponding human PSEs for almost half of the entire pairs (29 out of 60 pairs), whereas none of the world-updating modelʼs PSEs significantly differed from the human PSEs (0 out of 60 pairs). Notably, most mismatches occurred because the value-updating model does not reverse the direction of feedback effects as sensory evidence becomes stronger while humans do so (compare the third columns of Fig 7A and 7B).
+
+Second, we compared the models and the humans in the probability distribution of retrospective and prospective episodes conditioned on each episode of (Fig 7D–7F). This comparison allows us to assess the modelsʼ reproducibility not just for feedback effects but also for the history effects in general and to explore the origin of the value-based modelʼs failure. By collapsing all the preceding and following trials onto each of the 20 episodes (the columns of Fig 7E and 7F) and computing their probability distributions across—again—the 20 types of and 20 types of episodes (the rows of Fig 7E and 7F), respectively, we could create 400 joint-probability cells.
+
+toi
+
+toi
+
+toi − 1 toi + 1
+
+We carried out repeated tests with Bonferroni correction to see where the model-human mismatches occur (data were missing for a few cells—mostly those including nonveridical feedback episodes, as indicated by the empty cells in Fig 7E and 7F, because those episodes were too rare (Fig 7D) to occur for all participants). For the remaining cells, the world-updating model showed a remarkable level of correspondence with the humans, deviating from the humans at only 2 cells (out of 790 cells, 0.25%; Fig 7F). By contrast, the value-updating model failed to match the humans for 94 cells (out of 792 cells, 11.87%; Fig 7E). Here, the mismatches occurred systematically: They were frequent when the preceding episode defining any given cell (i.e., episodes at for the retrospective cells or episodes at for the prospective cells) was featured with strong sensory evidence (as indicated by the arrows in Fig 7E). This systematic deviation precisely reflects the incapability of the value-updating model to reverse the direction of feedback effects as sensory evidence strengthens.
+
+toi − 1 toi
+
+In sum, the stimulus-dependent history effects of feedback observed in humans could be reproduced by the world-updating scenario but not by the value-based scenario.

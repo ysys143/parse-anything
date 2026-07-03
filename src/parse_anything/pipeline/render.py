@@ -1,6 +1,6 @@
 """PDF page rendering (pypdfium2).
 
-Evidence: docs/measurement-findings.md F1. Contract: pdf-pipeline-requirements §3.1
+Evidence: docs/.design/measurement-findings.md F1. Contract: pdf-pipeline-requirements §3.1
 (license-clean renderer, high-DPI support). pypdfium2 is BSD/Apache; PyMuPDF (AGPL) is
 avoided by default (§9).
 """

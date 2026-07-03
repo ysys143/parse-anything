@@ -6,7 +6,7 @@ per-page auto-routing is a false-positive gamble (F16), so the runtime uses conf
 -- the source-level diagnosis (processing-tiers §2.5) may use it to characterize a source and
 recommend a profile. It must not be called from the runtime assembly path.
 
-Evidence: docs/measurement-findings.md F10/F16. Contract: pdf-pipeline-requirements §3.4,
+Evidence: docs/.design/measurement-findings.md F10/F16. Contract: pdf-pipeline-requirements §3.4,
 processing-tiers §2.5 / §3.
 
 This module is the *decision* only -- a pure function over already-computed signals.

@@ -3,7 +3,7 @@
 A profile is produced by a diagnostic tier and then drives the run (no per-page routing):
 - D-1: the built-in VLM diagnostic (diagnose.py) -- automated, routine sources.
 - D-2: a flagship coding agent in the *oracle position* reviewing sample material by hand --
-  hard sources / calibration (docs/diagnostic-d2.md).
+  hard sources / calibration (docs/.design/diagnostic-d2.md).
 
 Both tiers emit the same SourceProfile so the run and persistence (R4.4) are tier-agnostic.
 Thresholds live on the profile because there are no universal cutoffs -- they are calibrated

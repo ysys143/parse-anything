@@ -1,6 +1,6 @@
 """Deterministic input-quality gate (blur / resolution).
 
-Evidence: docs/measurement-findings.md F4 (legibility drives VLM numeric accuracy) and F6.
+Evidence: docs/.design/measurement-findings.md F4 (legibility drives VLM numeric accuracy) and F6.
 Contract: pdf-pipeline-requirements §3.4 (low-quality trigger). This is a cheap pre-VLM
 signal that complements the VLM legibility gate: a clearly blurry/low-res page can be
 flagged from the rendered image alone, before spending a VLM call. Threshold is a parameter

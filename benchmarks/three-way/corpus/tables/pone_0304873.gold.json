@@ -1,0 +1,37 @@
+[
+  {
+    "label": "Table 1",
+    "caption": "Implementation parameters based on lookup tables for linear matrices in [ 22 – 25 , 32 , 42 – 44 , 46 , 47 ].",
+    "html": "<table><thead><tr><th>№</th><th>Cipher</th><th>Matrix size, Finite field</th><th>Register size (bits)</th><th>Lookup table size</th><th>Number of lookup tables</th><th>Number of memory accesses</th><th>Number of XORs</th><th>Size of the linear transform</th></tr></thead><tbody><tr><td>1</td><td>LED block cipher [ 25 ]</td><td>4×4, GF (2 4 )</td><td>16</td><td>128 B</td><td>4</td><td>4</td><td>4</td><td>16 bits</td></tr><tr><td>2</td><td>AES block cipher [ 22 , 23 ])</td><td>4×4, GF (2 8 )</td><td>32</td><td>4 KB</td><td>4</td><td>4</td><td>4</td><td>32 bits</td></tr><tr><td>3</td><td>Whirlpool [ 46 , 47 ], Streebog [ 42 ], Kalyna [ 43 , 44 ])</td><td>8×8, GF (2 8 )</td><td>64</td><td>16 KB</td><td>8</td><td>8</td><td>8</td><td>64 bits</td></tr><tr><td>4</td><td>Kuznyechik [ 24 , 32 ]</td><td>16×16, GF (2 8 )</td><td>64</td><td>64 KB</td><td>32</td><td>32</td><td>32</td><td>128 bits</td></tr></tbody></table>",
+    "n_rows": 5,
+    "n_cells": 45
+  },
+  {
+    "label": "Table 2",
+    "caption": "Comparison of general implementation parameters using the proposed lookup table method and conventional lookup table method.",
+    "html": "<table><thead><tr><th>Parameters</th><th>Method for implementation using the lookup table</th><th>Register size (bits)</th><th>Memory size requirement (in bits) for the lookup table</th><th>Number of lookup tables</th><th>Number of memory accesses</th><th>Number of XORs</th><th>Size of the linear transform</th></tr></thead><tbody><tr><td rowspan=\"2\">m = 2 l , l ≥4, n = 8</td><td>For matrix M (using the conventional lookup table)</td><td>h</td><td>nm 2 2 n</td><td>n m 2 h</td><td>n m 2 h</td><td>n m 2 h</td><td rowspan=\"2\">mn</td></tr><tr><td>For the matrix A h n , or for h n the number of columns of M (when M is a Hadamard or Circulant matrix) (using the proposed lookup table)</td><td>h</td><td>hm 2 n</td><td>m</td><td>n m 2 h</td><td>n m 2 h</td></tr></tbody></table>",
+    "n_rows": 3,
+    "n_cells": 22
+  },
+  {
+    "label": "Table 3",
+    "caption": "Comparison of the parameters of the implementation using the proposed lookup tables and ones in [ 22 – 25 , 32 , 42 – 44 , 46 , 47 ].",
+    "html": "<table><thead><tr><th>№</th><th>Parameters</th><th>Method for implementation using the lookup table</th><th>Register size (bits)</th><th>Lookup table size</th><th>Number of lookup tables</th><th>Number of memory accesses</th><th>Number of XORs</th><th>Size of the linear transform</th></tr></thead><tbody><tr><td rowspan=\"2\">1</td><td rowspan=\"2\">m = 4 n = 4</td><td>For matrix M (For example, the matrix of LED [ 25 ])</td><td>16</td><td>128 B</td><td>4</td><td>4</td><td>4</td><td rowspan=\"2\">16 bits</td></tr><tr><td>For matrix A 2 , half the number of columns of H or C</td><td>8</td><td>64 B</td><td>4</td><td>8</td><td>8</td></tr><tr><td rowspan=\"2\">2</td><td rowspan=\"2\">m = 4 n = 8</td><td>For matrix M (For example, the matrix of AES [ 22 , 23 ])</td><td>32</td><td>4 KB</td><td>4</td><td>4</td><td>4</td><td rowspan=\"2\">32 bits</td></tr><tr><td>For matrix A 2 , half the number of columns of H or C</td><td>16</td><td>2 KB</td><td>4</td><td>8</td><td>8</td></tr><tr><td rowspan=\"2\">3</td><td rowspan=\"2\">m = 8 n = 4</td><td>For matrix M</td><td>32</td><td>4 KB</td><td>8</td><td>8</td><td>8</td><td rowspan=\"2\">32 bits</td></tr><tr><td>For matrix A 4 , half the number of columns of H or C</td><td>16</td><td>2 KB</td><td>8</td><td>16</td><td>16</td></tr><tr><td rowspan=\"2\">4</td><td rowspan=\"2\">m = 8 n = 8</td><td>For matrix M (For example, the matrix of Whirlpool [ 46 , 47 ], Streebog [ 42 ], Kalyna [ 43 , 44 ])</td><td>64</td><td>16 KB</td><td>8</td><td>8</td><td>8</td><td rowspan=\"2\">64 bits</td></tr><tr><td>For matrix A 4 , half the number of columns of H or C</td><td>32</td><td>8 KB</td><td>8</td><td>16</td><td>16</td></tr><tr><td rowspan=\"2\">5</td><td rowspan=\"2\">m = 16 n = 8</td><td>For matrix M (For example, the matrix of Kuznyechik [ 24 , 32 ])</td><td>64</td><td>64 KB</td><td>32</td><td>32</td><td>32</td><td rowspan=\"2\">128 bits</td></tr><tr><td>For matrix A 8 , half the number of columns of H or C</td><td>64</td><td>32 KB</td><td>16</td><td>32</td><td>32</td></tr><tr><td rowspan=\"2\">6</td><td rowspan=\"2\">m = 32 n = 8</td><td>For matrix M</td><td>64</td><td>256 KB</td><td>128</td><td>128</td><td>128</td><td rowspan=\"2\">256 bits</td></tr><tr><td>For matrix A 8 , a quarter of number of columns of H or C</td><td>64</td><td>64 KB</td><td>32</td><td>128</td><td>128</td></tr><tr><td rowspan=\"2\">7</td><td rowspan=\"2\">m = 64 n = 8</td><td>For matrix M</td><td>64</td><td>1024 KB</td><td>512</td><td>512</td><td>512</td><td rowspan=\"2\">512 bits</td></tr><tr><td>For matrix A 8 , one per eight of number of columns of H or C</td><td>64</td><td>128 KB</td><td>64</td><td>512</td><td>512</td></tr></tbody></table>",
+    "n_rows": 15,
+    "n_cells": 114
+  },
+  {
+    "label": "Table 4",
+    "caption": "Lookup table size (KB) with corresponding parameters for n = 8, m = 2 l .",
+    "html": "<table><thead><tr><th rowspan=\"2\"></th><th>l</th><th>4</th><th>5</th><th>6</th><th>7</th></tr><tr><th>Full Matrix</th><th>64</th><th>256</th><th>1024</th><th>4096</th></tr></thead><tbody><tr><td>h = 32</td><td>one per eight of number of columns</td><td>16</td><td>32</td><td>64</td><td>128</td></tr><tr><td>h = 64</td><td>Half the number of columns</td><td>32</td><td>64</td><td>128</td><td>256</td></tr></tbody></table>",
+    "n_rows": 4,
+    "n_cells": 23
+  },
+  {
+    "label": "Table 5",
+    "caption": "Number of lookup tables with corresponding parameters for n = 8.",
+    "html": "<table><thead><tr><th rowspan=\"2\"></th><th>l</th><th>4</th><th>5</th><th>6</th></tr><tr><th>Full Matrix</th><th>32</th><th>128</th><th>512</th></tr></thead><tbody><tr><td>h = 32</td><td>one per eight of number of columns</td><td>16</td><td>32</td><td>64</td></tr><tr><td>h = 64</td><td>Half the number of columns</td><td>16</td><td>32</td><td>64</td></tr></tbody></table>",
+    "n_rows": 4,
+    "n_cells": 19
+  }
+]

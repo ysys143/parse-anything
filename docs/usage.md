@@ -159,7 +159,7 @@ and the chunks.
 Index the **children** (focused leaves; `embedding_text` prepends the heading breadcrumb) and return the
 **parent** (whole section / page group). Atomics (`table`/`figure`/`equation`) are kept whole
 (`atomic: true`, one node in `source_refs.nodes`). See [export-contracts.md](export-contracts.md) for the
-full field spec and [agent-ready-schema-and-chunking.md](agent-ready-schema-and-chunking.md) for the design.
+full field spec and [agent-ready-schema-and-chunking.md](.design/agent-ready-schema-and-chunking.md) for the design.
 
 ### Auxiliary CLIs
 
@@ -391,5 +391,5 @@ divergence, scan fraction, and structure-aware-sampled table/figure presence, th
 `deterministic` vs `det_vlm` with evidence and saves a reusable `SourceProfile` (under
 `$PARSE_ANYTHING_PROFILE_DIR` or `./profiles`). `--use-profile` reuses that profile's mode without
 re-diagnosing. **D-2** (`scripts/diagnose_prepare.py`) assembles a review bundle for hard sources and
-per-domain threshold calibration — see [diagnostic-d2.md](diagnostic-d2.md). Both persist a
+per-domain threshold calibration — see [diagnostic-d2.md](.design/diagnostic-d2.md). Both persist a
 `SourceProfile`; the mode is the lever, chosen by measurement, and then the whole document uses it.

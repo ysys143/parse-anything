@@ -108,7 +108,7 @@ table, and the field-level output schema, see **[docs/usage.md](docs/usage.md)**
 ## Modes
 
 The CLI is **diagnose-then-configure**, not per-page runtime routing (auto-routing measured as a
-false-positive gamble — see [measurement findings](docs/measurement-findings.md)). Both modes use ODL
+false-positive gamble). Both modes use ODL
 (structure / clean text) + pypdfium2 (value completeness / bbox):
 
 - **`deterministic`** — ODL text + tables with a pypdfium2 value-completeness backstop
@@ -126,33 +126,77 @@ parse-anything --pdf doc.pdf --out out/ --source-id mydocs --use-profile
 
 D-1 (`scripts/diagnose_source.py`) measures deterministic-vs-VLM token divergence + scan fraction +
 table/figure presence; D-2 (`scripts/diagnose_prepare.py`) assembles a review bundle for hard sources /
-per-domain threshold calibration. See [D-2 diagnostic](docs/diagnostic-d2.md).
+per-domain threshold calibration.
 
 ## Ontology-driven tagging
 
-The node-type + zone vocabulary and the signal→role/zone rules live in
-`src/parse_anything/ontology/<family>.md` (Markdown + YAML frontmatter), bundled in the wheel. Two families
-ship (`default`, `paper`); select one with `--ontology <family>`.
+Every node carries a **semantic role** (title / heading / paragraph / caption / reference / equation / …)
+and a **zone** (body / front-matter / back-matter / furniture / …). That vocabulary and the
+signal→role/zone rules are *data*, not code: they live in `src/parse_anything/ontology/<family>.md`
+(Markdown + YAML frontmatter, bundled in the wheel). Two families ship — `default` and `paper` — selected
+with `--ontology <family>`; authoring a new document family is a new `ontology/<family>.md`, not a code
+change. The chosen profile (name + version) is recorded in the output so a consumer knows which taxonomy it
+is reading.
 
-- **Rule engine** = ordered, first-match-per-axis rules over a fixed, tested predicate registry
+- **Rule engine** = ordered, **first-match-per-axis** rules over a fixed, tested predicate registry
   (`page_index`, `page_frac`, `odl_type`, `odl_role`, `classify_numbering`, `text_matches`,
-  `text_degenerate`, `font_rank`, …). No `eval`, no code injection.
-- **Structure is deterministic** (numbering / outline authority / geometry); the ontology only assigns
-  role + zone. Adding a document family = a new `ontology/<family>.md`, not a code change.
-- Front-matter, extraction noise, and glyph-garbled math debris are zoned out of the body; references are
-  split into per-entry nodes; captions and display equations are promoted to first-class nodes.
+  `text_degenerate`, `font_rank`, …). No `eval`, no code injection — every predicate is a named,
+  unit-tested function.
+- **Structure stays deterministic** (numbering / outline authority / geometry decide the tree); the
+  ontology only overlays role + zone on top. The overlay is **non-destructive**: in `document.json` the
+  roles/zones sit in a top-level layer keyed by node id (Layer 0 geometry is never mutated), and only the
+  Layer 2 `document.semantic.json` inlines the role and drops geometry.
+- Concrete effects: front-matter, extraction noise, and glyph-garbled math debris are **zoned out of the
+  body** (not deleted — still addressable); reference lists are split into **per-entry nodes**; captions
+  and display equations are **promoted to first-class nodes** so retrieval and grounding can target them.
 
 ## Versioned export contracts
 
 `src/parse_anything/export/` defines the stable, versioned surfaces the pipeline emits through, so a
-downstream consumer (RAG ingestion, KG builder) binds to a contract, not to internal shapes:
+downstream consumer (RAG ingestion, KG builder) binds to a **contract**, not to internal shapes. The
+surfaces map onto the layered artifacts:
 
-- `StructureExport` (`parse-anything.structure`), `SemanticView` (`parse-anything.semantic`),
-  `Provenance` (`parse-anything.provenance`), `ChunkRecord` (`parse-anything.chunks`).
-- Every payload carries a `{name, version}` tag; `from_dict` drops unknown keys (forward-compat);
-  `check_compatible` gates on the major version.
-- `output.py` serializes each artifact through its contract's `.to_dict()`, so the contract round-trip is
-  the emission's schema-regression test. See [export contracts](docs/export-contracts.md).
+| Contract (`name`) | Artifact | Layer | Role |
+|---|---|---|---|
+| `parse-anything.structure` (`StructureExport`) | `document.structure.json` | 0+1 | typed, contract-tagged view of the loss-aware graph + role/zone overlay |
+| `parse-anything.semantic` (`SemanticView`) | `document.semantic.json` | 2 | clean node pool, role inlined, geometry removed |
+| `parse-anything.provenance` (`Provenance`) | `document.provenance.json` | 2 | geometry sidecar (bbox/order/font/regions) keyed by node id |
+| `parse-anything.chunks` (`ChunkRecord`) | `document.chunks.jsonl` | chunks | small-to-big RAG chunks |
+
+- **Small-to-big chunk model** (`ChunkRecord`): a **parent** per section (or page group) lists its
+  token-packed **children**; atomics (table / figure / equation) are kept whole. Each child carries a
+  `heading_path` breadcrumb, `display_text` (what to show) vs `embedding_text` (breadcrumb-prefixed, so a
+  focused child still embeds with its structural context), and `source_refs` (node ids + page span) — the
+  round-trip back to Layer 0 for citation / bbox grounding.
+- **Versioning**: every payload carries a `{name, version}` tag. `from_dict` drops unknown keys
+  (forward-compat — a newer producer can add fields without breaking an older consumer); `check_compatible`
+  gates a consumer on the **major** version only.
+- **Self-checking**: `output.py` serializes each artifact *through* its contract's `.to_dict()`, so
+  reading a file back and re-serializing is a no-op — the contract round-trip is the emission's
+  schema-regression test. See [export contracts](docs/export-contracts.md).
+
+## RAG / graph integration (LightRAG first-class)
+
+`parse-anything` is **RAG-neutral** — the [export contracts](#versioned-export-contracts) are the seam, so
+its output feeds any RAG/graph tool, and there is no LightRAG import in the core. That said, **LightRAG is a
+first-class integration target**: we verify it end-to-end and keep a canonical, provider-agnostic recipe for
+it. "Provider-agnostic" means the recipe plugs any LLM/embedding backend behind LightRAG's `llm_model_func`
+/ `embedding_func`; the only cross-provider requirements are **R1** (embedding returns N vectors for N
+texts, fixed dim) and **R2** (the keyword-extraction call returns a single strict JSON object).
+
+Two blessed ingest paths — both keep the chunk boundaries **we** own; they differ in who owns the KG:
+
+| Path | Chunk boundaries | Knowledge graph | `file_path` anchor | Ingest LLM cost |
+|---|---|---|---|---|
+| **Delimiter (`ainsert`)** | ours, via a sanitize-surviving delimiter | LightRAG extracts it | [O] preserved | high (LightRAG extraction) |
+| **`ainsert_custom_kg` + concept fusion** | ours, exact | **ours** — structure (sections/figures) fused with concepts we extract | [O] preserved | our call (0 for structure-only) |
+
+The second path is the full "we own structure, extraction, and ontology" posture; the first is the simplest
+complete option when letting LightRAG own the KG is fine. Query with `hybrid` (graph) or `mix` (graph +
+vector chunks). **Avoid `ainsert_custom_chunks`** — it embeds chunks but never merges the KG, so only
+vector/naive retrieval works. Full recipes, pitfalls (delimiter sanitize, oversize hard-split, keyword
+JSON), and a runnable isolated demo (`demo/docker/`) are in the
+[LightRAG integration guide](docs/lightrag-integration-guide.md).
 
 ## Development
 
@@ -161,19 +205,17 @@ cd tests && uv run --no-sync python -m pytest -q      # full suite
 uv run --with ruff ruff check .                       # lint
 ```
 
-## Design docs
+## Documentation
 
 - [Usage](docs/usage.md) — full CLI & SDK reference, output schema, ontology authoring.
-- [Agent-ready schema and chunking](docs/agent-ready-schema-and-chunking.md) — the layered-artifact +
-  ontology + small-to-big chunking design.
 - [Export contracts](docs/export-contracts.md) — the versioned Layer-0/1/2 + chunk surfaces.
 - [PDF pipeline requirements](docs/pdf-pipeline-requirements.md) — the mandatory full-pipeline contract
   (rendering, processing-depth, complex/page-spanning tables, numeric guards, outputs, privacy).
-- [Processing tiers and domain adaptation](docs/processing-tiers-and-adaptation.md) — deterministic / VLM /
-  human boundaries and per-domain calibration.
-- [Measurement findings](docs/measurement-findings.md) — prototype evidence behind the design.
-- [VLM provider and fixture plan](docs/vlm-provider-and-fixture-plan.md) — PaddleOCR official API + Gemini
-  direct decision, provider key contract, fixture/golden-set strategy.
+- [LightRAG integration guide](docs/lightrag-integration-guide.md) — canonical recipes for the two verified
+  ingest paths (delimiter / `custom_kg` + concept fusion), pitfalls, and a runnable demo. Provider-agnostic.
+
+Internal design notes, requirements rationale, and measurement evidence live under `docs/.design/`
+(not part of the public reference).
 
 > Not production-ready; interfaces may change. Provider credentials must stay in local environment
 > configuration only and must never be committed.

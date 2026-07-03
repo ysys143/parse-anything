@@ -1,0 +1,55 @@
+# Two fully-isolated runs of the SAME parse-anything output, differing only in the LightRAG
+# delivery method. Separate images share nothing; separate named volumes keep each method's
+# vector/graph store apart. LLM + embeddings both go to the Gemini API (key from repo-root .env).
+#
+#   docker compose -f demo/docker/docker-compose.yml build
+#   docker compose -f demo/docker/docker-compose.yml up --no-log-prefix method-a
+#   docker compose -f demo/docker/docker-compose.yml up --no-log-prefix method-b
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - ../../.env            # GEMINI_API_KEY (read by lightrag _ensure_api_key); git-ignored
+  environment: &common-env
+    LLM_MODEL: "gemini-flash-lite-latest"   # valid alias for gemini-flash-lite (bare id 404s)
+    EMBED_MODEL: "gemini-embedding-2"
+    EMBED_DIM: "768"                        # gemini-embedding-2 Matryoshka dim (per-text fan-out)
+    CHUNKS_PATH: "/data/document.chunks.jsonl"
+    DOC_MD_PATH: "/data/document.md"
+    QUERY_MODE: "hybrid"
+
+services:
+  method-a:
+    <<: *common
+    environment:
+      <<: *common-env
+      METHOD: "a"
+      WORKDIR: "/work/rag_a"
+    volumes:
+      - ../out/demo/4ed8298c809df229:/data:ro
+      - rag_a:/work
+  method-b:
+    <<: *common
+    environment:
+      <<: *common-env
+      METHOD: "b"
+      WORKDIR: "/work/rag_b"
+    volumes:
+      - ../out/demo/4ed8298c809df229:/data:ro
+      - rag_b:/work
+  method-c:
+    <<: *common
+    environment:
+      <<: *common-env
+      METHOD: "c"          # ainsert_custom_kg: we supply chunks + entities + relations from structure
+      WORKDIR: "/work/rag_c"
+    volumes:
+      - ../out/demo/4ed8298c809df229:/data:ro
+      - rag_c:/work
+
+volumes:
+  rag_a:
+  rag_b:
+  rag_c:

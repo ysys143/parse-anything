@@ -35,7 +35,10 @@ class RunResult:
     doc: str
     pages: list[str] = field(default_factory=list)   # per-page markdown
     status: str = "ok"
-    seconds: float = 0.0
+    seconds: float = 0.0                             # wall-clock (COST: latency)
+    cpu_s: float = 0.0                               # user+sys CPU seconds (COST: compute)
+    peak_rss_mb: float = 0.0                         # peak resident set (COST: memory)
+    vlm_calls: int = 0                               # VLM API invocations (COST: $ proxy)
     error: str = ""
 
     @property
@@ -47,6 +50,25 @@ class RunResult:
         return sum(len(p) for p in self.pages)
 
 
+def _timed_subprocess(cmd: list[str], **kw) -> tuple[subprocess.CompletedProcess, float, float]:
+    """Run cmd under `/usr/bin/time -l` and return (completed, cpu_s, peak_rss_mb).
+
+    macOS `/usr/bin/time -l` reports peak RSS in BYTES and user/sys in seconds on stderr. We wrap
+    so ODL (JVM) and parse-anything (JVM+Python) are measured for compute/memory cost, not just
+    wall-clock. If /usr/bin/time is unavailable the caller still gets the process; cost = 0."""
+    wrapped = ["/usr/bin/time", "-l", *cmd] if Path("/usr/bin/time").exists() else cmd
+    proc = subprocess.run(wrapped, **kw)
+    cpu_s, peak_rss_mb = 0.0, 0.0
+    if wrapped is not cmd and proc.stderr:
+        err = proc.stderr.decode("utf-8", "replace")
+        import re
+        if (m := re.search(r"([\d.]+)\s+real\s+([\d.]+)\s+user\s+([\d.]+)\s+sys", err)):
+            cpu_s = float(m.group(2)) + float(m.group(3))
+        if (m := re.search(r"(\d+)\s+maximum resident set size", err)):
+            peak_rss_mb = round(int(m.group(1)) / (1024 * 1024), 1)  # macOS: bytes -> MB
+    return proc, cpu_s, peak_rss_mb
+
+
 # ---------------------------------------------------------------------------
 # 1. original opendataloader-pdf (deterministic Java extractor, ALONE)
 # ---------------------------------------------------------------------------
@@ -54,7 +76,7 @@ def run_odl(pdf: Path, workdir: Path) -> RunResult:
     workdir.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     try:
-        subprocess.run(
+        _, cpu_s, rss = _timed_subprocess(
             ["java", "-jar", str(ODL_JAR), str(pdf), "--format", "markdown", "-o", str(workdir)],
             check=True, capture_output=True, timeout=1200,
         )
@@ -72,7 +94,8 @@ def run_odl(pdf: Path, workdir: Path) -> RunResult:
         return RunResult("odl", pdf.stem, status="error", error="odl_no_md_output", seconds=dt)
     text = Path(mds[0]).read_text(encoding="utf-8", errors="replace")
     pages = _split_pages(text)
-    return RunResult("odl", pdf.stem, pages=pages, seconds=dt)
+    # odl is deterministic-only: vlm_calls=0 by construction (that IS its cost advantage).
+    return RunResult("odl", pdf.stem, pages=pages, seconds=dt, cpu_s=cpu_s, peak_rss_mb=rss, vlm_calls=0)
 
 
 def _split_pages(text: str) -> list[str]:
@@ -104,7 +127,9 @@ def run_paddle(pdf: Path, workdir: Path, *, dpi: int = 150, live: bool) -> RunRe
     from parse_anything.pipeline.paddle_vlm import make_transcriber  # noqa: E402
     from parse_anything.providers import ProviderHttpClient, SafeTransport, UrllibTransport  # noqa: E402
 
-    settings = load_settings()
+    # load_settings resolves .env RELATIVE to cwd; run_compare runs from benchmarks/three-way/, so
+    # point it at the repo-root .env explicitly (same one the pa CLI subprocess picks up via cwd=REPO).
+    settings = load_settings(env_file=REPO / ".env")
     if not (settings.paddle_api_key and settings.paddle_base_url):
         return RunResult("paddle", pdf.stem, status="error", error="paddle_not_configured")
     client = ProviderHttpClient(SafeTransport(UrllibTransport()))
@@ -115,18 +140,31 @@ def run_paddle(pdf: Path, workdir: Path, *, dpi: int = 150, live: bool) -> RunRe
 
     doc = pdfium.PdfDocument(str(pdf))
     pages: list[str] = []
+    calls, failed = 0, 0
     t0 = time.monotonic()
-    try:
-        for i in range(len(doc)):
-            bitmap = doc[i].render(scale=float(dpi) / 72.0)  # type: ignore[arg-type]
-            png = _pil_png(bitmap.to_pil())
-            md = transcribe(png)
-            pages.append(md or "")
-            (workdir / f"{i:04d}.md").write_text(md or "", encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001
-        return RunResult("paddle", pdf.stem, pages=pages, status="error",
-                         error=f"{type(exc).__name__}:{exc}", seconds=time.monotonic() - t0)
-    return RunResult("paddle", pdf.stem, pages=pages, seconds=time.monotonic() - t0)
+    for i in range(len(doc)):
+        bitmap = doc[i].render(scale=float(dpi) / 72.0)  # type: ignore[arg-type]
+        png = _pil_png(bitmap.to_pil())
+        md = ""
+        # Per-page retry with backoff: the hosted API returns http_0 (dropped connection) under
+        # rapid back-to-back load. A single page failing must NOT abandon the rest of the column.
+        for attempt in range(3):
+            try:
+                md = transcribe(png) or ""
+                break
+            except Exception as exc:  # noqa: BLE001
+                if attempt == 2:
+                    failed += 1
+                    md = f"<!-- paddle_page_error: {type(exc).__name__}:{exc} -->"
+                else:
+                    time.sleep(2.0 * (attempt + 1))   # 2s, 4s backoff before retry
+        calls += 1                       # paddle-alone: one VLM call per page, ungated
+        pages.append(md)
+        (workdir / f"{i:04d}.md").write_text(md, encoding="utf-8")
+    status = "ok" if failed == 0 else ("partial" if failed < len(doc) else "error")
+    err = "" if failed == 0 else f"{failed}/{len(doc)} pages failed"
+    return RunResult("paddle", pdf.stem, pages=pages, seconds=time.monotonic() - t0,
+                     vlm_calls=calls, status=status, error=err)
 
 
 def _pil_png(img) -> bytes:
@@ -139,35 +177,54 @@ def _pil_png(img) -> bytes:
 # ---------------------------------------------------------------------------
 # 3. parse-anything (full pipeline)
 # ---------------------------------------------------------------------------
-def run_parse_anything(pdf: Path, workdir: Path, *, live: bool) -> RunResult:
-    """Full pipeline via the CLI. In dry-run we still run it in DETERMINISTIC mode (ODL grounding
-    only, no VLM calls) so parse-anything's structure layer is exercised without API spend; the
-    live run uses --mode det_vlm --primary paddle (the real orchestration)."""
+def run_parse_anything(pdf: Path, workdir: Path, *, live: bool, diagnose: bool = False,
+                       name: str = "pa") -> RunResult:
+    """Full pipeline via the CLI.
+
+    live=False  -> DETERMINISTIC (--no-vlm): structure layer only, no API spend.
+    live=True   -> det_vlm --primary paddle: VLM on EVERY page (no document-level triage).
+    diagnose=True -> --diagnose --primary paddle: parse-anything runs D-1 diagnosis FIRST and picks
+        the mode per document. This is its NATIVE operating point: born-digital should route to
+        deterministic (VLM 0 calls, ~ODL cost); scan should route to det_vlm. `name` labels the
+        results dir/row so the triaged variant can sit beside the forced-VLM one."""
     workdir.mkdir(parents=True, exist_ok=True)
-    mode_args = (["--mode", "det_vlm", "--primary", "paddle"] if live else ["--no-vlm"])
+    if diagnose:
+        mode_args = ["--diagnose", "--primary", "paddle"]
+    elif live:
+        mode_args = ["--mode", "det_vlm", "--primary", "paddle"]
+    else:
+        mode_args = ["--no-vlm"]
     t0 = time.monotonic()
     try:
-        subprocess.run(
+        proc, cpu_s, rss = _timed_subprocess(
             [str(PY), "-m", "parse_anything.cli", "--pdf", str(pdf), "--out", str(workdir),
              "--source-id", "bench", "--force", *mode_args],
             check=True, capture_output=True, timeout=3600, cwd=str(REPO),
             env={**os.environ, "PYTHONPATH": str(REPO / "src")},
         )
     except subprocess.TimeoutExpired:
-        return RunResult("pa", pdf.stem, status="error", error="timeout")
+        return RunResult(name, pdf.stem, status="error", error="timeout")
     except subprocess.CalledProcessError as exc:
-        return RunResult("pa", pdf.stem, status="error",
+        return RunResult(name, pdf.stem, status="error",
                          error=f"pa_exit_{exc.returncode}:{exc.stderr.decode('utf-8','replace')[-300:]}")
     dt = time.monotonic() - t0
+    # The CLI prints e.g. "pages=46 mode=det_vlm doc=... vlm_pages=7 flagged=2". vlm_pages = the
+    # VALUE-ORACLE-GATED VLM invocation count -- parse-anything's core cost lever vs paddle-alone.
+    out = (proc.stdout or b"").decode("utf-8", "replace")
+    vlm_calls = 0
+    if (m := __import__("re").search(r"vlm_pages=(\d+)", out)):
+        vlm_calls = int(m.group(1))
     # parse-anything writes <out>/bench/<document_id>/document.md
     mds = sorted(glob.glob(str(workdir / "**/document.md"), recursive=True))
     if not mds:
-        return RunResult("pa", pdf.stem, status="error", error="pa_no_document_md", seconds=dt)
+        return RunResult(name, pdf.stem, status="error", error="pa_no_document_md", seconds=dt)
     text = Path(mds[0]).read_text(encoding="utf-8", errors="replace")
-    status = "ok" if live else "deterministic_only"
-    return RunResult("pa", pdf.stem, pages=_split_pages(text), status=status, seconds=dt)
+    status = ("triaged" if diagnose else "ok") if (live or diagnose) else "deterministic_only"
+    return RunResult(name, pdf.stem, pages=_split_pages(text), status=status, seconds=dt,
+                     cpu_s=cpu_s, peak_rss_mb=rss, vlm_calls=vlm_calls)
 
 
 def result_to_dict(r: RunResult) -> dict:
     return {"parser": r.parser, "doc": r.doc, "status": r.status, "seconds": round(r.seconds, 2),
+            "cpu_s": round(r.cpu_s, 2), "peak_rss_mb": r.peak_rss_mb, "vlm_calls": r.vlm_calls,
             "n_pages": r.n_pages, "n_chars": r.n_chars, "error": r.error}

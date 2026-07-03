@@ -1,6 +1,6 @@
 """VLM transcription wrapper (reuses parse_anything.providers; injectable client).
 
-Evidence: docs/measurement-findings.md F3 (image-only baseline), F9 (multi-image for
+Evidence: docs/.design/measurement-findings.md F3 (image-only baseline), F9 (multi-image for
 page-spanning tables). Contract: pdf-pipeline-requirements §5.
 
 The ``client`` is any object with ``send(HttpRequest) -> HttpResponse`` (the live

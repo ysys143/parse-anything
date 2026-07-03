@@ -32,21 +32,24 @@ def gt_pages(pdf_path: str) -> list[str]:
 
 
 def score_pages(out_pages: list[str], gt_norm: list[str], gt_tok: list[list[str]],
-                gt_num: list[set]) -> dict | None:
-    """Score a parser's per-page markdown against GT. If page counts differ (ODL may emit a
-    single blob), we align on min length and fall back to whole-doc scoring for blob output."""
+                gt_num: list[set], *, granularity: str = "doc") -> dict | None:
+    """Score a parser's markdown against GT.
+
+    granularity="doc" (default, FAIR): concatenate the whole output and score against the whole
+    concatenated GT. Pagination-invariant, so a single-blob parser (ODL) and a per-page parser
+    (parse-anything) are compared on identical footing -- this is the honest cross-parser number.
+    granularity="page": per-page scoring (order-sensitive, but penalizes any page-count offset)."""
     if not out_pages:
         return None
     sims, f1s, recs, halls, covs = [], [], [], [], []
-    n = min(len(out_pages), len(gt_norm))
-    if len(out_pages) == 1 and len(gt_norm) > 1:
-        # single-blob output: score against the concatenated GT (whole-doc fidelity)
+    if granularity == "doc" or len(out_pages) == 1 or len(out_pages) != len(gt_norm):
         gt_all = normalize(" ".join(gt_norm))
         gt_all_tok = tokens(gt_all)
         gt_all_num = set().union(*gt_num) if gt_num else set()
-        pairs = [(normalize(out_pages[0]), gt_all, gt_all_tok, gt_all_num)]
+        pairs = [(normalize(" ".join(out_pages)), gt_all, gt_all_tok, gt_all_num)]
     else:
-        pairs = [(normalize(out_pages[i]), gt_norm[i], gt_tok[i], gt_num[i]) for i in range(n)]
+        pairs = [(normalize(out_pages[i]), gt_norm[i], gt_tok[i], gt_num[i])
+                 for i in range(len(gt_norm))]
     for out_norm, g_norm, g_tok, g_num in pairs:
         out_tok, out_num = tokens(out_norm), numbers(out_norm)
         sims.append(difflib.SequenceMatcher(None, g_norm, out_norm).ratio())
@@ -123,11 +126,22 @@ def marginal_value_verdict(scores: dict[tuple[str, str], dict], doc: str) -> dic
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True, help="results/<run> tree from run_compare.py")
-    ap.add_argument("--born", required=True, help="born-digital ground-truth PDF")
+    ap.add_argument("--born", help="born-digital PDF; its pypdfium2 text layer is used as GT "
+                    "(CIRCULAR for born-digital extractors -- prefer --gt-text)")
+    ap.add_argument("--gt-text", help="independent GT text file (e.g. from gt_from_jats.py). When "
+                    "given, this REPLACES the PDF text layer as GT -- the honest, non-circular "
+                    "reference. Scored whole-doc (JATS has no pages).")
     ap.add_argument("--out", required=True, help="scores JSON output")
+    ap.add_argument("--granularity", choices=["doc", "page"], default="doc",
+                    help="doc = pagination-invariant whole-doc scoring (fair cross-parser); page = per-page")
     args = ap.parse_args()
 
-    gt = gt_pages(args.born)
+    if args.gt_text:
+        gt = [Path(args.gt_text).read_text(encoding="utf-8")]   # one whole-doc GT (no pages)
+    elif args.born:
+        gt = gt_pages(args.born)
+    else:
+        ap.error("provide --gt-text (preferred) or --born")
     gt_norm = [normalize(t) for t in gt]
     gt_tok = [tokens(t) for t in gt_norm]
     gt_num = [numbers(t) for t in gt_norm]
@@ -135,7 +149,7 @@ def main() -> None:
     results = load_results(Path(args.run_dir))
     scores: dict[tuple[str, str], dict] = {}
     for (parser, doc), payload in results.items():
-        s = score_pages(payload["pages"], gt_norm, gt_tok, gt_num)
+        s = score_pages(payload["pages"], gt_norm, gt_tok, gt_num, granularity=args.granularity)
         if s:
             s["status"] = payload["meta"].get("status", "?")
             s["seconds"] = payload["meta"].get("seconds", 0)

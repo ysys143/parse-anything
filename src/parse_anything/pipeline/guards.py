@@ -1,6 +1,6 @@
 """Numeric-integrity guards (graduated from measurement prototypes).
 
-Evidence: docs/measurement-findings.md F4-F8. Contract: processing-tiers R-V, R-B3.
+Evidence: docs/.design/measurement-findings.md F4-F8. Contract: processing-tiers R-V, R-B3.
 Each guard is a pure function over already-extracted values; thresholds are arguments
 (R-A7 — no hardcoded policy). The guards do not decide escalation by themselves; they
 surface signals that the tier-boundary policy and the review tooling consume.

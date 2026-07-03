@@ -1,6 +1,6 @@
 """Deterministic extraction (pypdfium2): text + numeric tokens with positions.
 
-Evidence: docs/measurement-findings.md F8 (born-digital value oracle is degradation-
+Evidence: docs/.design/measurement-findings.md F8 (born-digital value oracle is degradation-
 independent because it reads the PDF text layer, not the rendered image) and F2.
 Contract: pdf-pipeline-requirements §3.2, processing-tiers R-T1/R-V1.
 

@@ -1,6 +1,6 @@
 """Born-digital value oracle: verify VLM numbers against the deterministic source.
 
-Evidence: docs/measurement-findings.md F8 -- the text layer is the authoritative source of
+Evidence: docs/.design/measurement-findings.md F8 -- the text layer is the authoritative source of
 numeric values (degradation-independent); a VLM-emitted number absent from it is
 fabrication-suspect. On born-digital tables the gate flagged every fabrication with zero
 false flags. Contract: processing-tiers R-V1, pdf-pipeline-requirements §6.
