@@ -1,0 +1,238 @@
+<title>OCR Model Sweep — parse-anything on L4</title>
+<style>
+  :root{
+    --ground:#f6f7f6; --panel:#fffffe; --ink:#15191c; --ink-soft:#48524f;
+    --line:#dfe3e0; --line-strong:#c7cdc9;
+    --accent:#0d7a6f; --accent-soft:#e4f0ee;
+    --bad:#c0392b; --warn:#c9871f; --ok:#2f8f4e;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;font-size:15px}
+  .wrap{max-width:1000px;margin:0 auto;padding:clamp(20px,4vw,56px)}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);font-weight:600}
+  h1{font-family:var(--mono);font-weight:600;font-size:clamp(26px,4.4vw,40px);line-height:1.08;
+    letter-spacing:-.01em;margin:.35em 0 .2em;text-wrap:balance}
+  h2{font-family:var(--mono);font-weight:600;font-size:20px;letter-spacing:-.01em;margin:0 0 2px}
+  h2 .n{color:var(--accent);margin-right:.5em;font-size:14px;vertical-align:2px}
+  .lede{font-size:17px;color:var(--ink-soft);max-width:66ch;margin:.4em 0 0}
+  section{margin-top:44px}
+  .sec-head{border-top:2px solid var(--ink);padding-top:12px;margin-bottom:18px}
+  .sec-head p{margin:6px 0 0;color:var(--ink-soft);font-size:14px;max-width:70ch}
+  /* meta strip */
+  .meta{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--line-strong);border-radius:7px;
+    overflow:hidden;margin-top:22px;background:var(--panel)}
+  .meta div{flex:1 1 130px;padding:12px 16px;border-right:1px solid var(--line)}
+  .meta div:last-child{border-right:0}
+  .meta .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+  .meta .v{font-family:var(--mono);font-size:19px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+  .meta .v small{font-size:12px;color:var(--ink-soft);font-weight:400}
+  /* verdict list */
+  .rank{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+  .rank li{display:grid;grid-template-columns:34px 1fr auto;gap:14px;align-items:baseline;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:13px 16px}
+  .rank .pos{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+  .rank .name{font-family:var(--mono);font-weight:600;font-size:15.5px}
+  .rank .name small{font-family:var(--sans);font-weight:400;color:var(--ink-soft);font-size:12.5px;margin-left:7px}
+  .rank .desc{color:var(--ink-soft);font-size:13.5px;margin-top:3px;grid-column:2/4}
+  .badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 8px;border-radius:5px;font-weight:600;white-space:nowrap;align-self:center}
+  .b-win{background:var(--accent);color:#fff}
+  .b-good{background:var(--accent-soft);color:var(--accent)}
+  .b-warn{background:#f7ecd6;color:var(--warn)}
+  .b-bad{background:#f7e0dc;color:var(--bad)}
+  /* tables */
+  .scroll{overflow-x:auto;border:1px solid var(--line-strong);border-radius:8px;background:var(--panel)}
+  table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+  th,td{padding:9px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);font-weight:600;background:#eef1ef;position:sticky;top:0}
+  td:first-child,th:first-child{text-align:left;font-family:var(--mono);font-weight:600;position:sticky;left:0;
+    background:var(--panel)}
+  th:first-child{background:#eef1ef}
+  tbody tr:last-child td{border-bottom:0}
+  .cell{display:inline-block;min-width:44px;padding:2px 7px;border-radius:5px;font-weight:600;font-family:var(--mono)}
+  td.dim{color:var(--ink-soft)}
+  .fail td{color:var(--bad)}
+  caption{caption-side:bottom;text-align:left;color:var(--ink-soft);font-size:12px;padding:10px 2px;line-height:1.5}
+  .note{background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:0 7px 7px 0;
+    padding:13px 17px;margin-top:16px;font-size:13.5px;color:#1d3b37}
+  .note b{color:var(--accent)}
+  /* roster */
+  .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px 17px}
+  .card h3{font-family:var(--mono);font-size:14.5px;margin:0 0 2px;font-weight:600}
+  .card .sub{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-bottom:9px}
+  .card p{margin:0;font-size:13px;color:var(--ink-soft)}
+  .card.dead{border-style:dashed;border-color:var(--line-strong);background:#faf9f8}
+  ul.tight{margin:8px 0 0;padding-left:18px}
+  ul.tight li{font-size:13.5px;color:var(--ink-soft);margin:5px 0}
+  ul.tight b{color:var(--ink)}
+  footer{margin-top:52px;border-top:1px solid var(--line);padding-top:16px;color:var(--ink-soft);font-size:12px;
+    font-family:var(--mono)}
+  a{color:var(--accent)}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Benchmark · open OCR / document-VLM</div>
+    <h1>Eight OCR models, one L4,<br>run through parse-anything</h1>
+    <p class="lede">Each model self-hosted on a single NVIDIA L4 and driven through parse-anything's
+      <span class="mono">det_vlm&nbsp;--primary&nbsp;paddle</span> path, transcribing a 46-page paper both
+      born-digital and rasterized. Scored objectively against the text layer, then judged page-by-page by a
+      vision model. The smallest models win.</p>
+
+    <div class="meta">
+      <div><div class="k">Models run</div><div class="v">7<small> / 8 deployed</small></div></div>
+      <div><div class="k">GPU</div><div class="v">L4<small> 24GB · GCP</small></div></div>
+      <div><div class="k">Document</div><div class="v">46<small> pages ×2</small></div></div>
+      <div><div class="k">Transcriptions</div><div class="v">644</div></div>
+      <div><div class="k">Winner</div><div class="v" style="color:var(--accent)">GLM-OCR<small> 0.9B</small></div></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">01</span>Verdict</h2>
+      <p>Ranking blends objective text fidelity (against the born-digital text layer) with a page-by-page
+        vision judge. Size did not predict quality — the two 0.9B models place first and second on raw text.</p></div>
+    <ol class="rank">
+      <li><span class="pos">1</span><span class="name">GLM-OCR <small>zai-org · 0.9B</small></span><span class="badge b-win">Winner</span>
+        <div class="desc">Top on both axes — best char-similarity (0.881) and highest judge average (4.75). Clean LaTeX, correct subscripts, right reading order. Tiny and fastest.</div></li>
+      <li><span class="pos">2</span><span class="name">DeepSeek-OCR <small>deepseek-ai · 3B</small></span><span class="badge b-good">All-rounder</span>
+        <div class="desc">Flawless equations, lowest hallucination among the leaders. Slightly sparse on the figure page and a few truncations. Grounding tokens preserved.</div></li>
+      <li><span class="pos">3</span><span class="name">chandra-2 <small>datalab-to · ~4B</small></span><span class="badge b-good">Best numbers</span>
+        <div class="desc">Near-perfect number recall (0.998) — strongest at preserving digits. Emits HTML+bbox layout; occasional invented detail on figures.</div></li>
+      <li><span class="pos">4</span><span class="name">Nanonets-OCR2 <small>nanonets · 3.75B</small></span><span class="badge b-warn">High ceiling, unstable</span>
+        <div class="desc">Ties GLM on the judge (4.75) when it behaves — but degenerates into a repeating "!" loop on some pages (coverage 1.9×, highest hallucination). Great or broken, per page.</div></li>
+      <li><span class="pos">5</span><span class="name">olmOCR-2-FP8 <small>allenai · 7B</small></span><span class="badge b-warn">Under-delivers for 7B</span>
+        <div class="desc">Best on the figure page (flags <span class="mono">is_diagram</span>), but misses a third of the document's numbers (recall 0.685) and drops headers/footers. Largest model, middling result.</div></li>
+      <li><span class="pos">6</span><span class="name">PaddleOCR-VL <small>PaddlePaddle · 0.9B</small></span><span class="badge b-warn">Needs its pipeline</span>
+        <div class="desc">parse-anything's native paddle backend. Solid on plain body text, but single-shot mode gives no LaTeX (flat unicode) and loops on the figure page. Its layout pipeline would lift this.</div></li>
+      <li><span class="pos">7</span><span class="name">Nemotron-Parse-v1.2 <small>nvidia · 0.9B</small></span><span class="badge b-bad">Unusable here</span>
+        <div class="desc">Scored 0 on all four judged pages — emits bbox tokens then collapses into hallucinated repeating tables. Needs its own postprocessing pipeline, not raw single-shot serving.</div></li>
+      <li><span class="pos">—</span><span class="name">Unlimited-OCR <small>baidu · 3.3B</small></span><span class="badge b-bad">Did not deploy</span>
+        <div class="desc">Could not be served on the L4 in-budget: no flash-attn wheel for its torch build, and its vLLM path exits at startup even with deps added. The hardest of the eight to run.</div></li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">02</span>Objective scores</h2>
+      <p>Model output vs. the born-digital text layer, averaged over 46 pages (born document). Green is better;
+        for hallucination and coverage-drift, closer to the target is better.</p></div>
+    <div class="scroll"><table id="objTable">
+      <thead><tr><th>Model</th><th data-m="hi">char_sim</th><th data-m="hi">token_f1</th>
+        <th data-m="hi">num_recall</th><th data-m="lo">num_halluc</th><th data-m="cov">coverage</th></tr></thead>
+      <tbody>
+        <tr><td>GLM-OCR</td><td data-v=".881"></td><td data-v=".955"></td><td data-v=".963"></td><td data-v=".025" data-d="lo"></td><td data-v="1.008" data-d="cov"></td></tr>
+        <tr><td>PaddleOCR-VL</td><td data-v=".859"></td><td data-v=".938"></td><td data-v=".940"></td><td data-v=".012" data-d="lo"></td><td data-v="1.531" data-d="cov"></td></tr>
+        <tr><td>DeepSeek-OCR</td><td data-v=".858"></td><td data-v=".950"></td><td data-v=".956"></td><td data-v=".009" data-d="lo"></td><td data-v="1.050" data-d="cov"></td></tr>
+        <tr><td>chandra-2</td><td data-v=".857"></td><td data-v=".939"></td><td data-v=".998"></td><td data-v=".014" data-d="lo"></td><td data-v="1.130" data-d="cov"></td></tr>
+        <tr><td>Nanonets-OCR2</td><td data-v=".823"></td><td data-v=".930"></td><td data-v=".967"></td><td data-v=".036" data-d="lo"></td><td data-v="1.919" data-d="cov"></td></tr>
+        <tr><td>olmOCR-2-FP8</td><td data-v=".812"></td><td data-v=".889"></td><td data-v=".685"></td><td data-v=".005" data-d="lo"></td><td data-v="1.007" data-d="cov"></td></tr>
+        <tr class="fail"><td>Nemotron-Parse</td><td data-v=".005"></td><td data-v=".027"></td><td data-v=".109"></td><td data-v=".870" data-d="lo"></td><td data-v="2.937" data-d="cov"></td></tr>
+      </tbody>
+      <caption><b>char_sim</b> / <b>token_f1</b> = text overlap with ground truth (order-sensitive / order-free).
+        <b>num_recall</b> = fraction of ≥4-digit numbers reproduced. <b>num_halluc</b> = numbers invented (lower better).
+        <b>coverage</b> = output length ÷ ground truth (1.0 ideal; &gt;1 = verbose/duplicated).
+        Nemotron's row reflects its raw bbox-token format, not post-processed.</caption>
+    </table></div>
+    <div class="note"><b>Ground truth is honest here.</b> The scanned copy is the born-digital page rasterized,
+      so the born text layer scores both. The born-minus-scan gap was ≈0 across models — the model transcribes the
+      same rendered image either way; parse-anything's value is in the structured artifact it wraps around that text,
+      not the raw characters.</div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">03</span>Vision judge</h2>
+      <p>A vision model scored each transcription 0–5 against the actual page image, on four representative pages:
+        dense body, a figure page, and two equation-heavy pages. This catches what character overlap can't —
+        LaTeX fidelity, figure handling, and repetition collapse.</p></div>
+    <div class="scroll"><table id="judgeTable">
+      <thead><tr><th>Model</th><th data-m="j5">p4 · body</th><th data-m="j5">p8 · figure</th>
+        <th data-m="j5">p12 · math</th><th data-m="j5">p30 · methods</th><th data-m="j5">avg</th></tr></thead>
+      <tbody>
+        <tr><td>GLM-OCR</td><td data-v="4"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.75"></td></tr>
+        <tr><td>Nanonets-OCR2</td><td data-v="5"></td><td data-v="4"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.75"></td></tr>
+        <tr><td>chandra-2</td><td data-v="4"></td><td data-v="4"></td><td data-v="5"></td><td data-v="4"></td><td data-v="4.25"></td></tr>
+        <tr><td>olmOCR-2-FP8</td><td data-v="4"></td><td data-v="5"></td><td data-v="4"></td><td data-v="4"></td><td data-v="4.25"></td></tr>
+        <tr><td>DeepSeek-OCR</td><td data-v="3"></td><td data-v="3"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.00"></td></tr>
+        <tr><td>PaddleOCR-VL</td><td data-v="5"></td><td data-v="1"></td><td data-v="3"></td><td data-v="2"></td><td data-v="2.75"></td></tr>
+        <tr class="fail"><td>Nemotron-Parse</td><td data-v="0"></td><td data-v="0"></td><td data-v="0"></td><td data-v="0"></td><td data-v="0.00"></td></tr>
+      </tbody>
+      <caption>Holistic 0–5 per page (completeness, reading order, equation/figure fidelity, hallucination).
+        <b>olmOCR</b> tops the figure page; <b>GLM / Nanonets / chandra / DeepSeek</b> all handle equations as clean LaTeX;
+        <b>PaddleOCR-VL &amp; Nemotron</b> collapse into repeating loops on the figure page.</caption>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">04</span>What actually happened on the L4</h2>
+      <p>Deployment was most of the work. Every model needed a different serving fix; the notes below are the
+        ones that mattered.</p></div>
+    <div class="roster">
+      <div class="card"><h3>GLM-OCR · Nanonets · DeepSeek · chandra</h3><div class="sub">vLLM · OpenAI /v1</div>
+        <p>Served on <span class="mono">vllm-openai</span>. Nanonets gave pure "!" garbage on <span class="mono">:latest</span> (a Qwen2.5-VL regression) and had to be pinned to <span class="mono">v0.11.2</span>. DeepSeek 400'd until <span class="mono">max_tokens</span> fit its 8k context.</p></div>
+      <div class="card"><h3>olmOCR-2-FP8</h3><div class="sub">vLLM · FP8 on Ada</div>
+        <p>FP8 weights run natively on the L4 (sm89). Works out of the box on <span class="mono">v0.11.2</span> — just slow-ish and weak on numbers.</p></div>
+      <div class="card"><h3>PaddleOCR-VL</h3><div class="sub">vLLM · trust_remote_code</div>
+        <p>Arch recognized on <span class="mono">:latest</span>. But vLLM's endpoint is element-level; full-page markdown needs the official <span class="mono">paddleocr doc_parser</span> layout pipeline. Run here single-shot.</p></div>
+      <div class="card"><h3>Nemotron-Parse-v1.2</h3><div class="sub">vLLM · custom image</div>
+        <p>Swapped in for the detection-only <span class="mono">nemotron-ocr-v2</span>. Needed a baked chat template + extra deps + <span class="mono">max_tokens&lt;9000</span>. Serves, but output is unusable without its postprocessor.</p></div>
+      <div class="card dead"><h3>Unlimited-OCR</h3><div class="sub">did not deploy</div>
+        <p>flash-attn has no wheel for its torch build; the vLLM path recognizes the arch but exits at startup even after adding <span class="mono">addict</span>/<span class="mono">matplotlib</span>. Left as a documented failure.</p></div>
+      <div class="card dead"><h3>PP-OCRv6-det · nemotron-ocr-v2</h3><div class="sub">excluded / swapped</div>
+        <p>Detection-only models (boxes, not text) — out of scope for a transcription comparison. Nemotron-Parse-v1.2 stood in for the NVIDIA slot.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">05</span>How it was measured</h2></div>
+    <ul class="tight">
+      <li><b>Integration.</b> parse-anything's <span class="mono">--primary paddle</span> transcriber speaks a 3-endpoint PaddleOCR jobs API. A shim mimics it and routes each page to whichever model is up — <b>zero changes to parse-anything</b>.</li>
+      <li><b>Throughput.</b> Naïve one-page-at-a-time serving is batch=1 and starves the GPU. A pre-transcription pass fires all 46 pages concurrently so vLLM continuous-batches them, then parse-anything replays from cache — <b>~5× faster</b> (GLM born: 393s → 71s).</li>
+      <li><b>Documents.</b> A 46-page PLOS Biology paper, born-digital, plus an image-only rasterization (text layer stripped) to force unaided OCR. Same content, so the born text layer is ground truth for both.</li>
+      <li><b>Caveats.</b> char-similarity is measured against pdftext, which itself garbles math and multi-column order — read the objective scores as <b>relative</b>. PaddleOCR-VL and Nemotron-Parse are structured/pipeline models shown here in raw single-shot mode, which under-represents them.</li>
+    </ul>
+  </section>
+
+  <footer>parse-anything OCR sweep · 7/8 models on 1× NVIDIA L4 · document: PLOS Biology 3002373 · scored vs text-layer ground truth + vision judge</footer>
+</div>
+
+<script>
+  // Muted red -> amber -> green heat, applied per cell by normalized value + direction.
+  function lerp(a,b,t){return a+(b-a)*t}
+  function mix(c1,c2,t){return c1.map((v,i)=>Math.round(lerp(v,c2[i],t)))}
+  const RED=[192,57,43], AMB=[201,135,31], GRN=[47,143,78];
+  function heat(t){ // t in 0..1, 0=bad
+    t=Math.max(0,Math.min(1,t));
+    const c = t<0.5 ? mix(RED,AMB,t*2) : mix(AMB,GRN,(t-0.5)*2);
+    return c;
+  }
+  function tint(rgb){return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.16)`}
+  function ink(rgb){return `rgb(${Math.round(rgb[0]*.62)},${Math.round(rgb[1]*.62)},${Math.round(rgb[2]*.62)})`}
+  function paint(sel, norm){
+    document.querySelectorAll(sel+" tbody td[data-v]").forEach(td=>{
+      const raw=parseFloat(td.getAttribute("data-v"));
+      const dir=td.getAttribute("data-d");
+      const t=norm(raw,dir);
+      const rgb=heat(t);
+      const s=document.createElement("span");
+      s.className="cell"; s.textContent=td.getAttribute("data-v");
+      s.style.background=tint(rgb); s.style.color=ink(rgb);
+      td.textContent=""; td.appendChild(s);
+    });
+  }
+  // objective: hi metrics normalized 0.6..1.0; num_halluc(lo) inverted over 0..0.9; coverage best at 1.0
+  paint("#objTable",(v,d)=>{
+    if(d==="lo") return 1-Math.min(v/0.4,1);           // 0 good, .4+ bad
+    if(d==="cov") return 1-Math.min(Math.abs(v-1)/1.0,1); // 1.0 ideal
+    return Math.max(0,(v-0.6)/0.4);                     // .6..1.0
+  });
+  // judge: 0..5
+  paint("#judgeTable",(v)=>v/5);
+</script>

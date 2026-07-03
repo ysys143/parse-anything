@@ -1,10 +1,12 @@
 # parse-anything OCR model sweep - comparison report
 
-Models: 5 | docs: born-digital (grounded) + scanned (raw-OCR stress)
+Models: 8 | docs: born-digital (grounded) + scanned (raw-OCR stress)
 
 ## Status & timing
 | model | doc | status | pages | done | fail | avg_lat_s | total_s | avg_chars |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PaddlePaddle_PaddleOCR-VL | born | ok | 47 | 46 | 0 | 17.4 | 801.9 | 3069 |
+| PaddlePaddle_PaddleOCR-VL | scan | ok | 47 | 46 | 0 | 17.3 | 797.8 | 3017 |
 | allenai_olmOCR-2-7B-1025-FP8 | born | ok | 47 | 46 | 0 | 52.1 | 2398.5 | 2663 |
 | allenai_olmOCR-2-7B-1025-FP8 | scan | ok | 47 | 46 | 0 | 49.1 | 2258.3 | 2645 |
 | datalab-to_chandra-ocr-2 | born | ok | 47 | 46 | 0 | 62.5 | 2876.3 | 3644 |
@@ -13,12 +15,16 @@ Models: 5 | docs: born-digital (grounded) + scanned (raw-OCR stress)
 | deepseek-ai_DeepSeek-OCR | scan | ok | 47 | 46 | 0 | 20.0 | 919.6 | 3080 |
 | nanonets_Nanonets-OCR2-3B | born | ok | 47 | 46 | 0 | 55.5 | 2551.3 | 4131 |
 | nanonets_Nanonets-OCR2-3B | scan | ok | 47 | 46 | 0 | 41.4 | 1902.1 | 2935 |
+| nvidia_NVIDIA-Nemotron-Parse-v1.2 | born | ok | 47 | 46 | 0 | 88.9 | 4089.3 | 8202 |
+| nvidia_NVIDIA-Nemotron-Parse-v1.2 | scan | ok | 47 | 46 | 0 | 87.1 | 4006.5 | 8745 |
 | zai-org_GLM-OCR | born | ok | 47 | 46 | 0 | 21.6 | 992.5 | 2574 |
 | zai-org_GLM-OCR | scan | ok | 47 | 46 | 0 | 21.3 | 979.6 | 2578 |
 
 ## parse-anything artifact stats (product view)
 | model | doc | pages | md_chars | oracle_flags | nodes | sections | zones |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| PaddlePaddle_PaddleOCR-VL | born | 46 | 141179 | 28 | 580 | 33 | 4 |
+| PaddlePaddle_PaddleOCR-VL | scan | 46 | 138817 | 312 | 57 | 0 | 1 |
 | allenai_olmOCR-2-7B-1025-FP8 | born | 46 | 122507 | 32 | 578 | 33 | 4 |
 | allenai_olmOCR-2-7B-1025-FP8 | scan | 46 | 121685 | 261 | 56 | 0 | 1 |
 | datalab-to_chandra-ocr-2 | born | 46 | 167655 | 49 | 574 | 33 | 4 |
@@ -27,11 +33,27 @@ Models: 5 | docs: born-digital (grounded) + scanned (raw-OCR stress)
 | deepseek-ai_DeepSeek-OCR | scan | 46 | 141718 | 304 | 55 | 0 | 1 |
 | nanonets_Nanonets-OCR2-3B | born | 46 | 190028 | 25 | 608 | 33 | 4 |
 | nanonets_Nanonets-OCR2-3B | scan | 46 | 135050 | 303 | 85 | 0 | 1 |
+| nvidia_NVIDIA-Nemotron-Parse-v1.2 | born | 46 | 377322 | 626 | 574 | 33 | 4 |
+| nvidia_NVIDIA-Nemotron-Parse-v1.2 | scan | 46 | 402312 | 299 | 46 | 0 | 1 |
 | zai-org_GLM-OCR | born | 46 | 118416 | 25 | 607 | 33 | 4 |
 | zai-org_GLM-OCR | scan | 46 | 118633 | 301 | 84 | 0 | 1 |
 
 ## Raw transcription excerpt - page 1 (scanned doc)
 The scanned doc has no text layer, so this is each model's unaided OCR.
+
+### PaddlePaddle_PaddleOCR-VL
+```
+CorrectiveFeedbackCSNL
+PLOS BIOLOGY
+figure
+RESEARCH ARTICLE
+Corrective feedback guides human perceptual decision-making by informing about the world state rather than rewarding its choice
+Hyang-Jung Lee1, Heeseung Lee1, Chae Young Lim2, Issac Rhim3, Sang-Hun Lee1*
+1 Department of Brain and Cognitive Sciences, Seoul National University, Seoul, South Korea, 2 Department of Statistics, Seoul National University, Seoul, South Korea, 3 Institute of Neuroscience, University of Oregon, Eugene, Oregon, United States of America
+· visionsl@snu.ac.kr
+Abstract
+Corrective feedback received on perceptual decisions is crucial for adjusting decision-making strategies to improve future choices. However, its complex interaction with other decision components, such as previous stimuli and choices, challenges
+```
 
 ### allenai_olmOCR-2-7B-1025-FP8
 ```
@@ -54,6 +76,9 @@ Abstract
 
 Corrective feedback received on perceptual decisions is crucial for adjusting decision-making strategies to improve future choices. However, its complex interaction with other decision compone
 ```
+
+### baidu_Unlimited-OCR
+_(no output for this page - runner failed or model errored)_
 
 ### datalab-to_chandra-ocr-2
 ```
@@ -97,6 +122,79 @@ Hyang-Jung Lee1, Heeseung Lee1, Chae Young Lim2, Issac Rhim3, Sang-Hun Lee1*
 
 Abstract
 Corrective feedback received on perceptual decisions is crucial for adjusting decision-making strategies to improve future choices. However, its complex interaction with other decision components, such as previous stimuli and choices, challe
+```
+
+### nvidia_NVIDIA-Nemotron-Parse-v1.2
+```
+<x_0.334><y_0.1469>CorrectiveFeedbacking (**??**)<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br>
+**??**<br
 ```
 
 ### zai-org_GLM-OCR
