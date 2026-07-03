@@ -10,14 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip git ninja-build && \
     rm -rf /var/lib/apt/lists/*
 
-# Torch first (cu128 wheels), then the pinned stack from the model card research.
+# torch 2.6 (cu124): flash-attn 2.7.3 ships a PREBUILT wheel for torch2.6 (torch2.10 forced a
+# from-source compile that failed). DeepSeek-OCR (same lineage) is validated on torch 2.6.
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 \
-        --index-url https://download.pytorch.org/whl/cu128 && \
+    python3 -m pip install --no-cache-dir torch==2.6.0 torchvision==0.21.0 \
+        --index-url https://download.pytorch.org/whl/cu124 && \
     python3 -m pip install --no-cache-dir \
         transformers==4.57.1 pillow==12.1.1 einops==0.8.2 addict==2.4.0 easydict==1.13 pymupdf==1.27.2.2
-# flash-attn 2 (deepencoder imports it); --no-build-isolation uses the torch already installed.
-RUN python3 -m pip install --no-cache-dir flash-attn==2.7.3 --no-build-isolation
+# flash-attn 2 (deepencoder imports it) — install the PREBUILT wheel (no compile) for torch2.6/cu12/py3.10.
+RUN python3 -m pip install --no-cache-dir \
+        https://github.com/Dao-AILab/flash-attn/releases/download/v2.7.3/flash_attn-2.7.3+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
 
 WORKDIR /app
 COPY native_wrapper.py /app/native_wrapper.py
