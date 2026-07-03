@@ -171,6 +171,10 @@ def run_doc(model_id: str, pdf: str, out_dir: str, raw_dir: str, metrics_file: s
         "SHIM_MODELS_FILE": env["_MODELS_FILE"], "SHIM_RAW_DIR": raw_dir,
         "SHIM_METRICS_FILE": metrics_file,
     })
+    # Free port SHIM_PORT first: a killed prior run can leave an orphan shim that would intercept
+    # this doc's requests (wrong raw/metrics dir) and make our new shim fail to bind.
+    subprocess.run(["pkill", "-f", "shim_server.py"], capture_output=True)
+    time.sleep(0.5)
     shim = subprocess.Popen([sys.executable, SHIM], env=env)
     try:
         if not wait_health(f"http://127.0.0.1:{SHIM_PORT}/health", 20):
