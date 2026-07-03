@@ -62,6 +62,27 @@ def wait_health(url: str, timeout: float) -> bool:
     return False
 
 
+def container_state() -> str:
+    """'running' | 'exited' | 'created' | '' (absent). Used to fail fast when a runner crashes."""
+    r = subprocess.run(["docker", "inspect", "-f", "{{.State.Status}}", CONTAINER],
+                       capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def wait_runner_ready(backend: str, url: str, timeout: float) -> tuple[bool, str]:
+    """Wait for the runner's /v1 to answer. For docker runners, ALSO watch container state so a
+    crashed container fails in seconds instead of blocking for the full timeout."""
+    is_docker = backend in ("vllm_docker", "custom_docker")
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _http_ok(url):
+            return True, "healthy"
+        if is_docker and container_state() == "exited":
+            return False, "container_exited"
+        time.sleep(3)
+    return False, "timeout"
+
+
 def sanitize(model_id: str) -> str:
     return "".join(c if c.isalnum() or c in "-._" else "_" for c in model_id)
 
@@ -208,10 +229,15 @@ def main() -> int:
         log(f"===== {mid} ({m['backend']}, {m.get('params','?')}) =====")
         proc = start_runner(m, args.hf_cache)
         served = m.get("served_name", "model")
-        healthy = wait_health(f"http://127.0.0.1:{RUNNER_PORT}/v1/models", args.health_timeout)
+        if proc is None and m["backend"] != "vllm_docker" and m["backend"] != "custom_docker":
+            log("runner failed to start -- skipping")
+            _append(summary_path, {"model": mid, "status": "runner_start_failed"})
+            continue
+        healthy, reason = wait_runner_ready(m["backend"], f"http://127.0.0.1:{RUNNER_PORT}/v1/models",
+                                            args.health_timeout)
         if not healthy:
-            log(f"runner UNHEALTHY after {args.health_timeout:.0f}s -- skipping. logs:\n{runner_logs(m)[:800]}")
-            _append(summary_path, {"model": mid, "status": "runner_unhealthy"})
+            log(f"runner NOT READY ({reason}) -- skipping. logs:\n{runner_logs(m)[:1000]}")
+            _append(summary_path, {"model": mid, "status": f"runner_{reason}"})
             stop_runner(m, proc)
             continue
         log("runner healthy")
