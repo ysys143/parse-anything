@@ -4,7 +4,7 @@
     {
       "id": "zai-org/GLM-OCR",
       "backend": "vllm_docker",
-      "vllm_image": "vllm/vllm-openai:v0.12.0",
+      "vllm_image": "vllm/vllm-openai:latest",
       "served_name": "model",
       "serve_args": ["--dtype", "bfloat16", "--max-model-len", "16384", "--gpu-memory-utilization", "0.85"],
       "trust_remote_code": false,
@@ -17,7 +17,7 @@
     {
       "id": "nanonets/Nanonets-OCR2-3B",
       "backend": "vllm_docker",
-      "vllm_image": "vllm/vllm-openai:v0.11.0",
+      "vllm_image": "vllm/vllm-openai:latest",
       "served_name": "model",
       "serve_args": ["--dtype", "bfloat16", "--max-model-len", "32768", "--gpu-memory-utilization", "0.90", "--limit-mm-per-prompt", "{\"image\": 1}"],
       "trust_remote_code": false,
@@ -57,7 +57,7 @@
     {
       "id": "datalab-to/chandra-ocr-2",
       "backend": "vllm_docker",
-      "vllm_image": "vllm/vllm-openai:v0.17.0",
+      "vllm_image": "vllm/vllm-openai:latest",
       "served_name": "model",
       "serve_args": ["--dtype", "bfloat16", "--max-model-len", "18000", "--max-num-seqs", "16", "--max-num-batched-tokens", "2048", "--gpu-memory-utilization", "0.85", "--enable-prefix-caching", "--mm-processor-kwargs", "{\"min_pixels\": 3136, \"max_pixels\": 6291456}"],
       "trust_remote_code": false,
