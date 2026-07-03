@@ -244,6 +244,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        if path.rstrip("/") == "/health":
+            self._json(200, {"status": "ok"})
+            return
         if path.startswith("/results/") and path.endswith(".jsonl"):
             job_id = path[len("/results/"):-len(".jsonl")]
             with _LOCK:

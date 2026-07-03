@@ -173,7 +173,7 @@ def run_doc(model_id: str, pdf: str, out_dir: str, raw_dir: str, metrics_file: s
     })
     shim = subprocess.Popen([sys.executable, SHIM], env=env)
     try:
-        if not wait_health(f"http://127.0.0.1:{SHIM_PORT}/api/v2/ocr/jobs/x", 20):
+        if not wait_health(f"http://127.0.0.1:{SHIM_PORT}/health", 20):
             log("shim did not come up")
         t0 = time.monotonic()
         penv = dict(os.environ)
