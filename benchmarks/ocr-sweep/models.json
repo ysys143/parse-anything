@@ -189,9 +189,9 @@
         "top_k": 1,
         "skip_special_tokens": false
       },
-      "max_tokens": 9000,
+      "max_tokens": 8192,
       "params": "885M (vision enc-dec VLM)",
-      "notes": "Swapped in for nemotron-ocr-v2 (C). Real markdown VLM, vLLM-served. Thin custom image = FROM vllm-openai:v0.14.1 + albumentations/timm/open_clip_torch + baked chat_template. v1.2 REQUIRES the 4-token prompt + skip_special_tokens=false. L4/Ada not on NVIDIA's validated list -> smoke-test first."
+      "notes": "Swapped in for nemotron-ocr-v2 (C). Real markdown VLM, vLLM-served. Thin custom image = FROM vllm-openai:v0.14.1 + albumentations/timm/open_clip_torch + baked chat_template. v1.2 REQUIRES the 4-token prompt + skip_special_tokens=false. L4/Ada not on NVIDIA's validated list -> smoke-test first. max_tokens 9000->8192 (model ctx caps at 9000, request overflowed)."
     }
   ]
 }

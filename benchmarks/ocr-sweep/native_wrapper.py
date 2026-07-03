@@ -25,6 +25,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -32,6 +33,7 @@ _MODEL = None          # lazily-loaded (model, tokenizer) or pipeline
 _CFG: dict = {}
 _KIND = ""
 _MODEL_ID = ""
+_INFER_LOCK = threading.Lock()   # serialize model.infer() (single-GPU, not concurrency-safe)
 
 
 def _load_cfg(models_file: str, model_id: str) -> dict:
@@ -99,9 +101,13 @@ def _run(png: bytes, prompt: str) -> str:
         tf.write(png)
         path = tf.name
     try:
-        if _KIND == "deepseek_infer":
-            return _infer_deepseek(path, prompt)
-        return _infer_nemotron(path, prompt)
+        # model.infer() is single-image and not concurrency-safe on one GPU. The prewarm fires many
+        # requests at once (fine for vLLM batching); here we serialize so they queue instead of
+        # racing the model (OOM / corrupt state).
+        with _INFER_LOCK:
+            if _KIND == "deepseek_infer":
+                return _infer_deepseek(path, prompt)
+            return _infer_nemotron(path, prompt)
     finally:
         os.unlink(path)
 
