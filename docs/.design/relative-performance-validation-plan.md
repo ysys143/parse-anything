@@ -281,7 +281,88 @@ silently rewrite OmniDocBench labels.
 | **Revise corpus mapping** | OmniDocBench labels are ambiguous for the claimed local metric, or the selected subset is not discriminative enough |
 | **Reject claim** | A baseline is better under the target constraints and the pipeline should not claim improvement |
 
-## 12. Links to Existing Contracts
+## 12. Ground-Truth Independence and the Born-Digital Complex-Form Regime
+
+OmniDocBench (image-only) exercises VLM transcription but strips the born-digital text layer that
+the value oracle and deterministic structure paths run on. This section fixes how to build a
+born-digital evaluation that is (a) non-circular and (b) actually reproduces the regime where the
+enumerated techniques matter. It supplements §3, it does not replace the OmniDocBench headline.
+
+### 12.1 The circularity trap (do not derive GT from an extractor)
+
+If born-digital ground truth is produced by running a PDF extractor, the extractor that produced it —
+or a sibling that shares its failure modes — trivially scores ~1.0. This already happened once:
+`ocr-sweep` scored against pypdfium2's own extraction and had to deprecate it (it measured
+"similarity to pypdfium2", not accuracy; it inverted olmOCR's ranking). Deriving GT from ODL hands ODL
+a free 100%.
+
+**Independence rule:** the GT generator must share no code and no failure modes with any system under
+test. That means GT comes from *upstream of the PDF* (the authoring layer), never *downstream* from an
+extractor:
+
+- **Author → render, never extract → score.** Start from source markup whose text/structure/values
+  you own (JATS, LaTeX, HTML, CSV) and render it to a born-digital PDF (LaTeX→PDF, HTML→headless
+  Chrome). Render→extract is lossy for *every* system (multi-column reading order, cell merging,
+  header/footer, hyphenation, ligatures), so no extractor — ODL included — scores 100%.
+- **Or take GT from independent upstream markup of real PDFs** (publisher HTML/XML, filer-supplied
+  structured facts). `ocr-sweep`'s use of PLOS **JATS** as GT is the correct pattern; generalize it.
+
+### 12.2 Separate the value axis from the structure axis
+
+Complex real forms (contracts, multi-column financial statements, merged-cell government forms) break
+**deterministic structure** recovery — ODL fragments merged cells and flattens nested list markers
+(F16). VLM is genuinely stronger at *structure* there. This does not weaken the thesis; it selects
+which claim applies:
+
+- On these documents the claim is **not** "deterministic beats VLM". It is `det_vlm` = **VLM does the
+  structure, the born-digital value oracle gates the numbers** — VLM's structural power with its
+  silent numeric hallucination (F4) removed. The oracle needs only the text layer as a numeric
+  reference (+ bbox anchoring, F8), not deterministic structure.
+- **Boundary (honest):** the oracle only fires when a text layer exists. A *scanned* complex form
+  (image-only) has no oracle; it falls back to the double-pass guard (F21), which is a weaker
+  signal, not a structural guarantee. State this boundary; do not claim the oracle where it cannot run.
+- **Sweet spot:** *born-digital* complex forms are simultaneously VLM-necessary (structure) and
+  oracle-capable (values). They are the strongest place to demonstrate the differentiator, not a
+  weakness — the numeric hallucination risk is highest exactly where the oracle can catch it.
+
+### 12.3 Recommended non-circular corpus for the hard regime
+
+- **SEC EDGAR 10-K/10-Q financial statements with XBRL.** Genuinely complex born-digital tables
+  (merged headers, nested line items, multi-period columns); each fact carries a filer-authored XBRL
+  tag (value/unit/period/concept) that is independent of any PDF extraction — non-circular numeric GT
+  on real hard documents, and public (shareable, unlike private contracts).
+- **Supplements:** government tender/procurement PDFs, standardized contract templates, public invoice
+  sets — GT always taken from upstream markup, never from an extractor.
+- **Measure** VLM-only (Paddle/Gemini) vs `det_vlm`: numeric exact accuracy vs XBRL, `unsourced_number`
+  gate precision/recall, and silent-hallucination rate. Expect parity on clean numbers (F3) and
+  separation under dense tables / degradation, where VLM-only fabricates and the gate holds. This
+  needs no structure labels.
+
+### 12.4 Label-free invariants for the clean regime
+
+On clean born-digital, transcription accuracy is not discriminative — ODL ≈ VLM ≈ ~1.0, and that is
+correct (parse-anything is built on ODL; do not construct a benchmark to beat ODL on clean structure,
+per F17 "roles, not ranking"). Measure the two properties that need no ground truth instead:
+
+- **Determinism (run-invariance):** identical structural output across repeated runs and trivial
+  perturbations (re-save, `/Rotate` per F20). Byte-diff = 0 for the deterministic path; VLM baselines
+  vary. No labels.
+- **Numeric integrity (source-consistency):** every output number must appear in the born-digital text
+  layer (`unsourced_number` = 0 is the integrity *guarantee*, not an accuracy score). Runs on any
+  unlabeled born-digital corpus; the PDF's own text layer is the reference. Correct for the F15
+  false-positive sources (rotated watermarks, superscript citations, vector axis text) when reporting
+  precision.
+- **Contract round-trip:** emit → consume → re-emit idempotence + schema validation. A property test,
+  not a benchmark.
+
+### 12.5 Honest residual
+
+Structure fidelity on complex forms (which cell, which clause) has no cheap objective GT and is not
+solved by synthesis. It requires a labeled golden (TEDS, task #14) or the human/flagship oracle
+(D-2), consistent with F12/F16. Report the value axis label-free and keep the structure axis explicitly
+in the human/golden budget — do not dress an architectural property up as a quality score (§1).
+
+## 13. Links to Existing Contracts
 
 - `pdf-pipeline-requirements.md`: target artifact contract and validation metric categories.
 - `processing-tiers-and-adaptation.md`: DET/VLM/HUM boundary, source profiles, and oracle position.
