@@ -535,7 +535,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             if f.get("file") and f.get("bbox"):  # only figures with a real crop can be inlined
                 figs_by_page.setdefault(f["page"] - 1, []).append(f)
         blocks_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
-        chart_noise = _chart_internal_noise(figures, blocks_by_page)  # legend/axis/year labels to drop
+        chart_noise = _chart_internal_noise(figures, blocks_by_page)  # drop from prose + attach as chart_data
+        _gate_figure_descriptions(figures)  # FR-3.2: oracle-gate chart description vs its own chart_data
         _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
         _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
         from .ontology import compute_font_ranks, tag_nodes
@@ -684,8 +685,11 @@ def _bind_vector_captions(figures: list[dict], blocks: list[dict]) -> None:
 
 def _chart_internal_noise(figures: list[dict], blocks_by_page: dict[int, tuple]) -> dict[int, set[str]]:
     """Per page, ODL paragraph texts inside a vector chart's bbox that are NOT its caption/source line
-    -- legend, axis ticks, year labels: visual-only noise to drop from prose so a text/embedding model
-    sees the figure's DESCRIPTION instead of a scatter of disconnected numbers and country names."""
+    -- legend, axis ticks, year labels. Two uses of the SAME collection: (1) returned as a per-page set
+    of visual-only noise to DROP from prose (so a text/embedding model sees the figure's DESCRIPTION,
+    not a scatter of disconnected numbers); (2) attached to the figure as ``chart_data`` (text + bbox)
+    -- structured chart content for FR-5.5 and the value-oracle source for the description gate. Same
+    tokens, no longer discarded."""
     out: dict[int, set[str]] = {}
     for f in figures:
         if f.get("source") != "vector" or not f.get("bbox"):
@@ -695,8 +699,28 @@ def _chart_internal_noise(figures: list[dict], blocks_by_page: dict[int, tuple])
         for p in blocks_by_page.get(pi, ()):
             cx, cy = (p.bbox[0] + p.bbox[2]) / 2, (p.bbox[1] + p.bbox[3]) / 2
             if x0 <= cx <= x1 and y0 <= cy <= y1 and not _KEEP_IN_FIG.match(p.text):
-                out.setdefault(pi, set()).add(" ".join(p.text.split()))
+                norm = " ".join(p.text.split())
+                out.setdefault(pi, set()).add(norm)
+                f.setdefault("chart_data", []).append({"text": norm, "bbox": [float(v) for v in p.bbox]})
     return out
+
+
+def _gate_figure_descriptions(figures: list[dict]) -> None:
+    """Value-oracle the VLM chart description against the chart's OWN internal tokens (FR-3.2 / §5-A):
+    numbers in the prose that are absent from the figure's collected ``chart_data`` are
+    fabrication-suspect and flagged onto ``description_flags`` -- never silently trusted. Mirrors the
+    transcription gate (assemble.py); source here is the chart's tokens instead of the page text layer."""
+    from .guards import extract_numbers
+    from .oracle import fabrication_flags
+    for f in figures:
+        desc = f.get("description")
+        data = f.get("chart_data")
+        if not desc or not data:
+            continue
+        source = [n for tok in data for n in extract_numbers(tok["text"], min_value=1000)]
+        flags = fabrication_flags(desc, source, min_value=1000)
+        if flags:
+            f["description_flags"] = [f"unsourced_number:{v}" for v in flags]
 
 
 def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:
@@ -903,6 +927,10 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
         desc = f.get("description") or (vlm_desc.get(f.get("label")) if source != "vlm" else None)
         if desc:
             node["description"] = desc
+        if f.get("chart_data"):  # FR-5.5: structured chart content (axis/legend/value tokens + bbox)
+            node["chart_data"] = f["chart_data"]
+        if f.get("description_flags"):  # §5-A: numbers in the description absent from chart_data
+            node["description_flags"] = f["description_flags"]
         for k in ("section", "refs"):
             if f.get(k):
                 node[k] = f[k]

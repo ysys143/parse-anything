@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from parse_anything.pipeline.odl_extract import OdlParagraph
 from parse_anything.pipeline.output import (
-    _KEEP_IN_FIG, _chart_internal_noise, _mark_chart_label_blocks, _suppress_chart_noise,
+    _KEEP_IN_FIG, _chart_internal_noise, _gate_figure_descriptions, _mark_chart_label_blocks,
+    _suppress_chart_noise,
 )
 
 
@@ -30,6 +31,29 @@ def test_chart_internal_noise_drops_ticks_inside_bbox_but_keeps_caption_and_outs
     )
     fig = {"source": "vector", "page": 1, "bbox": [0.0, 90.0, 250.0, 140.0]}
     assert _chart_internal_noise([fig], {0: paras}) == {0: {"1,000"}}
+
+
+def test_chart_internal_noise_attaches_chart_data_with_bbox():
+    # FR-5.5: the same internal tokens that get suppressed from prose are ALSO kept, structured, on
+    # the figure (text + bbox) instead of being discarded.
+    paras = (
+        OdlParagraph(0, "paragraph", (10.0, 100.0, 50.0, 110.0), "51,685"),      # inside -> chart_data
+        OdlParagraph(0, "heading", (10.0, 120.0, 200.0, 130.0), "図3 推移"),      # caption -> not data
+        OdlParagraph(0, "paragraph", (500.0, 500.0, 540.0, 510.0), "本文の段落"),  # outside -> not data
+    )
+    fig = {"source": "vector", "page": 1, "bbox": [0.0, 90.0, 250.0, 140.0]}
+    _chart_internal_noise([fig], {0: paras})
+    assert fig["chart_data"] == [{"text": "51,685", "bbox": [10.0, 100.0, 50.0, 110.0]}]
+
+
+def test_gate_figure_descriptions_flags_unsourced_numbers():
+    # §5-A: a number in the VLM description that is NOT among the chart's own tokens is
+    # fabrication-suspect; a matching one is not flagged.
+    fabricated = {"description": "총인구는 99,999로 급감했다", "chart_data": [{"text": "51,685", "bbox": [0, 0, 1, 1]}]}
+    sourced = {"description": "총인구는 51,685이다", "chart_data": [{"text": "51,685", "bbox": [0, 0, 1, 1]}]}
+    _gate_figure_descriptions([fabricated, sourced])
+    assert fabricated["description_flags"] == ["unsourced_number:99999"]
+    assert "description_flags" not in sourced
 
 
 def test_mark_chart_label_blocks_flags_inside_excludes_caption_and_outside():
