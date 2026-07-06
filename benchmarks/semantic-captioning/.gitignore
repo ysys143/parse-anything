@@ -1,3 +1,4 @@
 # 원본 코퍼스는 커밋 금지 (fetch.py로 재현, .local 상주). gt/ 는 커밋.
 corpus/
 results/
+runs/

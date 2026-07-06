@@ -63,7 +63,11 @@ def _bboxes(output: dict) -> int:
 # status: PASS / FAIL / SKIP
 
 def check_must_not(label, output):
-    cap = (output.get("caption") or "") + " " + flatten_text(output.get("structured"))
+    # SCHEMA: must_not_include fails when a token appears in the DESCRIPTION (caption) -- it guards against
+    # the VLM FABRICATING a value/unit into prose. The same value legitimately lives verbatim in structured
+    # data (chart_data/tables/extractions, quoted not generated per plan 5-C), so structured is NOT scanned
+    # -- doing so flagged real born-digital chart values as fabrications. Mirrors check_must_include (caption-only).
+    cap = output.get("caption") or ""
     bad = [t for t in label.get("caption_expected", {}).get("must_not_include", []) if t and t in cap]
     return ("caption_must_not", "FAIL" if bad else "PASS", f"present={bad}" if bad else "ok")
 

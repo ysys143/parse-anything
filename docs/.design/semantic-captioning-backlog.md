@@ -43,8 +43,8 @@
 |---|---|---|
 | D1 | **순수 관계형 도식**(AS-IS/TO-BE 구조도) 라벨 — 현 policy 소스는 표·콜아웃 위주 | gt/README 잔존 |
 | D2 | **한국어 필기** 골든 — census는 영문. AI Hub 605 필요 | gt/README 잔존 |
-| D3 | score.py 강화: `A_unit`은 substring 휴리스틱, `B_arithmetic`은 form 구조 한정, `G_grounding`은 존재만(IoU 아님) | score.py 스캐폴드 |
-| D4 | 실제 파이프라인 산출을 `--out`으로 채점(현재 셀프테스트만) — 트랜치 1 산출로 첫 실채점 가능 | — |
+| D3 | score.py 강화: `A_unit`은 substring 휴리스틱, `B_arithmetic`은 form 구조 한정, `G_grounding`은 존재만(IoU 아님). **[부분]** `check_must_not`을 SCHEMA대로 caption만 스캔(structured verbatim 데이터 오탐 제거) | score.py 스캐폴드 |
+| D4 | ~~실제 파이프라인 산출을 `--out`으로 채점~~ **[결정적 완료]** `run_bench.py` 어댑터(document.json→{caption,structured,elements}, 무날조)로 골든 10건 결정적 실채점: G_grounding 9/10(래스터 drawing_dim만 0 elements→VLM/OCR 필요), caption_must_not 10/10, 캡션 체크(must_include·C_entity 16건)는 구조적 VLM 의존. **잔여**: det_vlm(live API) 실채점 사용자 확인 대기 | — |
 
 ## E. 데이터 / 코퍼스
 
