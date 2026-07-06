@@ -31,7 +31,7 @@
 | # | 사안 | 우선 |
 |---|---|:--:|
 | C1 | FR-1 이미지 직접 입력(JPG/PNG → PDF 래핑) | P2 하 |
-| C2 | FR-4.2 표 HTML/TEDS view 방출(`ir.py:tables_html` 이미 존재) | P2 하 |
+| C2 | ~~FR-4.2 표 HTML view 방출~~ **[완료]** — `_table_html(cells)`가 span 보존 `<table>` 방출(md는 span 소실), `tables/<id>.html` + `views.html`. 적대적 리뷰 반박: 헤더 rowspan이 `<thead>` 경계에서 clamp되던 것을 단일 `<tbody>`(행0=`<th>`)로 수정(다단 헤더 손상 방지, ODL 직렬화기 대조로 span-생략 규약 확증). TEDS 스코어러는 미착수(benchmarks 선택) | P2 하 |
 | C3 | FR-6 사용자향 confidence 표기 + 정확도차이 고지 | P2 하 |
 | C4 | FR-3.1 손글씨·주석·도장 라우팅(PaddleOCR 옵션 활성) | P2 중 |
 | C5 | FR-3.3 양방향 검수(텍스트레이어에 있는데 VLM 누락 = recall flag) | P2 중 |

@@ -3,7 +3,7 @@
 Per-document outputs land under ``<out_root>/<source_id>/<document_id>/`` (see document_dir):
 - pages/ : per-page Markdown      - document.md : assembled Markdown
 - document.json : loss-aware source of truth (identity, provenance, pages, tables, figures)
-- tables/ : per-table JSON + Markdown views
+- tables/ : per-table JSON + Markdown + HTML (span-preserving) views
 - assets/ : extracted figure images (R2.5)
 - ledger.jsonl / results.jsonl : per-page route/flags
 
@@ -469,7 +469,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         labels_by_page = {p.page_index: p.labels for p in result.pages}
         pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
         for t in tables:  # per-table view files are named by the table's graph id
-            t["views"] = {"md": f"tables/{t['id']}.md", "json": f"tables/{t['id']}.json"}
+            t["views"] = {"md": f"tables/{t['id']}.md", "json": f"tables/{t['id']}.json",
+                          "html": f"tables/{t['id']}.html"}   # FR-4.2: span-preserving view
         if inline_figures and pdf_path:  # R14: recover vector charts ODL's raster-figure detector misses
             from .vecfig import detect_vector_figures
             tbp = {pg.page_index: [t.bbox for t in pg.tables] for pg in result.structure.pages}
@@ -635,6 +636,35 @@ def _table_md(cells: list[list[dict]]) -> str:
              "| " + " | ".join("---" for _ in range(width)) + " |"]
     lines += ["| " + " | ".join(c.replace("|", r"\|") for c in r) + " |" for r in rows[1:]]
     return "\n".join(lines)
+
+
+def _table_html(cells: list[list[dict]]) -> str:
+    """FR-4.2: an HTML ``<table>`` view that PRESERVES merged-cell spans (the Markdown view flattens
+    them -- a grid can't express colspan/rowspan). Cells are logical, row-major, with covered positions
+    omitted (structure._rich_cells) -- exactly HTML's colspan/rowspan model -- so each cell is emitted
+    once with its span attrs and the browser shifts the rest. Row 0 uses ``<th>`` (mirrors _table_md's
+    header row) but ALL rows share one ``<tbody>``: a separate ``<thead>`` would clamp a header cell's
+    rowspan at the row-group boundary (WHATWG table model), corrupting multi-level headers where a row-0
+    cell spans down into the body (e.g. a ``Region`` label beside a two-column ``Sales`` group)."""
+    if not cells:
+        return ""
+
+    def esc(t: object) -> str:
+        return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def cell(c: dict, tag: str) -> str:
+        attrs = ""
+        if c.get("col_span", 1) > 1:
+            attrs += f' colspan="{c["col_span"]}"'
+        if c.get("row_span", 1) > 1:
+            attrs += f' rowspan="{c["row_span"]}"'
+        return f"<{tag}{attrs}>{esc(c.get('text', ''))}</{tag}>"
+
+    def row(r: list[dict], tag: str) -> str:
+        return "<tr>" + "".join(cell(c, tag) for c in r) + "</tr>"
+
+    rows = [row(cells[0], "th")] + [row(r, "td") for r in cells[1:]]
+    return "<table>\n<tbody>" + "".join(rows) + "</tbody>\n</table>"
 
 
 _PLACEHOLDER_RE = re.compile(r"(?im)^[ \t]*\[(?:figure|image)\][ \t]*\n?")  # bare VLM figure placeholder
@@ -1425,6 +1455,7 @@ def _write_tables(out: Path, tables: list[dict]) -> None:
     for table in tables:
         (tdir / f"{table['id']}.json").write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
         (tdir / f"{table['id']}.md").write_text(_table_md(table["cells"]), encoding="utf-8")
+        (tdir / f"{table['id']}.html").write_text(_table_html(table["cells"]), encoding="utf-8")
 
 
 def _write_jsonl(path: Path, rows: Iterable[dict]) -> None:
