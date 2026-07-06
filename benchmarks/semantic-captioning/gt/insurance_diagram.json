@@ -1,0 +1,32 @@
+{
+  "domain": "insurance",
+  "sample": "corpus/raw/insurance/hyundai_실손의료비_약관_2026.pdf",
+  "page": 16,
+  "figure_kind": "diagram",
+  "elements_expected": [
+    {"kind": "diagram", "subtype": "timeline", "note": "계약취소 기간 타임라인(계약성립일 ~ 계약성립일+3개월)"},
+    {"kind": "text", "note": "청약철회 조건 분기(15일/30일/45일)"}
+  ],
+  "structured_expected": {
+    "timeline": {
+      "start": "계약이 성립한 날",
+      "end": "계약이 성립한 날 + 3개월",
+      "payout_formula": "납입한 보험료 + 이자"
+    },
+    "branches": {
+      "청약철회_일반": "보험증권 받은 날부터 15일 이내",
+      "청약철회_전문금융소비자_또는_건강진단계약": "청약한 날부터 30일 이내",
+      "청약철회_전화계약": "45일 초과 시 철회 불가"
+    }
+  },
+  "caption_expected": {
+    "must_include": ["계약취소", "3개월"],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "A_unit": {"expected_unit": ["일", "개월"], "assert": "기간 수치가 일/개월 단위를 동반, raw 숫자 금지"},
+    "C_entity": {"verbatim": ["15일", "30일", "45일", "3개월", "납입한 보험료"], "assert": "조건 일수·용어 정확 인용, VLM 변형 금지"},
+    "G_grounding": {"assert": "타임라인 노드(성립일/+3개월)와 분기 조건이 각각 bbox"}
+  },
+  "notes": "FR-5.4 분기 다이어그램(참조 파서 보험 지급 타임라인 대응). 시간축 + 조건별 결과(철회 가능 여부, 지급액). 지급액=납입보험료+이자는 §5-B 관계는 아니나 공식 인용 정합 검증."
+}

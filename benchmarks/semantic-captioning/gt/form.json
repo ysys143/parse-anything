@@ -3,23 +3,48 @@
   "sample": "corpus/raw/form/cord_receipt_1.jpg",
   "figure_kind": "form",
   "elements_expected": [
-    {"kind": "form", "subtype": "receipt", "note": "라인아이템 + 합계 KV"}
+    {"kind": "form", "subtype": "receipt", "note": "22 라인아이템 + Sub-Total/Service/PB1/Rounding/Grand Total"}
   ],
   "structured_expected": {
-    "form_fields": ["subtotal", "tax", "total", "cash", "change"],
-    "line_items": [{"name": "...", "qty": "...", "price": "..."}],
-    "note": "정확한 값은 corpus/raw/form/cord_receipt_1.jpg 육안 대조 후 채움(라벨-값 페어)"
+    "line_items": [
+      {"name": "Nasi Campur Bali", "qty": 1, "price": 75000},
+      {"name": "Bbk Bengil Nasi", "qty": 1, "price": 125000},
+      {"name": "MilkShake Starwb", "qty": 1, "price": 37000},
+      {"name": "Ice Lemon Tea", "qty": 1, "price": 24000},
+      {"name": "Nasi Ayam Dewata", "qty": 1, "price": 70000},
+      {"name": "Free Ice Tea", "qty": 3, "price": 0},
+      {"name": "Organic Green Sa", "qty": 1, "price": 65000},
+      {"name": "Ice Tea", "qty": 1, "price": 18000},
+      {"name": "Ice Orange", "qty": 1, "price": 29000},
+      {"name": "Ayam Suir Bali", "qty": 1, "price": 85000},
+      {"name": "Tahu Goreng", "qty": 2, "price": 36000},
+      {"name": "Tempe Goreng", "qty": 2, "price": 36000},
+      {"name": "Tahu Telor Asin", "qty": 1, "price": 40000},
+      {"name": "Nasi Goreng Samb", "qty": 1, "price": 70000},
+      {"name": "Bbk Panggang Sam", "qty": 3, "price": 366000},
+      {"name": "Ayam Sambal Hija", "qty": 1, "price": 92000},
+      {"name": "Hot Tea", "qty": 2, "price": 44000},
+      {"name": "Ice Kopi", "qty": 1, "price": 32000},
+      {"name": "Tahu Telor Asin", "qty": 1, "price": 40000},
+      {"name": "Free Ice Tea", "qty": 1, "price": 0},
+      {"name": "Bebek Street", "qty": 1, "price": 44000},
+      {"name": "Ice Tea Tawar", "qty": 1, "price": 18000}
+    ],
+    "totals": {"sub_total": 1346000, "service": 100950, "pb1": 144695, "rounding": -45, "grand_total": 1591600}
   },
   "caption_expected": {
     "must_include": ["receipt"],
     "must_not_include": []
   },
   "risk_checks": {
-    "B_arithmetic": {"relation": "sum(line_item prices) == subtotal; cash - total == change", "assert": "sum_residual == 0"},
-    "C_entity": {"verbatim": ["menu item names as printed"], "assert": "item names not paraphrased/translated"},
-    "A_unit": {"expected_unit": "currency", "assert": "amounts carry currency, not bare numbers"},
-    "G_grounding": {"assert": "each label/value pair has label_bbox + value_bbox"},
-    "H_pii": {"fields": ["none (receipt)"]}
+    "B_arithmetic": {
+      "relation": "sum(line_item price) == sub_total; sub_total + service + pb1 + rounding == grand_total",
+      "assert": "sum_residual(line_items, 1346000)==0 AND sum_residual([1346000,100950,144695,-45], 1591600)==0"
+    },
+    "C_entity": {"verbatim": ["Nasi Campur Bali", "Bbk Panggang Sam", "Ayam Sambal Hija"], "assert": "인도네시아어 메뉴명 그대로, 번역/의역 금지"},
+    "A_unit": {"expected_unit": "IDR (implied)", "assert": "amounts are integer currency, not bare"},
+    "G_grounding": {"assert": "각 라인아이템 name/qty/price + totals 셀에 bbox"},
+    "H_pii": {"fields": []}
   },
-  "notes": "FR-4.3 폼 KV + 라인아이템 골든. §5-B: 라인아이템 합=소계, 현금-합계=거스름 검산이 sum_residual로 검증됨(CORD receipt는 이 관계를 항상 가짐). 값은 결정적 OCR 인용."
+  "notes": "FR-4.3 폼 KV + 라인아이템 골든. 값·산술 실측 확인(합=Sub-Total 1,346,000; +Service+PB1+Rounding=Grand Total 1,591,600). §5-B는 sum_residual(guards.py) 그대로 재사용. §5-C는 비영어 고유명사 무번역."
 }

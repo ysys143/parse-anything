@@ -1,0 +1,42 @@
+{
+  "domain": "policy",
+  "sample": "corpus/raw/policy/swit_요구사항상세화_실무가이드라인.pdf",
+  "page": 13,
+  "figure_kind": "table",
+  "elements_expected": [
+    {"kind": "table", "note": "요구사항 분류 요약 - 구분/영문/ID부여규칙/요구사항 수 + 합계행"}
+  ],
+  "structured_expected": {
+    "table": {
+      "columns": ["요구사항 구분", "영문", "ID부여규칙", "요구사항 수"],
+      "id_register": [
+        {"구분": "기능요구사항", "en": "System Function Requirement", "id": "SFR-000"},
+        {"구분": "성능 요구사항", "en": "Performance Requirement", "id": "PER-000"},
+        {"구분": "시스템 장비구성 요구사항", "en": "Equipment Composition Requirement", "id": "ECR-000"},
+        {"구분": "인터페이스 요구사항", "en": "Interface Requirement", "id": "INR-000"},
+        {"구분": "데이터 요구사항", "en": "Data Requirement", "id": "DAR-000"},
+        {"구분": "테스트 요구사항", "en": "Test Requirement", "id": "TER-000"},
+        {"구분": "보안 요구사항", "en": "Security Requirement", "id": "SER-000"},
+        {"구분": "품질 요구사항", "en": "Quality Requirement", "id": "QUR-000"},
+        {"구분": "제약사항", "en": "Constraint Requirement", "id": "COR-000"},
+        {"구분": "프로젝트 관리 요구사항", "en": "Project Management Requirement", "id": "PMR-000"},
+        {"구분": "프로젝트 지원 요구사항", "en": "Project Support Requirement", "id": "PSR-000"},
+        {"구분": "유지관리 수행 요구사항", "en": "Maintenance Project Requirement", "id": "MPR-000"},
+        {"구분": "유지관리 인력 요구사항", "en": "Maintenance Human Requirement", "id": "MHR-000"},
+        {"구분": "컨설팅 요구사항", "en": "Consulting Requirement", "id": "CNR-000"},
+        {"구분": "공사 요구사항", "en": "Engineering Requirement", "id": "ENR-000"}
+      ],
+      "has_total_row": true
+    }
+  },
+  "caption_expected": {
+    "must_include": [],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "C_entity": {"verbatim": ["SFR-000", "PER-000", "ECR-000", "ENR-000"], "assert": "ID부여규칙 코드 정확 인용, VLM 변형 금지(요구사항 추적성)"},
+    "B_arithmetic": {"relation": "합계 == sum(요구사항 수)", "assert": "합계 행이 total로 인식되고 sum_residual==0 (실제 수치가 채워진 문서에서)"},
+    "G_grounding": {"assert": "각 ID 행 + 합계 행이 셀 bbox"}
+  },
+  "notes": "FR-4.2 표(합계행) + 요구사항 ID 레지스터. 조달 문서의 요구사항 추적성(§5-C ID 코드) 검증. 이 페이지 template은 요구사항 수가 placeholder(xx)라 산술은 실 수치 문서에서 검증."
+}
