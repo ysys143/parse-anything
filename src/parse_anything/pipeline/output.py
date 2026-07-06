@@ -527,8 +527,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                     verdict = ""
                 if verdict.upper().startswith("DECORATION"):
                     continue                                  # ornamental crop -> drop, it carries no info
-                if f.get("source") == "vector" and verdict:
-                    f["description"] = verdict
+                if verdict:  # FR-3.2: keep the description for ANY content figure (raster too), not just vector;
+                    f["description"] = verdict  # gated below (chart_data or page text layer), never ungated
                 kept.append(f)
             figures = kept
         for f in figures:
@@ -536,7 +536,12 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                 figs_by_page.setdefault(f["page"] - 1, []).append(f)
         blocks_by_page = {pg.page_index: pg.paragraphs for pg in result.structure.pages}
         chart_noise = _chart_internal_noise(figures, blocks_by_page)  # drop from prose + attach as chart_data
-        _gate_figure_descriptions(figures)  # FR-3.2: oracle-gate chart description vs its own chart_data
+        page_numbers = None
+        if pdf_path:  # born-digital text-layer numbers to gate raster descriptions that have no chart_data
+            from .deterministic import number_tokens
+            desc_pages = {f["page"] - 1 for f in figures if f.get("description") and not f.get("chart_data")}
+            page_numbers = {pi: [t.value for t in number_tokens(pdf_path, pi, min_value=1000)] for pi in desc_pages}
+        _gate_figure_descriptions(figures, page_numbers)  # FR-3.2: oracle-gate descriptions (chart_data / text layer)
         _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
         _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
         from .ontology import compute_font_ranks, tag_nodes
@@ -705,19 +710,26 @@ def _chart_internal_noise(figures: list[dict], blocks_by_page: dict[int, tuple])
     return out
 
 
-def _gate_figure_descriptions(figures: list[dict]) -> None:
-    """Value-oracle the VLM chart description against the chart's OWN internal tokens (FR-3.2 / §5-A):
-    numbers in the prose that are absent from the figure's collected ``chart_data`` are
-    fabrication-suspect and flagged onto ``description_flags`` -- never silently trusted. Mirrors the
-    transcription gate (assemble.py); source here is the chart's tokens instead of the page text layer."""
+def _gate_figure_descriptions(figures: list[dict], page_numbers: "dict[int, list[str]] | None" = None) -> None:
+    """Value-oracle the VLM figure description (FR-3.2 / §5-A): numbers in the prose that are absent
+    from a deterministic source are fabrication-suspect and flagged onto ``description_flags`` -- never
+    silently trusted. Source precedence: (1) the chart's OWN ``chart_data`` tokens (vector charts);
+    (2) for a figure without chart_data (raster), the page's born-digital text-layer numbers
+    (``page_numbers``) so raster descriptions are gated too. A figure with neither source is skipped
+    (no deterministic source -> no gate, mirroring the transcription gate on scans)."""
     from .guards import extract_numbers
     from .oracle import fabrication_flags
     for f in figures:
         desc = f.get("description")
-        data = f.get("chart_data")
-        if not desc or not data:
+        if not desc:
             continue
-        source = [n for tok in data for n in extract_numbers(tok["text"], min_value=1000)]
+        data = f.get("chart_data")
+        if data:
+            source = [n for tok in data for n in extract_numbers(tok["text"], min_value=1000)]
+        elif page_numbers is not None:
+            source = page_numbers.get(f["page"] - 1, [])
+        else:
+            continue
         flags = fabrication_flags(desc, source, min_value=1000)
         if flags:
             f["description_flags"] = [f"unsourced_number:{v}" for v in flags]

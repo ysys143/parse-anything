@@ -49,6 +49,26 @@ def test_structure_round_trip_is_lossless():
     assert back.to_dict() == exp.to_dict()
 
 
+def test_figure_chart_data_and_description_flags_survive_round_trip():
+    # A2/FR-5.5: the structured chart tokens and description gate flags are part of the structure
+    # contract now, so they survive StructureExport.from_dict(doc).to_dict() (they were dropped before).
+    fig = Figure(id="p1_f0", page=1, order=2, bbox=[0, 0, 3, 3], file="assets/p1_f0.png", source="vector",
+                 description="총인구 51,685의 추세", chart_data=[{"text": "51,685", "bbox": [0, 0, 1, 1]}],
+                 description_flags=["unsourced_number:99999"])
+    d = fig.to_dict()
+    assert d["chart_data"] == [{"text": "51,685", "bbox": [0, 0, 1, 1]}]
+    assert d["description_flags"] == ["unsourced_number:99999"]
+    assert Figure.from_dict(d).to_dict() == d
+    # and through the full structure export (from a flat doc dict, as write_outputs does)
+    exp = StructureExport.from_dict({"figures": [d], "document": {}, "pages": [], "sections": [],
+                                     "blocks": [], "tables": [], "roles": {}})
+    assert exp.figures[0].chart_data == [{"text": "51,685", "bbox": [0, 0, 1, 1]}]
+
+    # a figure without the fields stays compact (no null keys leaking into the contract)
+    plain = Figure(id="p1_f1", page=1, order=3).to_dict()
+    assert "chart_data" not in plain and "description_flags" not in plain
+
+
 def test_compact_omits_none_optionals():
     d = Block(id="b", type="paragraph", page=1, order=0, bbox=[0, 0, 1, 1], text="x").to_dict()
     assert "font_size" not in d and "section" not in d and "refs" not in d
@@ -165,11 +185,11 @@ def test_provenance_stamps_contract_and_joins_by_node_id():
     assert Provenance.from_dict(d).to_dict() == d                  # round-trip (contract tag ignored on read)
 
 
-def test_structure_export_v1_1_carries_context_and_zones():
+def test_structure_export_carries_context_and_zones():
     exp = StructureExport(document={"document_id": "x"},
                           context={"doco": "http://purl.org/spar/doco/"},
                           zones=[{"zone": "references", "pages": [9, 10]}])
     d = exp.to_dict()
-    assert d["contract"]["version"] == "1.1"
+    assert d["contract"]["version"] == "1.2"  # bumped for Figure.chart_data/description_flags (additive)
     assert d["@context"]["doco"].endswith("/doco/") and d["zones"][0]["zone"] == "references"
     assert StructureExport.from_dict(d).to_dict() == d

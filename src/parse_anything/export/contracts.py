@@ -18,7 +18,7 @@ from typing import Any
 # MINOR bumps on additive fields. Consumers gate on MAJOR (see check_compatible).
 # v1.1: StructureExport gains context/zones; ChunkRecord gains the parent/child small-to-big model
 # (level/children/prev/next/is_continuation/page_span via source_refs/display_text/embedding_text/tokenizer).
-STRUCTURE_CONTRACT: tuple[str, str] = ("parse-anything.structure", "1.1")
+STRUCTURE_CONTRACT: tuple[str, str] = ("parse-anything.structure", "1.2")  # +Figure.chart_data/description_flags (additive)
 CHUNK_CONTRACT: tuple[str, str] = ("parse-anything.chunks", "1.1")
 # Layer 2 clean projection + its geometry sidecar (the two artifacts PR #4's pipeline actually produces).
 SEMANTIC_CONTRACT: tuple[str, str] = ("parse-anything.semantic", "1.0")
@@ -162,6 +162,8 @@ class Figure:
     file: str | None = None
     source: str | None = None
     description: str | None = None
+    chart_data: list[dict] | None = None       # FR-5.5: structured chart-internal tokens (text + bbox)
+    description_flags: list[str] | None = None  # §5-A: description numbers absent from chart_data
     section: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -169,7 +171,9 @@ class Figure:
             "id": self.id, "type": self.type, "page": self.page, "order": self.order,
             "label": self.label, "caption": self.caption, "caption_id": self.caption_id,
             "bbox": self.bbox, "file": self.file, "kind": self.kind,
-            "source": self.source, "description": self.description, "section": self.section,
+            "source": self.source, "description": self.description,
+            "chart_data": self.chart_data, "description_flags": self.description_flags,
+            "section": self.section,
         })
 
     @classmethod

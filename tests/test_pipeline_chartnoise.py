@@ -56,6 +56,25 @@ def test_gate_figure_descriptions_flags_unsourced_numbers():
     assert "description_flags" not in sourced
 
 
+def test_gate_figure_descriptions_raster_falls_back_to_page_text_layer():
+    # A1/§5-A: a raster figure has no chart_data, so its description is gated against the page's
+    # born-digital text-layer numbers instead. A number present in the layer is clean; one absent --
+    # including EVERY number when the page has no sourceable numbers -- is flagged (unverifiable, not
+    # silently trusted), mirroring the transcription gate.
+    raster_bad = {"page": 1, "description": "총계는 88,888건이다"}                 # 88888 not on page -> flag
+    raster_ok = {"page": 1, "description": "총계는 51,685건이다"}                  # 51685 on page -> clean
+    raster_nosrc = {"page": 2, "description": "총계는 77,777건이다"}               # page 2: empty source -> flag
+    _gate_figure_descriptions([raster_bad, raster_ok, raster_nosrc], page_numbers={0: ["51685"]})
+    assert raster_bad["description_flags"] == ["unsourced_number:88888"]
+    assert "description_flags" not in raster_ok
+    assert raster_nosrc["description_flags"] == ["unsourced_number:77777"]  # no sourceable numbers -> flagged
+
+    # No PDF at all (page_numbers=None): raster descriptions have no source -> skipped (not flagged).
+    raster_nopdf = {"page": 1, "description": "총계는 99,999건이다"}
+    _gate_figure_descriptions([raster_nopdf])
+    assert "description_flags" not in raster_nopdf
+
+
 def test_mark_chart_label_blocks_flags_inside_excludes_caption_and_outside():
     blocks = [
         {"id": "b1", "page": 1, "bbox": [10.0, 100.0, 50.0, 110.0], "text": "1,000"},       # inside -> mark
