@@ -527,8 +527,13 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                     verdict = ""
                 if verdict.upper().startswith("DECORATION"):
                     continue                                  # ornamental crop -> drop, it carries no info
-                if verdict:  # FR-3.2: keep the description for ANY content figure (raster too), not just vector;
-                    f["description"] = verdict  # gated below (chart_data or page text layer), never ungated
+                kind, desc = _split_figure_kind(verdict)      # B0b: 'KIND: X' first line, then description
+                if desc:  # FR-3.2: keep the description for ANY content figure (raster too), not just vector;
+                    f["description"] = desc  # gated below (chart_data or page text layer), never ungated
+                is_vector = f.get("source") == "vector" or "_vec" in str(f.get("id", ""))  # cf. _fig_source
+                if kind and not is_vector:                    # normalize a raster/VLM producer kind to the
+                    f["kind"] = kind                          # ontology vocabulary (vector stays deterministic,
+                    f["kind_confidence"] = "low"              # via _classify_figure_kinds); low-confidence
                 kept.append(f)
             figures = kept
         for f in figures:
@@ -757,6 +762,22 @@ def _gate_figure_descriptions(figures: list[dict], page_numbers: "dict[int, list
             flags += [f"unit_unstated:{u}" for u in sorted(units)]
         if flags:
             f["description_flags"] = flags
+
+
+_FIG_KIND_ALIASES = {"chart": "chart", "plot": "chart", "diagram": "diagram", "photo": "photo",
+                     "photograph": "photo", "map": "map", "screenshot": "screenshot", "illustration": "diagram"}
+_KIND_LINE_RE = re.compile(r"^[ \t]*KIND:[ \t]*([A-Za-z]+)[^\n]*\n?", re.IGNORECASE)  # consumes the WHOLE line
+
+
+def _split_figure_kind(verdict: str) -> "tuple[str | None, str]":
+    """B0b: parse the VLM describe verdict's optional leading ``KIND: X`` line into (ontology figure_kind
+    or None, remaining description). The whole first line is consumed (so trailing words on it don't leak
+    into the description); an unknown/absent kind yields None so the figure keeps its producer kind --
+    only recognized values (chart/diagram/photo/map/screenshot) normalize the heterogeneous field."""
+    m = _KIND_LINE_RE.match(verdict)
+    if not m:
+        return None, verdict
+    return _FIG_KIND_ALIASES.get(m.group(1).lower()), verdict[m.end():].lstrip("\n \t")
 
 
 def _classify_figure_kinds(figures: list[dict]) -> None:

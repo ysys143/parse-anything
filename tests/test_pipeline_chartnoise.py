@@ -127,3 +127,26 @@ def test_classify_figure_kinds_vector_chart_vs_diagram():
     assert numbered_flow["kind"] == "chart" and numbered_flow["kind_confidence"] == "low"  # word-dominant
     assert raster["kind"] == "image"        # untouched (deterministic pass does not reclassify raster)
     assert vlm["kind"] == "figure"          # untouched
+
+
+def test_b0b_split_figure_kind_parses_and_validates():
+    from parse_anything.pipeline.output import _split_figure_kind
+    assert _split_figure_kind("KIND: chart\nThis chart shows sales.") == ("chart", "This chart shows sales.")
+    assert _split_figure_kind("KIND: plot\nx") == ("chart", "x")            # plot -> chart alias
+    assert _split_figure_kind("KIND: photograph\n건물 사진") == ("photo", "건물 사진")
+    assert _split_figure_kind("A description with no kind line") == (None, "A description with no kind line")
+    assert _split_figure_kind("KIND: banana\nsomething") == (None, "something")   # unknown kind -> None, line stripped
+
+
+def test_b0b_kind_line_is_fully_consumed_and_case_insensitive():
+    from parse_anything.pipeline.output import _split_figure_kind
+    # trailing words on the KIND line must NOT leak into the description
+    assert _split_figure_kind("KIND: chart bar graph\nSales rose.") == ("chart", "Sales rose.")
+    assert _split_figure_kind("kind: DIAGRAM\nA flow.") == ("diagram", "A flow.")   # case-insensitive
+
+
+def test_b0b_preamble_prefixed_verdict_falls_back_gracefully():
+    from parse_anything.pipeline.output import _split_figure_kind
+    # if the VLM ignores 'no preamble' and prefixes junk, KIND isn't parsed -> no bad kind, description kept
+    kind, desc = _split_figure_kind("Sure!\nKIND: chart\nSales rose.")
+    assert kind is None and desc.startswith("Sure!")          # graceful: producer kind kept, text preserved

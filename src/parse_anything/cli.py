@@ -24,11 +24,12 @@ _FIG_DESCRIBE_PROMPT = (
     "If it is DECORATION -- an icon, bullet or marker, logo, divider or rule line, background "
     "texture/gradient, page-number badge, or a purely ornamental graphic that carries no information "
     "-- reply with exactly the single word: DECORATION\n"
-    "Otherwise it is CONTENT -- a chart, plot, diagram, photograph, illustration, screenshot, map, or "
-    "table. Describe it for a reader who cannot see it, in 2-4 sentences: what it depicts, its axes and "
-    "units if any, and the main trend or the most important values. Respond in the SAME language as the "
-    "figure's own labels. Output only the description -- no preamble, no markdown, no heading, and do "
-    "NOT use the word DECORATION."
+    "Otherwise it is CONTENT. On the FIRST line output exactly `KIND: X` where X is ONE of: chart, plot, "
+    "diagram, photo, map, screenshot, illustration. On the following lines describe it for a reader who "
+    "cannot see it, in 2-4 sentences: what it depicts, its axes and units if any, and the main trend or "
+    "the most important values. Write the description in the SAME language as the figure's own labels "
+    "(keep the KIND line in English). Output only the KIND line and the description -- no other preamble, "
+    "no markdown, no extra heading, and do NOT use the word DECORATION."
 )
 
 
