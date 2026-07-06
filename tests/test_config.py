@@ -2,7 +2,22 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from parse_anything.config import load_settings
+
+# Keys load_settings reads. Importing an optional dep (lightrag-hku) auto-loads the repo .env into
+# os.environ via python-dotenv, and a developer's shell may export these too. These tests assert
+# precedence against a KNOWN environment, so clear the keys first -- each test then controls exactly
+# what its env_file + monkeypatch.setenv put in scope.
+_SETTINGS_ENV_KEYS = ("GEMINI_API_KEY", "PADDLE_API_KEY", "PADDLE_BASE_URL", "PADDLE_MODEL",
+                      "PADDLEOCR_API_KEY", "PADDLEOCR_BASE_URL")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings_env(monkeypatch):
+    for key in _SETTINGS_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 
 def test_load_settings_prefers_shell_values_over_env_file(tmp_path, monkeypatch):
