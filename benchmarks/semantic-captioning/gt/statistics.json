@@ -1,0 +1,29 @@
+{
+  "domain": "statistics",
+  "sample": "corpus/raw/statistics/kostat_고령자통계_2025.pdf",
+  "page": 4,
+  "figure_kind": "chart",
+  "elements_expected": [
+    {"kind": "chart", "subtype": "donut", "count": 3, "note": "필수시간/의무시간/여가시간, 값은 시:분"},
+    {"kind": "chart", "subtype": "bar", "count": 6, "note": "수면/일/교제활동/식사/가사노동/미디어, 시:분 + 증감(분)"},
+    {"kind": "chart", "subtype": "pie", "count": 2, "note": "여가시간·가사분담 만족도, 단위 %"}
+  ],
+  "structured_expected": {
+    "chart_data": [
+      {"id": "donut_필수시간", "unit": "시:분", "sample_values": {"필수시간": "11:59", "수면": "8:14", "식사및간식": "1:58"}},
+      {"id": "donut_여가시간", "unit": "시:분", "sample_values": {"여가시간": "7:03", "미디어이용": "4:06"}},
+      {"id": "bar_수면", "unit": "시:분", "increment_unit": "분", "sample_values": {"80세이상": "8:46", "65-69세": "7:58"}},
+      {"id": "pie_여가만족도", "unit": "%", "labels": ["만족", "보통", "불만족"], "sample_values": {"85세이상_만족": 40.2, "85세이상_불만족": 13.5}}
+    ]
+  },
+  "caption_expected": {
+    "must_include": ["단위", "시간", "%"],
+    "must_not_include": ["11.59", "1159", "명 단위", "인구 51"]
+  },
+  "risk_checks": {
+    "A_unit": {"expected_unit": ["시:분", "분", "%"], "assert": "description numbers carry time(시:분)/증감(분)/% unit; never render 시:분 as a decimal or a person-count"},
+    "C_entity": {"verbatim": ["필수시간", "의무시간", "여가시간"], "assert": "category labels not paraphrased"},
+    "G_grounding": {"assert": "each chart element has bbox"}
+  },
+  "notes": "참조 파서 §5-A(천 명→명 단위 오독)의 국내 대응 도메인. 시:분 시간포맷은 단위 오독의 대표 함정. 캡션 수치는 chart_data.unit과 대조 검증."
+}

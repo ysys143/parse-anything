@@ -1,0 +1,26 @@
+{
+  "domain": "policy",
+  "sample": "corpus/raw/policy/swit_요구사항상세화_실무가이드라인.pdf",
+  "page": 3,
+  "figure_kind": "text",
+  "elements_expected": [
+    {"kind": "heading", "note": "1. 배경 및 목적"},
+    {"kind": "callout", "count": 3, "note": "사이드바 Why / Key Point / Advice"},
+    {"kind": "highlighted_box", "note": "제도적 근거 - 소프트웨어산업진흥법 제20조 인용"},
+    {"kind": "paragraph", "note": "본문"}
+  ],
+  "structured_expected": {
+    "roles": ["heading", "sidebar_callout", "legal_basis_box", "body"],
+    "law_reference": "소프트웨어 산업진흥법 제20조",
+    "note": "이 페이지는 텍스트+콜아웃 구조. 도식(AS-IS/TO-BE 관계도)이 있는 페이지를 FR-5.3/5.4 검증용으로 추가 필요"
+  },
+  "caption_expected": {
+    "must_include": [],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "C_entity": {"verbatim": ["소프트웨어 산업진흥법 제20조"], "assert": "법령 조문 번호 정확 인용, VLM 변형 금지"},
+    "G_grounding": {"assert": "콜아웃/하이라이트 박스가 별도 role+bbox로 분리"}
+  },
+  "notes": "FR-2 요소 역할(콜아웃/법령근거 박스) 골든. FR-5.3/5.4 도식 관계 검증은 diagram 페이지 추가 라벨 필요(TODO: swit 가이드 내 프로세스 도식 페이지)."
+}

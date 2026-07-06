@@ -1,0 +1,30 @@
+{
+  "domain": "table",
+  "sample": "corpus/raw/table/arxiv_1706.03762_attention.pdf",
+  "page": 8,
+  "figure_kind": "table",
+  "elements_expected": [
+    {"kind": "table", "note": "Table 2: BLEU + Training Cost, 그룹 헤더 span"},
+    {"kind": "caption", "note": "Table 2: The Transformer achieves better BLEU scores ..."}
+  ],
+  "structured_expected": {
+    "table": {
+      "n_cols": 5,
+      "col_headers": ["Model", "BLEU EN-DE", "BLEU EN-FR", "Cost EN-DE", "Cost EN-FR"],
+      "group_headers": [{"text": "BLEU", "colspan": 2}, {"text": "Training Cost (FLOPs)", "colspan": 2}],
+      "spanning_cells": [{"row": "Transformer (base model)", "text": "3.3 x 10^18", "colspan": 2}],
+      "sample_values": {"Transformer (big) | BLEU EN-FR": "41.8", "Transformer (base) | BLEU EN-DE": "27.3", "MoE [32] | BLEU EN-DE": "26.03"}
+    },
+    "views_expected": ["md", "json", "html"]
+  },
+  "caption_expected": {
+    "must_include": ["Transformer", "BLEU"],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "C_entity": {"verbatim": ["Transformer (big)", "GNMT + RL Ensemble", "41.8", "27.3"], "assert": "model names and scores quoted exactly"},
+    "G_grounding": {"assert": "each cell has bbox; group headers carry colspan=2"},
+    "B_arithmetic": {"relation": "none (no subtotal row)", "assert": "n/a"}
+  },
+  "notes": "FR-4.2 골든: 그룹 헤더(BLEU/Cost 각 colspan=2) + base model cost 셀 colspan=2. HTML view가 colspan/rowspan을 정확히 방출하는지 검증. 값 정확도는 §5-C."
+}

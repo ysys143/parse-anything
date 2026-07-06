@@ -1,0 +1,32 @@
+{
+  "domain": "drawing_dim",
+  "sample": "corpus/raw/drawing_dim/wikimedia_schneckenwelle_worm_shaft.png",
+  "figure_kind": "drawing",
+  "elements_expected": [
+    {"kind": "drawing", "note": "웜축 좌측면 기계도면, 치수·공차·GD&T·표면조도"},
+    {"kind": "title_block", "note": "우하단 표제란"},
+    {"kind": "table", "count": 2, "note": "Schnecke 파라미터표, Uebersetzungstafel 공차표"}
+  ],
+  "structured_expected": {
+    "dimensions": {
+      "diameters": ["dia17 k6", "dia26", "dia20", "dia23.2", "dia28", "dia32-0.1", "dia16.5-0.1"],
+      "lengths": ["13", "50.5", "68-0.2", "114.5", "11", "12.5", "28", "2.5"],
+      "angles": ["1x45deg"],
+      "gdt": ["concentricity 0.05 A-B", "perpendicularity 0.05 A-B"],
+      "surface_finish": ["Ra 3.2", "Ra 1.6", "Ra 6.3", "Ra 0.4"]
+    },
+    "title_block": {"scale": "2:1", "material": "16MnCr5", "name": "Schneckenwelle", "tolerance_std": "ISO 2768-mK"},
+    "param_table": {"Modul": "2", "Zahnezahl": "1", "Mittenkreis-Durchmesser": "28"}
+  },
+  "caption_expected": {
+    "must_include": ["Schneckenwelle", "16MnCr5", "2:1"],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "B_arithmetic": {"relation": "left-datum length chain reconciles to overall 114.5", "assert": "sum_residual of the dimension chain == 0 (+/-0.5)"},
+    "C_entity": {"verbatim": ["16MnCr5", "dia32-0.1", "Ra 1.6"], "assert": "material/dimension/tolerance tokens quoted exactly, VLM must not invent or round"},
+    "A_unit": {"expected_unit": "mm (implied), scale 2:1", "assert": "diameters carry dia symbol, angles carry deg, dims are drawing-mm not raw"},
+    "G_grounding": {"assert": "each dimension token + title block has bbox"}
+  },
+  "notes": "FR-5.1 치수 + FR-5.2 표제란 골든. dia = diameter 기호(원문 표기), deg = 각도. §5-B 산술: 부분 치수 합이 전체 114.5와 정합(참조 파서 137+678+715!=1529 오류 대응). 캡션 인용 치수는 dimensions에 존재하는 것만."
+}

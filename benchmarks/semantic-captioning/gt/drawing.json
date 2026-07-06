@@ -1,0 +1,25 @@
+{
+  "domain": "drawing",
+  "sample": "corpus/raw/drawing/patent_US7663607B2.pdf",
+  "page": 8,
+  "figure_kind": "drawing",
+  "elements_expected": [
+    {"kind": "drawing", "note": "특허 도면 FIG. 3, 그리드 + 센서 포인트, 번호 콜아웃"},
+    {"kind": "caption", "note": "FIG. 3"}
+  ],
+  "structured_expected": {
+    "callouts": ["38", "42", "42A", "44"],
+    "dimensions": {"note": "NONE - 특허 도면은 치수 기입 없음"},
+    "header": "US 7,663,607 B2 Sheet 3 of 14"
+  },
+  "caption_expected": {
+    "must_include": ["figure"],
+    "must_not_include": ["mm", "diameter", "tolerance"]
+  },
+  "risk_checks": {
+    "C_entity": {"verbatim": ["38", "42", "44", "US 7,663,607 B2"], "assert": "reference numerals quoted as-is, treated as callout labels not dimensions"},
+    "A_unit": {"expected_unit": "none", "assert": "no dimension/unit fabricated - NEGATIVE CONTROL"},
+    "G_grounding": {"assert": "callout numbers have bbox"}
+  },
+  "notes": "FR-5.1 음성 대조(negative control): 치수 없는 기술 도식에서 치수 검출기가 치수를 지어내지 않는지 검증. 번호 콜아웃(38/42/44)을 치수로 오인하면 실패."
+}

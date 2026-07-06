@@ -1,0 +1,23 @@
+{
+  "domain": "handwriting",
+  "sample": "corpus/raw/handwriting/census_1900_population_schedule.jpg",
+  "figure_kind": "handwriting_form",
+  "elements_expected": [
+    {"kind": "form", "note": "인쇄 격자 폼(Schedule No.1 Population) + 전면 필기 기입"},
+    {"kind": "table", "note": "인당 1행, 컬럼 NAME/RELATION/PERSONAL DESCRIPTION/NATIVITY/OCCUPATION/EDUCATION"}
+  ],
+  "structured_expected": {
+    "form_fields": {"State": "Alabama", "County": "Montgomery", "Township": "16", "enumerated_date": "7 June 1900", "schedule": "No.1 Population"},
+    "table": {"columns": ["NAME", "RELATION", "PERSONAL DESCRIPTION", "NATIVITY", "OCCUPATION", "EDUCATION"], "rows_handwritten": true}
+  },
+  "caption_expected": {
+    "must_include": ["census", "population"],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "C_entity": {"verbatim": ["Alabama", "Montgomery", "handwritten surnames as written"], "assert": "handwritten names transcribed verbatim, not normalized/paraphrased"},
+    "G_grounding": {"assert": "printed header fields + each row cell has bbox"},
+    "H_pii": {"fields": ["names", "ages"], "note": "historical public-domain but still tag pii for masking policy"}
+  },
+  "notes": "FR-3.1 손글씨 + FR-4.3 폼 구조 골든(영문). 참조 파서 손글씨 신청서 대응. 필기 값은 결정적 OCR로 인용, VLM 재작성 금지(§5-C). 한국어 필기 검증은 별도 소스 필요(AI Hub 605)."
+}

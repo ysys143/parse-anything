@@ -1,0 +1,25 @@
+{
+  "domain": "form",
+  "sample": "corpus/raw/form/cord_receipt_1.jpg",
+  "figure_kind": "form",
+  "elements_expected": [
+    {"kind": "form", "subtype": "receipt", "note": "라인아이템 + 합계 KV"}
+  ],
+  "structured_expected": {
+    "form_fields": ["subtotal", "tax", "total", "cash", "change"],
+    "line_items": [{"name": "...", "qty": "...", "price": "..."}],
+    "note": "정확한 값은 corpus/raw/form/cord_receipt_1.jpg 육안 대조 후 채움(라벨-값 페어)"
+  },
+  "caption_expected": {
+    "must_include": ["receipt"],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "B_arithmetic": {"relation": "sum(line_item prices) == subtotal; cash - total == change", "assert": "sum_residual == 0"},
+    "C_entity": {"verbatim": ["menu item names as printed"], "assert": "item names not paraphrased/translated"},
+    "A_unit": {"expected_unit": "currency", "assert": "amounts carry currency, not bare numbers"},
+    "G_grounding": {"assert": "each label/value pair has label_bbox + value_bbox"},
+    "H_pii": {"fields": ["none (receipt)"]}
+  },
+  "notes": "FR-4.3 폼 KV + 라인아이템 골든. §5-B: 라인아이템 합=소계, 현금-합계=거스름 검산이 sum_residual로 검증됨(CORD receipt는 이 관계를 항상 가짐). 값은 결정적 OCR 인용."
+}

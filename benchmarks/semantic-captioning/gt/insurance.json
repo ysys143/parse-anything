@@ -1,0 +1,25 @@
+{
+  "domain": "insurance",
+  "sample": "corpus/raw/insurance/hyundai_실손의료비_약관_2026.pdf",
+  "page": 9,
+  "figure_kind": "text",
+  "elements_expected": [
+    {"kind": "table", "note": "5컬럼 약관 구성(약관 이용 가이드/시각화 요약서/상품안내/보통약관 및 특별약관/별표 및 인용 법·규정)"},
+    {"kind": "callout", "count": 4, "note": "유의사항/용어해설/예시안내/관련법규"},
+    {"kind": "figure", "count": 3, "note": "QR 코드"}
+  ],
+  "structured_expected": {
+    "columns": ["약관 이용 가이드", "시각화된 약관 요약서", "상품안내", "보통약관 및 특별약관", "별표 및 인용 법·규정"],
+    "callouts": ["유의사항", "용어해설", "예시안내", "관련법규"],
+    "note": "약관 body(조/항/별표/표)와 지급 분기 다이어그램은 시각화 요약서 페이지에 별도 존재 - FR-5.4 검증용 추가 라벨 필요"
+  },
+  "caption_expected": {
+    "must_include": [],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "C_entity": {"verbatim": ["보통약관", "특별약관", "현대해상"], "assert": "약관 용어/사명 정확 인용"},
+    "G_grounding": {"assert": "5컬럼 + 4콜아웃 + 3 QR이 각각 요소로 분리, bbox 부착"}
+  },
+  "notes": "FR-2 다컬럼 레이아웃 + 콜아웃 골든. FR-5.4 지급 분기 다이어그램(참조 파서 보험 사례 대응)은 시각화 요약서 페이지 추가 라벨 필요(TODO). 약관 조/별표 구조는 FR-4.2/온톨로지 form 패밀리와 연계."
+}
