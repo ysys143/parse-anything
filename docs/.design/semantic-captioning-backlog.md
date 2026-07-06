@@ -10,7 +10,7 @@
 |---|---|:--:|---|
 | A1 | ~~FR-3.2 Slice 2: describe를 raster content figure로 확장~~ **[완료 6fe3a49]** | — | raster content figure도 description 보유. **불변식 유지**: chart_data 없으면 페이지 텍스트레이어로 게이팅, 검증 불가 수치는 flag. F14(전사 프롬프트)는 불변 |
 | A2 | ~~Slice 3: chart_data/description_flags를 Figure export 계약으로 승격~~ **[완료 6fe3a49]** | — | STRUCTURE 계약 1.1→1.2(additive). structure.json까지 보존 |
-| A3 | **§5-A 단위 토큰 게이팅 강화**: 현 oracle `min_value=1000`이라 %·시:분·작은 수치 미검증 | P1 | 통계 골든(시:분·%)이 실제로 잡히려면 단위 정규화 소스 필요. **트랜치 1 잔여 유일 항목** |
+| A3 | ~~§5-A 단위 토큰 게이팅~~ **[완료]** | — | 차트가 명시 선언한 단위(`단위: 천 명` / `(단위: %)`)를 description이 누락하면 `unit_unstated:<u>` flag. 참조 파서의 "천→명" 오독 대응. bare 한국어 단위(만/천)는 오탐 위험이라 명시 선언만 대상 |
 | A5 | ~~raster description flag 노이즈~~ **[완료 리뷰 fix-forward]** | — | flag prefix 분리: `unsourced_number`(chart 자기토큰에 없음=위조의심) vs `unverifiable_number`(raster, born-digital 검증불가=저정보). 소비자가 raster 차트를 hallucination으로 오인하지 않도록 |
 
 ## B. 구현 — 트랜치 2 (그린필드 검출기, 미착수)

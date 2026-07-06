@@ -77,6 +77,24 @@ def test_gate_figure_descriptions_raster_falls_back_to_page_text_layer():
     assert "description_flags" not in raster_nopdf
 
 
+def test_gate_figure_descriptions_flags_dropped_scale_unit():
+    # §5-A: the chart declares '단위: 천 명' but the description states a magnitude WITHOUT the scale
+    # (reads 천-scaled values as bare) -> unit_unstated. The number itself IS in chart_data, so plain
+    # number matching would pass; the unit check is what catches the misread.
+    data = [{"text": "단위: 천 명", "bbox": [0, 0, 1, 1]}, {"text": "51,685", "bbox": [0, 0, 1, 1]}]
+    dropped = {"page": 1, "description": "총인구는 51,685명이다", "chart_data": data}      # 천 dropped -> flag
+    kept = {"page": 1, "description": "총인구는 51,685천 명이다", "chart_data": data}       # 천 present -> clean
+    _gate_figure_descriptions([dropped, kept])
+    assert dropped["description_flags"] == ["unit_unstated:천"]
+    assert "description_flags" not in kept
+
+    # No explicit '단위:' declaration -> no unit check (bare Korean scale words are not matched).
+    no_decl = {"page": 1, "description": "총인구 51,685명",
+               "chart_data": [{"text": "인구 51,685", "bbox": [0, 0, 1, 1]}]}
+    _gate_figure_descriptions([no_decl])
+    assert "description_flags" not in no_decl
+
+
 def test_mark_chart_label_blocks_flags_inside_excludes_caption_and_outside():
     blocks = [
         {"id": "b1", "page": 1, "bbox": [10.0, 100.0, 50.0, 110.0], "text": "1,000"},       # inside -> mark

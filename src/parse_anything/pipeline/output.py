@@ -710,6 +710,21 @@ def _chart_internal_noise(figures: list[dict], blocks_by_page: dict[int, tuple])
     return out
 
 
+_UNIT_DECL_RE = re.compile(r"단위\s*[:：]?\s*([가-힣%]{1,4})")  # explicit "단위: 천 명" / "(단위: %)" declaration
+
+
+def _declared_units(chart_data: list[dict]) -> set[str]:
+    """Units the chart EXPLICITLY declares (e.g. '단위: 천 명', '(단위: %)'). Only the declared form is
+    used -- bare Korean scale words (만/천) collide with ordinary words (만족…) and are unsafe to match."""
+    units: set[str] = set()
+    for tok in chart_data:
+        for m in _UNIT_DECL_RE.finditer(tok.get("text", "")):
+            u = m.group(1).strip()
+            if u:
+                units.add(u)
+    return units
+
+
 def _gate_figure_descriptions(figures: list[dict], page_numbers: "dict[int, list[str]] | None" = None) -> None:
     """Value-oracle the VLM figure description (FR-3.2 / §5-A): numbers in the prose that are absent
     from a deterministic source are fabrication-suspect and flagged onto ``description_flags`` -- never
@@ -724,17 +739,23 @@ def _gate_figure_descriptions(figures: list[dict], page_numbers: "dict[int, list
         if not desc:
             continue
         data = f.get("chart_data")
+        units: set[str] = set()
         if data:
             source = [n for tok in data for n in extract_numbers(tok["text"], min_value=1000)]
             prefix = "unsourced_number"      # absent from the chart's OWN tokens -> fabrication-suspect
+            units = _declared_units(data)
         elif page_numbers is not None:
             source = page_numbers.get(f["page"] - 1, [])
             prefix = "unverifiable_number"   # raster: numbers are baked into pixels, not on the text layer,
         else:                                #        so absence is EXPECTED (low-signal), not fabrication
             continue
-        flags = fabrication_flags(desc, source, min_value=1000)
+        flags = [f"{prefix}:{v}" for v in fabrication_flags(desc, source, min_value=1000)]
+        # §5-A unit fidelity: the chart declares a scale unit but the description states a magnitude
+        # WITHOUT it (e.g. reading "천 명" values as bare "명") -- a unit drop that number matching misses.
+        if units and extract_numbers(desc, min_value=1000) and not any(u in desc for u in units):
+            flags += [f"unit_unstated:{u}" for u in sorted(units)]
         if flags:
-            f["description_flags"] = [f"{prefix}:{v}" for v in flags]
+            f["description_flags"] = flags
 
 
 def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:
