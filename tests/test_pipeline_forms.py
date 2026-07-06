@@ -68,3 +68,41 @@ def test_v5_density_gate_suppresses_sparse_pages():
             _b("전화:", 0, 15, 30, 25), _b("010-1234", 35, 15, 90, 25),
             _b("주소:", 0, 30, 30, 40), _b("대전", 35, 30, 70, 40)]
     assert len(detect_form_fields_gated(form, min_fields=3)) == 3
+
+
+def test_b1b_multiline_value_below_is_merged():
+    # a two-line address stacked under the label -> one value (newline-joined), bbox unioned
+    blocks = [_b("주소:", 0, 0, 40, 10),
+              _b("대전광역시 미산회원구", 0, 12, 90, 22),
+              _b("납음로6길 636", 0, 24, 70, 34)]
+    fields = detect_form_fields(blocks)
+    assert len(fields) == 1
+    assert fields[0]["value"] == "대전광역시 미산회원구\n납음로6길 636"
+    assert fields[0]["value_bbox"] == [0, 12, 90, 34]      # union of both lines
+
+
+def test_b1b_a_vertical_gap_ends_the_value_stack():
+    # a far block (big gap) is NOT absorbed into the value
+    blocks = [_b("주소:", 0, 0, 40, 10), _b("대전", 0, 12, 40, 22), _b("무관한 하단", 0, 200, 60, 210)]
+    fields = detect_form_fields(blocks)
+    assert fields[0]["value"] == "대전"                    # the far block is excluded
+
+
+def test_b1b_single_line_and_right_values_unchanged():
+    assert detect_form_fields([_b("성명:", 0, 0, 30, 10), _b("육도연", 35, 0, 80, 10)])[0]["value"] == "육도연"
+
+
+def test_b1b_value_does_not_leak_across_the_next_field_label():
+    # tight form: 주소's value must stop at 전화's label, not absorb 전화's value (010)
+    blocks = [_b("주소:", 0, 0, 40, 10), _b("대전", 0, 12, 40, 22),
+              _b("전화:", 0, 24, 40, 34), _b("010", 0, 36, 40, 46)]
+    fields = {f["label"]: f["value"] for f in detect_form_fields(blocks)}
+    assert fields == {"주소": "대전", "전화": "010"}      # no leak
+
+
+def test_b1b_wide_body_line_below_is_not_absorbed():
+    # a wide body paragraph right under the value (same gap) is excluded by the width guard
+    blocks = [_b("주소:", 0, 0, 40, 10), _b("대전", 0, 12, 40, 22),
+              _b("이것은 폼 아래 매우 넓은 본문 문장 블록이다", 0, 24, 400, 34)]
+    fields = detect_form_fields(blocks)
+    assert fields[0]["value"] == "대전"      # body line not merged (too wide)

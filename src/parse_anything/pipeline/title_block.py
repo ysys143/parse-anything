@@ -7,13 +7,14 @@ grid cells -- so pairing is driven by a dictionary of KNOWN, multilingual field 
 generated (§5-C).
 
 WIRE-TIME GATE: use ``detect_title_block_gated`` (auto bottom-right region + field-density gate) so a
-stray 'Material' heading in body text is not read as a title-block field. Limitations (B3b): a value
-split across several OCR tokens keeps only the nearest one, and a right-aligned block (value LEFT of its
-label) is not paired -- value-right / value-below is assumed.
+stray 'Material' heading in body text is not read as a title-block field. A value may span several OCR
+tokens on the same row (they are merged until the next key / a wide gap). Limitation: value-right and
+value-below only -- a RIGHT-ALIGNED title block (value LEFT of its label) is intentionally NOT paired,
+since a bare left neighbour can't be distinguished from another field's value without cell borders.
 """
 from __future__ import annotations
 
-from .forms import _col_overlap, _row_overlap
+from .forms import _col_overlap, _merge_column_run, _row_overlap
 
 # canonical field -> alias set (lowercased, punctuation/space stripped). Kept specific to avoid matching
 # ordinary body words; generic aliases ("name") are intentionally omitted.
@@ -68,27 +69,42 @@ def detect_title_block(blocks: list[dict], *, region: "list[float] | None" = Non
             continue
         _, _, lx1, ly1 = lab["bbox"]
         lh = max(lab["bbox"][3] - lab["bbox"][1], 1.0)
-        # same row, to the right -- but a value cannot lie beyond the NEXT field's key (V2d)
+        value_text, value_bbox = None, None
+        # (1) same row to the right: a value may span SEVERAL tokens (OCR splits '16MnCr5'), so accumulate
+        #     consecutive non-key tokens until the next field's key (V2d), a big x-gap, or a token cap.
         right = sorted((b for b in scoped if b is not lab and b["bbox"][0] >= lx1 - 1
                         and _row_overlap(lab["bbox"], b["bbox"]) >= 0.5),
                        key=lambda b: (b["bbox"][0], b["bbox"][1]))
-        val = None
+        run: list[dict] = []
         for b in right:
             if id(b) in keys:
-                break                                   # next field's key; this key's value isn't past it
-            if (b.get("text") or "").strip():
-                val = b
                 break
-        if val is None:  # nearest non-key value below, within a bounded distance (V3) and column band
-            below = sorted((b for b in scoped if id(b) not in keys and (b.get("text") or "").strip()
-                            and 0 <= b["bbox"][1] - ly1 <= max_below_factor * lh
-                            and _col_overlap(lab["bbox"], b["bbox"]) >= 0.3),
-                           key=lambda b: (b["bbox"][1], b["bbox"][0]))
-            val = below[0] if below else None
-        if val is None:
+            if not (b.get("text") or "").strip():
+                continue
+            # tokens of ONE value are tightly spaced; a wide gap is the next cell. 1.5x line height is
+            # tighter than a title-block cell gap; the length cap is only a runaway backstop.
+            if run and (b["bbox"][0] - run[-1]["bbox"][2] > 1.5 * lh or len(run) >= 8):
+                break
+            run.append(b)
+        if run:
+            value_text = " ".join((r.get("text") or "").strip() for r in run)
+            value_bbox = [min(r["bbox"][0] for r in run), min(r["bbox"][1] for r in run),
+                          max(r["bbox"][2] for r in run), max(r["bbox"][3] for r in run)]
+        # (2) else the value cell directly below, merging a vertical stack (B1b helper)
+        if value_text is None:
+            col = sorted((b for b in scoped if (b.get("text") or "").strip()
+                          and b["bbox"][1] >= ly1 - 1 and _col_overlap(lab["bbox"], b["bbox"]) >= 0.3),
+                         key=lambda b: (b["bbox"][1], b["bbox"][0]))       # includes keys as barriers
+            first = next((b for b in col if id(b) not in keys
+                          and b["bbox"][1] - ly1 <= max_below_factor * lh), None)
+            if first is not None:
+                value_text, value_bbox = _merge_column_run(first, col, lh, stop=lambda b: id(b) in keys)
+        # (right-aligned title blocks -- value LEFT of the label -- are NOT paired: a bare left neighbour
+        #  can't be told from another field's value without cell borders, and grabbing it cross-pollutes
+        #  fields, so it is intentionally unsupported. See module docstring.)
+        if value_text is None:
             continue
-        fields[canonical] = {"value": (val.get("text") or "").strip(),
-                             "label_bbox": lab["bbox"], "value_bbox": val["bbox"]}
+        fields[canonical] = {"value": value_text, "label_bbox": lab["bbox"], "value_bbox": value_bbox}
     return fields
 
 

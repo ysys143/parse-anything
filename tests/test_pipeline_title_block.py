@@ -89,3 +89,34 @@ def test_v4_density_gate_suppresses_a_single_stray_field():
     blocks = [_b("Werkstoff", 600, 700, 650, 712), _b("16MnCr5", 655, 700, 720, 712),
               _b("frame", 0, 0, 1000, 1000)]
     assert detect_title_block_gated(blocks, min_fields=2) == {}
+
+
+def test_b3b_multi_token_right_value_is_merged():
+    # a value OCR-split into two tokens on the same row -> one merged value
+    blocks = [_b("Werkstoff", 0, 0, 40, 10), _b("16MnCr5", 45, 0, 75, 10), _b("K", 78, 0, 88, 10)]
+    tb = detect_title_block(blocks)
+    assert tb["material"]["value"] == "16MnCr5 K"
+    assert tb["material"]["value_bbox"] == [45, 0, 88, 10]
+
+
+def test_b3b_left_aligned_value_is_not_paired():
+    # a bare left neighbour is NOT taken as the value (would cross-pollute fields) -- unsupported by design
+    blocks = [_b("16MnCr5", 0, 0, 40, 10), _b("Werkstoff", 45, 0, 85, 10)]
+    assert detect_title_block(blocks) == {}
+    assert detect_title_block(blocks, region=[-1, -1, 200, 40]) == {}
+
+
+def test_b3b_right_run_stops_at_a_wide_gap_neighbour_cell():
+    # material value must not swallow a neighbouring (unregistered-label) cell across a wide gap
+    blocks = [_b("Werkstoff", 0, 0, 40, 10), _b("16MnCr5", 42, 0, 75, 10),
+              _b("Stück", 200, 0, 240, 10), _b("100", 245, 0, 270, 10)]   # far cell, gap >> 1.5*lh
+    tb = detect_title_block(blocks)
+    assert tb["material"]["value"] == "16MnCr5"                    # neighbour cell excluded
+
+
+def test_b3b_multi_token_run_stops_at_next_key():
+    # Maßstab <val> Werkstoff <val> : Maßstab's run must stop at the Werkstoff key
+    blocks = [_b("Maßstab", 0, 0, 30, 10), _b("2:1", 33, 0, 50, 10),
+              _b("Werkstoff", 55, 0, 90, 10), _b("16MnCr5", 93, 0, 130, 10)]
+    tb = detect_title_block(blocks)
+    assert tb["scale"]["value"] == "2:1" and tb["material"]["value"] == "16MnCr5"
