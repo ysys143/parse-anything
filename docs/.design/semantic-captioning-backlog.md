@@ -21,7 +21,7 @@
 | B0 | ~~`Figure.kind` 분류기~~ **[완료]** | — | 벡터 figure를 수치밀도로 chart/diagram 분류(>=2 numeric→chart), 경계는 `kind_confidence:"low"`로 라우터가 게이팅. raster/VLM은 producer kind 유지. **잔여**: kind가 이중 어휘(producer-role "image" vs ontology "chart")—raster normalize는 VLM 신호 필요(B0b) |
 | B1 | ~~FR-4.3 폼 KV 검출기 (코어)~~ **[완료·미wire]** | P1 | `forms.py` 결정적 시각 페어링(콜론 라벨 + 기하). 적대적 리뷰 반박(V1-V5) 반영: 라벨 정밀도·V2d 라벨컷오프·V3 거리상한·V4a 빈값·V5 밀도게이트(`detect_form_fields_gated`). **잔여(B1b)**: 파이프라인 wire(form-kind 게이트 필수), AcroForm 소스, 멀티라인 값(V2c) |
 | B2 | ~~FR-5.1 도면 치수·공차 검출기 (코어)~~ **[완료·미wire]** | P1 | `dimensions.py` 결정적 정규식(Ø/R/각도/공차/길이). 적대적 리뷰 반박(REQUEST CHANGES) 반영: V4 맥락게이트(shaped≥2), V4b 콤마천단위·시각·전화 분할차단, V2 온도/좌표 제외(°(?![CFNSEW])), V5 `detect_dimensions_gated`. **잔여(B2b)**: wire(drawing-kind 게이트), 표제란 phone/date 잔여 FP, §5-B sum_residual 결합 |
-| B3 | FR-5.2 표제란 검출기 (폼 KV 공유) | P2 | 골든: schneckenwelle 표제란 |
+| B3 | ~~FR-5.2 표제란 검출기 (코어)~~ **[완료·미wire]** | P2 | `title_block.py` 다국어 키 사전(Maßstab/Werkstoff/축척/재질/도번) + B1 기하 재사용. 적대적 리뷰 반박(REQUEST CHANGES) 반영: V1 generic 별칭 region 게이팅·V2d 키컷오프·V3 거리상한·V4 `detect_title_block_gated`(자동 우하단 region+밀도게이트). **잔여(B3b)**: wire, 멀티토큰 값 병합·우측정렬(좌측값) 레이아웃(V5) |
 | B4 | FR-5.3/5.4 도식·분기 관계 그래프 | P2 최난 | 골든: insurance_diagram, policy |
 
 ## C. 구현 — 트랜치 3 (저비용 마감, 미착수)
