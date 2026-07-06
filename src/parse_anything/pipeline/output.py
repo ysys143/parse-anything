@@ -726,13 +726,15 @@ def _gate_figure_descriptions(figures: list[dict], page_numbers: "dict[int, list
         data = f.get("chart_data")
         if data:
             source = [n for tok in data for n in extract_numbers(tok["text"], min_value=1000)]
+            prefix = "unsourced_number"      # absent from the chart's OWN tokens -> fabrication-suspect
         elif page_numbers is not None:
             source = page_numbers.get(f["page"] - 1, [])
-        else:
+            prefix = "unverifiable_number"   # raster: numbers are baked into pixels, not on the text layer,
+        else:                                #        so absence is EXPECTED (low-signal), not fabrication
             continue
         flags = fabrication_flags(desc, source, min_value=1000)
         if flags:
-            f["description_flags"] = [f"unsourced_number:{v}" for v in flags]
+            f["description_flags"] = [f"{prefix}:{v}" for v in flags]
 
 
 def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:

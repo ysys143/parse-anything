@@ -61,13 +61,15 @@ def test_gate_figure_descriptions_raster_falls_back_to_page_text_layer():
     # born-digital text-layer numbers instead. A number present in the layer is clean; one absent --
     # including EVERY number when the page has no sourceable numbers -- is flagged (unverifiable, not
     # silently trusted), mirroring the transcription gate.
+    # raster numbers live in pixels, not the text layer, so they flag as `unverifiable_number` (not
+    # `unsourced_number`, which is reserved for a number absent from a chart's OWN tokens).
     raster_bad = {"page": 1, "description": "총계는 88,888건이다"}                 # 88888 not on page -> flag
     raster_ok = {"page": 1, "description": "총계는 51,685건이다"}                  # 51685 on page -> clean
     raster_nosrc = {"page": 2, "description": "총계는 77,777건이다"}               # page 2: empty source -> flag
     _gate_figure_descriptions([raster_bad, raster_ok, raster_nosrc], page_numbers={0: ["51685"]})
-    assert raster_bad["description_flags"] == ["unsourced_number:88888"]
+    assert raster_bad["description_flags"] == ["unverifiable_number:88888"]
     assert "description_flags" not in raster_ok
-    assert raster_nosrc["description_flags"] == ["unsourced_number:77777"]  # no sourceable numbers -> flagged
+    assert raster_nosrc["description_flags"] == ["unverifiable_number:77777"]  # empty source -> flagged
 
     # No PDF at all (page_numbers=None): raster descriptions have no source -> skipped (not flagged).
     raster_nopdf = {"page": 1, "description": "총계는 99,999건이다"}
