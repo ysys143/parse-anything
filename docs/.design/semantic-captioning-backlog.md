@@ -58,7 +58,7 @@
 
 | # | 사안 | 메모 |
 |---|---|---|
-| F1 | `test_config` 2건 실패 = repo `.env`의 실제 `PADDLE_BASE_URL`이 테스트 placeholder 오염 | 테스트 격리(monkeypatch env) 필요, 사전존재 |
+| F1 | ~~`test_config` 2건 실패~~ **[완료 a1aa014]** | 근본원인: `import lightrag`가 python-dotenv로 repo `.env`를 os.environ에 자동 로드 → 전체 스위트에서만 오염. autouse 픽스처로 설정 키 초기화. **전체 528 passed** |
 | F2 | `worktree-b`/`worktree-c`(구 `src/odl_vl` 네임스페이스)가 full-suite `pytest` 수집을 깨뜨림 | `pytest tests/` 스코핑 or worktree 정리 |
 | F3 | ruff가 셸 PATH에 없음(`.venv/bin/ruff` 부재) | 린트는 Pyright 진단으로 대체 중 |
 
