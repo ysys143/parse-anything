@@ -542,6 +542,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             desc_pages = {f["page"] - 1 for f in figures if f.get("description") and not f.get("chart_data")}
             page_numbers = {pi: [t.value for t in number_tokens(pdf_path, pi, min_value=1000)] for pi in desc_pages}
         _gate_figure_descriptions(figures, page_numbers)  # FR-3.2: oracle-gate descriptions (chart_data / text layer)
+        _classify_figure_kinds(figures)  # FR-2 taxonomy: vector chart vs diagram from chart_data presence
         _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
         _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
         from .ontology import compute_font_ranks, tag_nodes
@@ -758,6 +759,33 @@ def _gate_figure_descriptions(figures: list[dict], page_numbers: "dict[int, list
             f["description_flags"] = flags
 
 
+def _classify_figure_kinds(figures: list[dict]) -> None:
+    """FR-2 taxonomy: assign an ontology figure_kind where deterministically inferable. Only vector
+    figures with no kind yet are touched (raster/ODL and VLM-only figures keep their producer's kind;
+    chart-vs-photo on a raster needs pixels -> a VLM signal, out of scope here).
+
+    chart vs diagram: ``chart_data`` alone can't separate them -- a flowchart's box labels also land
+    inside the bbox. The discriminator is NUMERIC DENSITY: a chart is number-dense (axis ticks, values),
+    a diagram is word-dense (box/node labels) or line art. >=2 numeric internal tokens -> CHART, else
+    DIAGRAM. The call is emitted with ``kind_confidence: "low"`` when the numeric evidence is thin or
+    word-dominant (a number-sprinkled flowchart, a single number, or label-less line art) so a downstream
+    router gates on the confidence, not the raw kind. NOTE: ``kind`` is a HETEROGENEOUS field -- raster/
+    ODL and VLM figures carry a producer role ("image"/"figure"), only vector figures get an ontology
+    figure_kind here; nothing validates ``kind in figure_kinds``. Normalizing raster kinds needs a VLM
+    signal (see backlog)."""
+    for f in figures:
+        if f.get("source") != "vector" or f.get("kind"):
+            continue
+        tokens = f.get("chart_data") or []
+        numeric = sum(1 for tok in tokens if any(ch.isdigit() for ch in tok.get("text", "")))
+        f["kind"] = "chart" if numeric >= 2 else "diagram"
+        # thin / ambiguous numeric evidence -> a router must not trust this kind blindly:
+        # a single number, label-less line art, or a "chart" where numbers are only <=half the tokens
+        # (word-dominant, i.e. a number-sprinkled flowchart).
+        if numeric == 1 or not tokens or (numeric >= 2 and numeric * 2 <= len(tokens)):
+            f["kind_confidence"] = "low"
+
+
 def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:
     """Drop standalone lines whose (whitespace-normalised) text is a chart-internal noise label."""
     return "\n".join(ln for ln in markdown.split("\n") if " ".join(ln.split()) not in noise)
@@ -964,6 +992,8 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
         desc = f.get("description") or (grafted[0] if grafted else None)
         if desc:
             node["description"] = desc
+        if f.get("kind_confidence"):  # FR-2: mark a low-confidence kind so routers don't trust it blindly
+            node["kind_confidence"] = f["kind_confidence"]
         if f.get("chart_data"):  # FR-5.5: structured chart content (axis/legend/value tokens + bbox)
             node["chart_data"] = f["chart_data"]
         # description gate flags -- own if present, else the grafted figure's (never emit a description ungated)

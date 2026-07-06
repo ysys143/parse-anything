@@ -164,6 +164,7 @@ class Figure:
     description: str | None = None
     chart_data: list[dict] | None = None       # FR-5.5: structured chart-internal tokens (text + bbox)
     description_flags: list[str] | None = None  # §5-A: description numbers absent from chart_data
+    kind_confidence: str | None = None          # FR-2: "low" when the vector chart/diagram call is thin
     section: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -173,6 +174,7 @@ class Figure:
             "bbox": self.bbox, "file": self.file, "kind": self.kind,
             "source": self.source, "description": self.description,
             "chart_data": self.chart_data, "description_flags": self.description_flags,
+            "kind_confidence": self.kind_confidence,
             "section": self.section,
         })
 

@@ -104,3 +104,26 @@ def test_mark_chart_label_blocks_flags_inside_excludes_caption_and_outside():
     _mark_chart_label_blocks([{"source": "vector", "page": 1, "bbox": [0.0, 90.0, 250.0, 140.0], "id": "f1"}], blocks)
     assert blocks[0].get("figure") == "f1"
     assert not blocks[1].get("figure") and not blocks[2].get("figure")
+
+
+def test_classify_figure_kinds_vector_chart_vs_diagram():
+    from parse_anything.pipeline.output import _classify_figure_kinds
+
+    def data(*texts):
+        return [{"text": t, "bbox": [0, 0, 1, 1]} for t in texts]
+
+    chart = {"source": "vector", "chart_data": data("2020", "2021", "51,685", "12,300")}  # number-dense
+    lineart = {"source": "vector"}                                              # no tokens -> diagram (guess)
+    # a flowchart's box labels also land in chart_data; word-dense with <2 numbers must NOT be a chart
+    flowchart = {"source": "vector", "chart_data": data("승인", "반려", "검토 1단계")}  # 1 number -> diagram
+    # a number-sprinkled flowchart hits >=2 numerics but is word-dominant -> chart, but LOW confidence
+    numbered_flow = {"source": "vector", "chart_data": data("1단계", "2단계", "3단계", "승인", "반려", "보류")}
+    raster = {"source": "odl_image", "kind": "image"}    # producer kind kept
+    vlm = {"source": "vlm", "kind": "figure"}            # kept
+    _classify_figure_kinds([chart, lineart, flowchart, numbered_flow, raster, vlm])
+    assert chart["kind"] == "chart" and "kind_confidence" not in chart   # strong numeric evidence
+    assert lineart["kind"] == "diagram" and lineart["kind_confidence"] == "low"   # label-less guess
+    assert flowchart["kind"] == "diagram" and flowchart["kind_confidence"] == "low"  # 1 number = thin
+    assert numbered_flow["kind"] == "chart" and numbered_flow["kind_confidence"] == "low"  # word-dominant
+    assert raster["kind"] == "image"        # untouched (deterministic pass does not reclassify raster)
+    assert vlm["kind"] == "figure"          # untouched

@@ -18,7 +18,7 @@
 
 | # | 사안 | 우선 | 메모 |
 |---|---|:--:|---|
-| B0 | **`Figure.kind` 분류기** (chart/drawing/form/diagram/photo) | P0 선행 | 트랜치 2 전체의 게이트 + FR-2 taxonomy 갭 해소 |
+| B0 | ~~`Figure.kind` 분류기~~ **[완료]** | — | 벡터 figure를 수치밀도로 chart/diagram 분류(>=2 numeric→chart), 경계는 `kind_confidence:"low"`로 라우터가 게이팅. raster/VLM은 producer kind 유지. **잔여**: kind가 이중 어휘(producer-role "image" vs ontology "chart")—raster normalize는 VLM 신호 필요(B0b) |
 | B1 | FR-4.3 폼 KV 검출기 (AcroForm + 라벨-값 페어링) | P1 | 골든: form/handwriting/insurance |
 | B2 | FR-5.1 도면 치수·공차 검출기 | P1 | §5-B `sum_residual` 결합. 골든: drawing_dim |
 | B3 | FR-5.2 표제란 검출기 (폼 KV 공유) | P2 | 골든: schneckenwelle 표제란 |
