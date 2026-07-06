@@ -4,6 +4,22 @@
 > [design](./semantic-captioning-design.md) 기준. 우선순위: P0=관문/선행, P1=핵심, P2=마감, P3=인프라.
 > 참조 상용 파서 구체 분석은 `.local/`(미커밋). 코퍼스 66MB도 `.local/` 격리.
 
+## 다음 우선순위 (D4 실채점 근거 재정렬, 2026-07-06)
+
+첫 실채점(골든 10건, 결정적 + live Paddle전사/Gemini캡션)이 드러낸 사실: **구조 그라운딩·캡션 생성은 작동**
+(G_grounding 9/10, must_not 10/10, 캡션 고품질). 실패(적용 42체크 중 18)는 **소수 근본원인에 집중** — verbatim
+값 recall(C_entity 9)과 전면 래스터 이미지(drawing_dim 4체크=원인 1개). 이에 맞춰 다음 착수 순서:
+
+- **T1a — verbatim 값 recall** (실패의 절반): B 검출기(dimensions/title_block/forms)가 좁게 게이트돼 ID·코드·
+  치수 토큰(SFR-000·16MnCr5·BLEU값·15일)을 채점 필드로 못 올림. 결정적 whole-doc에서도 FAIL → 페이지 스코프
+  탓 아님. 값 추출 레이어 확장(게이트 완화 or 표/키-값 recall)이 가장 큰 레버. → B1/B2/B3 잔여와 접점.
+- **T1b (=D5) — 전면 래스터 도면 캡셔닝**: 텍스트레이어 없는 전면 이미지를 통째 describable figure로. C1 접점.
+- **T1c (=D4 잔여) — 공정 비교**: 결정적도 라벨 페이지만 슬라이스(현재 whole-doc↔page 비대칭). run_bench 옵션화.
+- **T2 (=D3) — 채점 신뢰도**: A_unit 구조 매칭, B_arithmetic line_items/totals, G_grounding IoU.
+- **T3 — 남은 기능(C 중난도)**: C4 손글씨/도장 라우팅 · C5 양방향 recall 검수 · C6 뷰어 통합.
+- **T4 — 데이터·위생**: D1 순수 도식 골든 · D2 한국어 필기 골든 · E1~E3 코퍼스 · **F2 worktree가 full-suite
+  pytest 수집 깨뜨림**.
+
 ## A. 구현 — 트랜치 1 잔여
 
 | # | 사안 | 우선 | 근거/메모 |
