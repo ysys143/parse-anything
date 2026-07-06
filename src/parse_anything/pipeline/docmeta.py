@@ -69,6 +69,7 @@ def build_meta(
     source_id: str = "default",
     external_id: str | None = None,
     ingested_from: str | None = None,
+    original_filename: str | None = None,
     mode: str = "",
     n_pages: int = 0,
 ) -> DocumentMeta:
@@ -76,7 +77,8 @@ def build_meta(
     return DocumentMeta(
         document_id=short,
         content_sha256=full,
-        original_filename=Path(pdf_path).name,
+        # override lets an image-wrapped run record the real image name, not the throwaway temp .pdf
+        original_filename=original_filename or Path(pdf_path).name,
         source_id=source_id,
         external_id=external_id,
         ingested_from=ingested_from or str(pdf_path),

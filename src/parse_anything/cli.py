@@ -10,8 +10,11 @@ deterministic. The mode is the lever -- det_vlm without a key is a loud error, n
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 from parse_anything.cli_support import Runtime, safe_client
@@ -39,8 +42,51 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _wrap_image_input(args, runtime: Runtime) -> str | None:
+    """FR-1: if ``--pdf`` is actually an image, wrap it into a thin 1-page PDF and repoint ``args`` at it,
+    keeping the ORIGINAL image path as provenance (``ingested_from``) and filename (``original_filename``,
+    so document.json shows the image, not the throwaway temp). Returns the temp PDF path for the caller to
+    clean up, or None when the input is already a PDF. Raises on an undecodable image, but never leaks the
+    temp file it created (cleaned up before the raise propagates). Warns when a multi-frame image drops
+    pages (only frame 1 is wrapped)."""
+    from .pipeline.imagewrap import image_to_pdf, is_image
+
+    if not is_image(args.pdf):
+        return None
+    original = args.pdf
+    fd, wrapped = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+    try:
+        n_frames = image_to_pdf(original, wrapped)
+    except Exception:   # noqa: BLE001 -- corrupt/undecodable image: clean up the mkstemp file, re-raise
+        with contextlib.suppress(OSError):
+            os.unlink(wrapped)
+        raise
+    if n_frames > 1:   # data loss must not be silent -- the user gave N pages, we kept one
+        print(f"warning: multi-frame image; only frame 1 of {n_frames} wrapped ({Path(original).name})",
+              file=runtime.stdout)
+    args.ingested_from = args.ingested_from or original   # the image, not the throwaway wrapper, is the origin
+    args.original_filename = Path(original).name
+    args.pdf = wrapped
+    return wrapped
+
+
 def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     args = _parse_args(argv)
+    try:
+        wrapped_pdf = _wrap_image_input(args, runtime)   # FR-1: image input flows through the normal PDF path
+    except Exception as exc:   # noqa: BLE001 -- an unreadable image is a clean input error, not a traceback
+        print(f"error: could not read image input ({type(exc).__name__})", file=runtime.stdout)
+        return 2
+    try:
+        return _run(args, runtime, env_file=env_file)
+    finally:
+        if wrapped_pdf is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(wrapped_pdf)
+
+
+def _run(args, runtime: Runtime, *, env_file: Path | None = None) -> int:
     settings = load_settings(env_file=env_file or Path(".env"), environ=runtime.environ)
     key = settings.gemini_api_key
     out_root = args.out or (runtime.environ or {}).get("PARSE_ANYTHING_OUT_DIR") or "out"
@@ -117,6 +163,7 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
     result = run_document(
         args.pdf, mode=mode, vlm_client=client, api_key=key or "",
         source_id=args.source_id, external_id=args.external_id, ingested_from=args.ingested_from,
+        original_filename=getattr(args, "original_filename", None),   # set only for image-wrapped input (FR-1)
         options=options, primary_transcribe=primary_transcribe,
     )
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
@@ -154,7 +201,8 @@ def run_cli(argv, runtime: Runtime, *, env_file: Path | None = None) -> int:
 def _parse_args(argv):
     parser = argparse.ArgumentParser(prog="parse-anything",
                                      description="Deterministic-first, ontology-driven PDF -> agent-ready layered artifacts + RAG chunks")
-    parser.add_argument("--pdf", required=True)
+    parser.add_argument("--pdf", required=True,
+                        help="input document: a PDF, or an image (PNG/JPG/TIFF/...) wrapped into a 1-page PDF (FR-1)")
     parser.add_argument("--out", default=None, help="output root; default $PARSE_ANYTHING_OUT_DIR or ./out")
     parser.add_argument("--mode", choices=["deterministic", "det_vlm"], default="det_vlm",
                         help="deterministic (ODL+pypdfium2) or det_vlm (+VLM, value-oracle gated); default det_vlm")

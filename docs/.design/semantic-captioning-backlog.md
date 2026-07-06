@@ -30,7 +30,7 @@
 
 | # | 사안 | 우선 |
 |---|---|:--:|
-| C1 | FR-1 이미지 직접 입력(JPG/PNG → PDF 래핑) | P2 하 |
+| C1 | ~~FR-1 이미지 직접 입력(JPG/PNG → PDF 래핑)~~ **[완료]** — `imagewrap.image_to_pdf`(Pillow, 코어 dep)가 이미지를 1페이지 PDF로 래핑, cli 진입점(`_wrap_image_input`)에서 감지→래핑→기존 결정적/스캔 경로. 적대적 리뷰 반박: 래핑 PDF **바이트 결정성**(Pillow가 temp 파일명을 `/Title`·wall-clock을 date로 embed→고정값 pin, 안 하면 document_id 드리프트로 재처리 skip 무력화), 손상 이미지 graceful(임시파일 정리+exit 2), `original_filename` 원본 스레딩(temp명 아님), 멀티프레임 페이지 손실 경고. TIFF 멀티페이지는 1프레임만(v1) | P2 하 |
 | C2 | ~~FR-4.2 표 HTML view 방출~~ **[완료]** — `_table_html(cells)`가 span 보존 `<table>` 방출(md는 span 소실), `tables/<id>.html` + `views.html`. 적대적 리뷰 반박: 헤더 rowspan이 `<thead>` 경계에서 clamp되던 것을 단일 `<tbody>`(행0=`<th>`)로 수정(다단 헤더 손상 방지, ODL 직렬화기 대조로 span-생략 규약 확증). TEDS 스코어러는 미착수(benchmarks 선택) | P2 하 |
 | C3 | FR-6 사용자향 confidence 표기 + 정확도차이 고지 | P2 하 |
 | C4 | FR-3.1 손글씨·주석·도장 라우팅(PaddleOCR 옵션 활성) | P2 중 |

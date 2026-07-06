@@ -83,6 +83,7 @@ def run_document(
     source_id: str = "default",
     external_id: str | None = None,
     ingested_from: str | None = None,
+    original_filename: str | None = None,
     options: Any | None = None,
     primary_transcribe: Any | None = None,
 ) -> DocumentResult:
@@ -92,5 +93,5 @@ def run_document(
     return assemble_document(
         pdf_path, mode=mode, vlm_client=vlm_client, api_key=api_key, odl_runner=odl_runner,
         source_id=source_id, external_id=external_id, ingested_from=ingested_from,
-        options=options or DetVlmOptions(), primary_transcribe=primary_transcribe,
+        original_filename=original_filename, options=options or DetVlmOptions(), primary_transcribe=primary_transcribe,
     )

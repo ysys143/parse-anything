@@ -128,6 +128,7 @@ def assemble_document(
     source_id: str = "default",
     external_id: str | None = None,
     ingested_from: str | None = None,
+    original_filename: str | None = None,
     options: DetVlmOptions = DetVlmOptions(),
     primary_transcribe: Any | None = None,
 ) -> DocumentResult:
@@ -160,7 +161,8 @@ def assemble_document(
             )
         else:
             raise ValueError(f"unknown mode: {mode!r}")
-    meta = build_meta(pdf_path, source_id=source_id, external_id=external_id, ingested_from=ingested_from, mode=mode, n_pages=n)
+    meta = build_meta(pdf_path, source_id=source_id, external_id=external_id, ingested_from=ingested_from,
+                      original_filename=original_filename, mode=mode, n_pages=n)
     return DocumentResult(tuple(outcomes), structure=odl_doc, meta=meta)
 
 
