@@ -190,6 +190,6 @@ def test_structure_export_carries_context_and_zones():
                           context={"doco": "http://purl.org/spar/doco/"},
                           zones=[{"zone": "references", "pages": [9, 10]}])
     d = exp.to_dict()
-    assert d["contract"]["version"] == "1.2"  # bumped for Figure.chart_data/description_flags (additive)
+    assert d["contract"]["version"] == "1.3"  # bumped for Figure.diagram_graph (additive)
     assert d["@context"]["doco"].endswith("/doco/") and d["zones"][0]["zone"] == "references"
     assert StructureExport.from_dict(d).to_dict() == d

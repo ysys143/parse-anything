@@ -98,14 +98,18 @@ def build_diagram_graph(tokens: list[dict], connectors: "list[dict] | None" = No
     seen: set[tuple] = set()
     for c in connectors or []:
         sp, dp = c.get("src_point"), c.get("dst_point")
-        if sp is None or dp is None:
+        if sp is not None and dp is not None:
+            ambiguous = False                          # explicit endpoints = caller-trusted direction
+        elif c.get("points"):                          # real polyline terminals, but NO reliable direction
+            pts = c["points"]                          # (used by vecpaths: link by true endpoints, not bbox
+            sp, dp = pts[0], pts[-1]                    #  corners -- an L-connector's terminals are off-diagonal)
+            ambiguous = True
+        else:
             bx = c.get("bbox")
             if not bx:
                 continue
-            sp, dp = [bx[0], bx[1]], [bx[2], bx[3]]     # no reliable direction
+            sp, dp = [bx[0], bx[1]], [bx[2], bx[3]]     # no reliable direction (fallback: bbox diagonal)
             ambiguous = True
-        else:
-            ambiguous = False
         s = _nearest(sp, nodes, radius)
         d = _nearest(dp, nodes, radius)
         if s is None or d is None or s is d:            # dangling end or self-loop -> not an edge

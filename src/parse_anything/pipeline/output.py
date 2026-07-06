@@ -548,6 +548,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             page_numbers = {pi: [t.value for t in number_tokens(pdf_path, pi, min_value=1000)] for pi in desc_pages}
         _gate_figure_descriptions(figures, page_numbers)  # FR-3.2: oracle-gate descriptions (chart_data / text layer)
         _classify_figure_kinds(figures)  # FR-2 taxonomy: vector chart vs diagram from chart_data presence
+        if pdf_path:  # FR-5.3/5.4: attach a relation graph to each vector diagram figure
+            _attach_diagram_graphs(figures, pdf_path)
         _mark_chart_label_blocks(figures, blocks)  # flag the same labels in the JSON graph (filterable)
         _resolve_cross_references(blocks, tables, figures)  # in-text 表N/図N mentions -> refs edges
         from .ontology import compute_font_ranks, tag_nodes
@@ -807,6 +809,26 @@ def _classify_figure_kinds(figures: list[dict]) -> None:
             f["kind_confidence"] = "low"
 
 
+def _attach_diagram_graphs(figures: list[dict], pdf_path: str) -> None:
+    """FR-5.3/5.4: give each vector DIAGRAM figure a ``diagram_graph`` -- nodes are its ``chart_data``
+    tokens (box labels), edges are the stroked connector polylines running between them, recovered from
+    the page's vector geometry (``vecpaths.detect_connectors``). Connectors carry no reliable arrow
+    direction, so every edge is ``direction:"ambiguous"`` (see ``build_diagram_graph``). Only diagram-kind
+    figures are touched -- a chart is never a relation graph -- and a graph is emitted only when it has
+    both nodes AND at least one connector edge, so a diagram with no drawn links stays graph-less."""
+    from .diagram import build_diagram_graph
+    from .vecpaths import detect_connectors
+    for f in figures:
+        # a LOW-confidence diagram call (label-less line art / number-sparse) is exactly the case the
+        # classifier says not to trust -- treating a chart's plot lines as connectors there fabricates a
+        # graph, so we gate on confidence too (the classifier's own escape hatch, honored here not just downstream)
+        if (f.get("source") == "vector" and f.get("kind") == "diagram" and f.get("kind_confidence") != "low"
+                and f.get("chart_data") and f.get("bbox")):
+            graph = build_diagram_graph(f["chart_data"], detect_connectors(pdf_path, f["page"] - 1, f["bbox"]))
+            if graph["nodes"] and graph["edges"]:   # only a graph with real connectors is worth emitting
+                f["diagram_graph"] = graph
+
+
 def _suppress_chart_noise(markdown: str, noise: set[str]) -> str:
     """Drop standalone lines whose (whitespace-normalised) text is a chart-internal noise label."""
     return "\n".join(ln for ln in markdown.split("\n") if " ".join(ln.split()) not in noise)
@@ -1017,6 +1039,8 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
             node["kind_confidence"] = f["kind_confidence"]
         if f.get("chart_data"):  # FR-5.5: structured chart content (axis/legend/value tokens + bbox)
             node["chart_data"] = f["chart_data"]
+        if f.get("diagram_graph"):  # FR-5.3/5.4: nodes + (undirected) connector edges of a diagram
+            node["diagram_graph"] = f["diagram_graph"]
         # description gate flags -- own if present, else the grafted figure's (never emit a description ungated)
         dflags = f.get("description_flags") or (grafted[1] if grafted else None)
         if dflags:
