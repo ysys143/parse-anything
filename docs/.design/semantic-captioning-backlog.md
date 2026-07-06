@@ -32,7 +32,7 @@
 |---|---|:--:|
 | C1 | ~~FR-1 이미지 직접 입력(JPG/PNG → PDF 래핑)~~ **[완료]** — `imagewrap.image_to_pdf`(Pillow, 코어 dep)가 이미지를 1페이지 PDF로 래핑, cli 진입점(`_wrap_image_input`)에서 감지→래핑→기존 결정적/스캔 경로. 적대적 리뷰 반박: 래핑 PDF **바이트 결정성**(Pillow가 temp 파일명을 `/Title`·wall-clock을 date로 embed→고정값 pin, 안 하면 document_id 드리프트로 재처리 skip 무력화), 손상 이미지 graceful(임시파일 정리+exit 2), `original_filename` 원본 스레딩(temp명 아님), 멀티프레임 페이지 손실 경고. TIFF 멀티페이지는 1프레임만(v1) | P2 하 |
 | C2 | ~~FR-4.2 표 HTML view 방출~~ **[완료]** — `_table_html(cells)`가 span 보존 `<table>` 방출(md는 span 소실), `tables/<id>.html` + `views.html`. 적대적 리뷰 반박: 헤더 rowspan이 `<thead>` 경계에서 clamp되던 것을 단일 `<tbody>`(행0=`<th>`)로 수정(다단 헤더 손상 방지, ODL 직렬화기 대조로 span-생략 규약 확증). TEDS 스코어러는 미착수(benchmarks 선택) | P2 하 |
-| C3 | FR-6 사용자향 confidence 표기 + 정확도차이 고지 | P2 하 |
+| C3 | ~~FR-6 사용자향 confidence 표기 + 정확도차이 고지~~ **[완료]** — `_quality_summary`가 document.json 최상위 `quality` 블록 방출(structure.json 계약에서는 strip): elements/flagged_elements, 요소레벨 `flag_counts`(unsourced/unverifiable/unit_unstated), low_confidence_figures, pages_flagged, 페이지레벨 `page_flag_counts`. 적대적 리뷰 반박(HIGH): oracle의 **주경로인 페이지 전사 fabrication**(`unsourced_number`)과 완전성 갭(`odl_dropped_number`)이 pages_flagged 카운트에만 묻혀 "oracle unsourced=K"가 과소보고되던 것을 `page_flag_counts` prefix 집계로 보강. 요소별 confidence(description_flags·kind_confidence)는 기존 semantic 노드에 이미 노출 | P2 하 |
 | C4 | FR-3.1 손글씨·주석·도장 라우팅(PaddleOCR 옵션 활성) | P2 중 |
 | C5 | FR-3.3 양방향 검수(텍스트레이어에 있는데 VLM 누락 = recall flag) | P2 중 |
 | C6 | FR-7 뷰어 통합(원본 bbox 오버레이 + 마커-캡션) | P2 중 |

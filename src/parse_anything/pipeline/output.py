@@ -1396,6 +1396,46 @@ def _extract_document_fields(blocks: list[dict]) -> dict:
     return ex
 
 
+def _quality_summary(pages, blocks: list[dict], tables: list[dict], figures: list[dict]) -> dict:
+    """FR-6: a document-level honesty report so a consumer sees, at a glance, HOW MUCH of the extraction is
+    uncertain -- not just the content. Aggregates the uncertainty signals the pipeline already computes,
+    at two levels. ELEMENT level -- the oracle's figure-description gate flags (``unsourced_number`` = a
+    number absent from the chart's own tokens, ``unverifiable_number`` = a raster number with no
+    born-digital source, ``unit_unstated`` = a dropped scale) + low-confidence figure-kind calls. PAGE
+    level -- the per-page flags, which carry the oracle's PAGE-text fabrication (``unsourced_number``) and
+    the completeness recall gap (``odl_dropped_number`` = a born-digital number ODL dropped); tallying only
+    ``pages_flagged`` would hide WHICH signal fired, under-reporting the very 'oracle unsourced=K' the
+    design calls for. Counts only -- the flags stay on the elements/pages for drill-down. This is the
+    '정확도차이 고지' surface."""
+    elements = [*blocks, *tables, *figures]
+    flag_counts: dict[str, int] = {}
+    flagged = 0
+    for e in elements:
+        fl = e.get("description_flags")
+        if fl:
+            flagged += 1
+            for entry in fl:
+                prefix = entry.split(":", 1)[0]
+                flag_counts[prefix] = flag_counts.get(prefix, 0) + 1
+    live_pages = [p for p in pages if p.route != "folded"]   # folded pages are merged away -- not user-facing
+    page_flag_counts: dict[str, int] = {}
+    pages_flagged = 0
+    for p in live_pages:
+        if p.flags:
+            pages_flagged += 1
+            for entry in p.flags:
+                prefix = entry.split(":", 1)[0]
+                page_flag_counts[prefix] = page_flag_counts.get(prefix, 0) + 1
+    return {
+        "elements": len(elements),
+        "flagged_elements": flagged,
+        "flag_counts": flag_counts,   # element-level: {unsourced_number|unverifiable_number|unit_unstated: n}
+        "low_confidence_figures": sum(1 for f in figures if f.get("kind_confidence") == "low"),
+        "pages_flagged": pages_flagged,
+        "page_flag_counts": page_flag_counts,   # page-level: {unsourced_number|odl_dropped_number|...: n}
+    }
+
+
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
                          sections: list[dict], page_labels: dict[int, str | None],
@@ -1427,6 +1467,7 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
     doc["blocks"] = [_l0(b) for b in blocks]
     doc["tables"] = [_l0(t) for t in tables]
     doc["figures"] = [_l0(f) for f in figures]
+    doc["quality"] = _quality_summary(result.pages, blocks, tables, figures)  # FR-6: uncertainty at a glance
     if ontology is not None:   # additive top-level: injected ontology + Layer-1 role overlay + zone summary
         doc["@context"] = _SEMANTIC_CONTEXT
         doc["ontology"] = ontology.profile_stamp()
@@ -1441,7 +1482,7 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
         # StructureExport.from_dict re-emits UNKNOWN top-level keys via its `document` passthrough, so
         # ``extractions`` (a document.json-only overlay, not a typed contract field) is stripped here to keep
         # the structure contract surface clean -- it lives in document.json, the source of truth.
-        struct_doc = {k: v for k, v in doc.items() if k != "extractions"}
+        struct_doc = {k: v for k, v in doc.items() if k not in ("extractions", "quality")}
         (out / "document.structure.json").write_text(
             json.dumps(StructureExport.from_dict(struct_doc).to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8")
