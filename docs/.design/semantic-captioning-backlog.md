@@ -8,10 +8,10 @@
 
 | # | 사안 | 우선 | 근거/메모 |
 |---|---|:--:|---|
-| A1 | **FR-3.2 Slice 2**: describe를 raster content figure로 확장 = **F14 "figure 서술 금지" 정책의 명시적 반전** | P0 결정 | cost·behavior 변경 큼 → 사용자 결정 필요. autopilot 상태에 deferred 기록 |
-| A2 | **Slice 3**: `chart_data`/`description_flags`를 **Figure export 계약**(contracts.py/structure.py)으로 승격 | P1 | 현재 semantic view에만 노출. 계약 버전 bump 동반 |
-| A3 | **§5-A 단위 토큰 게이팅 강화**: 현 oracle `min_value=1000`이라 %·시:분·작은 수치 미검증 | P1 | 통계 골든(시:분·%)이 실제로 잡히려면 단위 정규화 소스 필요 |
-| A4 | grafted(raster) description은 chart_data 없어 미게이팅(리뷰 LOW, 설계상 스킵) | P2 | "소스 없으면 게이트 없음" 철학과 정합, 필요 시 FR화 |
+| A1 | ~~FR-3.2 Slice 2: describe를 raster content figure로 확장~~ **[완료 6fe3a49]** | — | raster content figure도 description 보유. **불변식 유지**: chart_data 없으면 페이지 텍스트레이어로 게이팅, 검증 불가 수치는 flag. F14(전사 프롬프트)는 불변 |
+| A2 | ~~Slice 3: chart_data/description_flags를 Figure export 계약으로 승격~~ **[완료 6fe3a49]** | — | STRUCTURE 계약 1.1→1.2(additive). structure.json까지 보존 |
+| A3 | **§5-A 단위 토큰 게이팅 강화**: 현 oracle `min_value=1000`이라 %·시:분·작은 수치 미검증 | P1 | 통계 골든(시:분·%)이 실제로 잡히려면 단위 정규화 소스 필요. **트랜치 1 잔여 유일 항목** |
+| A5 | raster description flag 노이즈 관찰: 텍스트레이어에 없는 raster 차트 수치는 전부 flag(보수적) | P2 | 의도된 동작이나 노이즈 과다 시 confidence 등급화 검토 |
 
 ## B. 구현 — 트랜치 2 (그린필드 검출기, 미착수)
 
