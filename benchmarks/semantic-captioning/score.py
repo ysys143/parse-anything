@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""Phase 9 eval harness (scaffold) for the semantic-captioning golden labels.
+
+Scores a pipeline's per-sample output against gt/*.json golden assertions,
+encoding plan risks: A(unit) B(arithmetic) C(entity) G(grounding) + caption
+must/must-not. The semantic-captioning pipeline does not exist yet, so
+``--selftest`` exercises the checks against synthetic good/bad outputs -- the
+bad one emulates the reference parser's observed failures (unit-stripped
+caption, paraphrased entity, broken sum) so the harness itself is verified.
+
+Pipeline output schema (per label, JSON):
+  {
+    "caption": "<figure/chart/drawing description>",
+    "elements": [{"kind": "...", "bbox": [x0,y0,x1,y1]}, ...],
+    "structured": { ... mirrors the label's structured_expected ... }
+  }
+
+Usage:
+  python score.py --selftest
+  python score.py --out <dir>     # score <dir>/<label-stem>.json against each gt label
+  python score.py --list
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+GT_DIR = Path(__file__.rsplit("/", 1)[0]) / "gt"
+
+
+# --- helpers ---------------------------------------------------------------
+
+def flatten_text(obj) -> str:
+    """All string leaves of a nested structure, space-joined (for substring scans)."""
+    out: list[str] = []
+    def walk(o):
+        if isinstance(o, str):
+            out.append(o)
+        elif isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, (list, tuple)):
+            for v in o:
+                walk(v)
+        elif o is not None:
+            out.append(str(o))
+    walk(obj)
+    return " ".join(out)
+
+
+def sum_residual(parts, total) -> float:
+    """abs(sum(parts) - total) -- mirrors guards.sum_residual (F7)."""
+    return abs(sum(parts) - total)
+
+
+def _bboxes(output: dict) -> int:
+    return sum(1 for e in output.get("elements", []) if e.get("bbox"))
+
+
+# --- checks (each returns (check_id, status, detail)) ----------------------
+# status: PASS / FAIL / SKIP
+
+def check_must_not(label, output):
+    cap = (output.get("caption") or "") + " " + flatten_text(output.get("structured"))
+    bad = [t for t in label.get("caption_expected", {}).get("must_not_include", []) if t and t in cap]
+    return ("caption_must_not", "FAIL" if bad else "PASS", f"present={bad}" if bad else "ok")
+
+
+def check_must_include(label, output):
+    toks = label.get("caption_expected", {}).get("must_include", [])
+    if not toks:
+        return ("caption_must_include", "SKIP", "no tokens")
+    cap = (output.get("caption") or "")
+    miss = [t for t in toks if t not in cap]
+    return ("caption_must_include", "FAIL" if miss else "PASS", f"missing={miss}" if miss else "ok")
+
+
+def check_A_unit(label, output):
+    a = label.get("risk_checks", {}).get("A_unit")
+    if not a:
+        return ("A_unit", "SKIP", "n/a")
+    units = a.get("expected_unit")
+    units = units if isinstance(units, list) else [units]
+    cap = (output.get("caption") or "") + " " + flatten_text(output.get("structured"))
+    if any(u and u.lower() in ("none", "n/a") for u in units):  # negative control
+        return ("A_unit", "PASS", "no-unit expected (negative control)")
+    hit = [u for u in units if u and u in cap]
+    return ("A_unit", "PASS" if hit else "FAIL", f"units_found={hit}" if hit else f"none of {units} present")
+
+
+def check_B_arithmetic(_, output):
+    st = output.get("structured", {})
+    li = st.get("line_items")
+    tot = st.get("totals")
+    if not (li and tot):
+        return ("B_arithmetic", "SKIP", "no line_items/totals in output")
+    prices = [x.get("price", 0) for x in li]
+    r1 = sum_residual(prices, tot.get("sub_total", 0))
+    comps = [tot.get(k, 0) for k in ("sub_total", "service", "pb1", "rounding")]
+    r2 = sum_residual(comps, tot.get("grand_total", 0))
+    ok = r1 == 0 and r2 == 0
+    return ("B_arithmetic", "PASS" if ok else "FAIL", f"residuals sub={r1} grand={r2}")
+
+
+def check_C_entity(label, output):
+    c = label.get("risk_checks", {}).get("C_entity")
+    if not c:
+        return ("C_entity", "SKIP", "n/a")
+    verbatim = [v for v in c.get("verbatim", []) if v and not v.endswith("as written") and " as " not in v]
+    blob = (output.get("caption") or "") + " " + flatten_text(output.get("structured"))
+    miss = [v for v in verbatim if v not in blob]
+    return ("C_entity", "FAIL" if miss else "PASS", f"missing/paraphrased={miss}" if miss else "ok")
+
+
+def check_G_grounding(label, output):
+    exp = len(label.get("elements_expected", []))
+    got = _bboxes(output)
+    if exp == 0:
+        return ("G_grounding", "SKIP", "no elements")
+    return ("G_grounding", "PASS" if got >= 1 else "FAIL", f"{got} bbox'd elements (expected ~{exp})")
+
+
+CHECKS = [check_must_not, check_must_include, check_A_unit,
+          check_B_arithmetic, check_C_entity, check_G_grounding]
+
+
+def score_one(label, output):
+    return [fn(label, output) for fn in CHECKS]
+
+
+# --- selftest: synthesize good / bad outputs from a label ------------------
+
+def synth_good(label) -> dict:
+    st = label.get("structured_expected", {})
+    a = label.get("risk_checks", {}).get("A_unit", {})
+    units = a.get("expected_unit", [])
+    units = units if isinstance(units, list) else [units]
+    unit_str = " ".join(u for u in units if u and u.lower() not in ("none", "n/a"))
+    verb = " ".join(v for v in label.get("risk_checks", {}).get("C_entity", {}).get("verbatim", [])
+                    if v and " as " not in v and not v.endswith("as written"))
+    inc = " ".join(label.get("caption_expected", {}).get("must_include", []))
+    cap = f"{inc} {unit_str} {verb}".strip()
+    return {"caption": cap,
+            "elements": [{"kind": e.get("kind"), "bbox": [0, 0, 1, 1]}
+                         for e in label.get("elements_expected", [])],
+            "structured": st}
+
+
+def synth_bad(label) -> dict:
+    """Emulate the reference parser's failures: strip units, paraphrase an entity,
+    break the sum."""
+    out = synth_good(label)
+    mn = label.get("caption_expected", {}).get("must_not_include", [])
+    # unit-stripped / fabricated: inject a must_not token if the label defines one
+    out["caption"] = (mn[0] if mn else "").join([out["caption"], ""]) if mn else out["caption"]
+    # drop units and one verbatim entity from the caption
+    a = label.get("risk_checks", {}).get("A_unit", {})
+    units = a.get("expected_unit", [])
+    units = units if isinstance(units, list) else [units]
+    for u in units:
+        if u:
+            out["caption"] = out["caption"].replace(u, "")
+    verb = [v for v in label.get("risk_checks", {}).get("C_entity", {}).get("verbatim", [])
+            if v and " as " not in v]
+    if verb:
+        out["caption"] = out["caption"].replace(verb[0], "<paraphrased>")
+        dumped = json.dumps(out["structured"], ensure_ascii=False)  # keep non-ASCII so replace matches
+        out["structured"] = json.loads(dumped.replace(verb[0], "<paraphrased>"))
+    # break arithmetic
+    st = out.get("structured", {})
+    if isinstance(st.get("totals"), dict):
+        st["totals"] = dict(st["totals"], sub_total=st["totals"].get("sub_total", 0) + 999)
+    return out
+
+
+def run_selftest(labels) -> int:
+    print("=== SELFTEST (synthetic good should PASS, bad should FAIL the risk checks) ===")
+    bad_leaks = 0
+    for lb in labels:
+        name = lb["domain"] + "/" + Path(lb["_file"]).stem
+        good = score_one(lb, synth_good(lb))
+        bad = score_one(lb, synth_bad(lb))
+        g_fail = [c for c, s, _ in good if s == "FAIL"]
+        b_fail = [c for c, s, _ in bad if s == "FAIL"]
+        gstat = "ok" if not g_fail else f"UNEXPECTED-FAIL {g_fail}"
+        # bad output must trip at least one risk check (else the check is toothless)
+        toothless = not b_fail
+        if g_fail or toothless:
+            bad_leaks += 1
+        print(f"  {name:34} good={gstat:24} bad_caught={b_fail or 'NONE(!)'}")
+    print(f"--- {'OK' if bad_leaks == 0 else f'{bad_leaks} PROBLEM(S)'} ---")
+    return 1 if bad_leaks else 0
+
+
+def score_out(labels, out_dir: Path) -> int:
+    print(f"=== SCORE against {out_dir} ===")
+    total_fail = 0
+    for lb in labels:
+        stem = Path(lb["_file"]).stem
+        of = out_dir / f"{stem}.json"
+        if not of.exists():
+            print(f"  {stem:24} MISSING output ({of})")
+            total_fail += 1
+            continue
+        output = json.loads(of.read_text())
+        res = score_one(lb, output)
+        fails = [c for c, s, _ in res if s == "FAIL"]
+        total_fail += len(fails)
+        print(f"  {stem:24} " + " ".join(f"{c}:{s}" for c, s, _ in res))
+    print(f"--- {total_fail} failing check(s) ---")
+    return 1 if total_fail else 0
+
+
+def load_labels():
+    labels = []
+    for f in sorted(GT_DIR.glob("*.json")):
+        d = json.loads(f.read_text())
+        d["_file"] = f.name
+        labels.append(d)
+    return labels
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--out", type=str, help="dir with <label-stem>.json pipeline outputs")
+    ap.add_argument("--list", action="store_true")
+    a = ap.parse_args()
+    labels = load_labels()
+    if a.list:
+        for lb in labels:
+            print(f"{lb['_file']:26} domain={lb['domain']:12} kind={lb.get('figure_kind')}")
+        return 0
+    if a.selftest:
+        return run_selftest(labels)
+    if a.out:
+        return score_out(labels, Path(a.out))
+    ap.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
