@@ -84,3 +84,21 @@ def test_gated_requires_a_diameter_or_degree_symbol_signal():
     assert detect_dimensions_gated([_t("Ø17"), _t("R50"), _t("114.5")])          # diameter -> drawing
     assert detect_dimensions_gated([_t("17°"), _t("22°"), _t("50")])             # >=2 degree-symbols -> drawing
     assert detect_dimensions_gated([_t("±0.5"), _t("R2"), _t("90 deg")]) == []   # none of the strong signals
+
+
+def test_b2b_reconcile_dimensions_is_a_numeric_candidate():
+    from parse_anything.pipeline.dimensions import reconcile_dimensions
+
+    def _dims(*vals):
+        return [{"value": str(v), "kind": "length"} for v in vals]
+
+    # a candidate carries the numbers + residual; it makes NO 'verified' claim (no reconciled flag)
+    r = reconcile_dimensions(_dims(137, 678, 715, 1529))          # 137+678+715=1530 vs 1529
+    assert r == {"total": 1529.0, "parts": [137.0, 678.0, 715.0], "sum": 1530.0, "residual": 1.0}
+    assert "reconciled" not in r and "verified" not in r
+    assert reconcile_dimensions(_dims(13, 50.5, 51, 114.5))["residual"] == 0     # clean chain -> residual 0
+    # thousands-separated lengths are parsed whole (VEC2): 4000+3500+4500 == 12000
+    assert reconcile_dimensions(_dims("4,000", "3,500", "4,500", "12,000"))["residual"] == 0
+    # unrelated dimensions (parts nowhere near the overall) -> no candidate
+    assert reconcile_dimensions(_dims(17, 32, 500)) is None
+    assert reconcile_dimensions(_dims(114.5, 68)) is None            # <3 lengths -> no claim

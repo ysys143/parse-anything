@@ -1288,7 +1288,7 @@ def _extract_document_fields(blocks: list[dict]) -> dict:
     only what their gates surface (FR-4.3 / 5.1 / 5.2). On ordinary prose every gate returns empty, so the
     ``extractions`` overlay is simply absent -- this never fires on a paper/report. Values are quoted
     verbatim by the detectors (§5-C). B4 diagram graphs need connector geometry (no producer yet) -> B4b."""
-    from .dimensions import detect_dimensions_gated
+    from .dimensions import detect_dimensions_gated, reconcile_dimensions
     from .forms import detect_form_fields_gated
     from .title_block import detect_title_block_gated
 
@@ -1303,7 +1303,10 @@ def _extract_document_fields(blocks: list[dict]) -> dict:
             forms.append({"page": page, "fields": ff})
         dd = detect_dimensions_gated(pbs)
         if dd:
-            dims.append({"page": page, "dimensions": dd})
+            entry = {"page": page, "dimensions": dd}
+            if (arith := reconcile_dimensions(dd)):   # §5-B: chain-to-overall arithmetic CANDIDATE (unverified)
+                entry["arithmetic_candidate"] = arith
+            dims.append(entry)
             # a title block lives on a drawing page -- only look for one where dimensions were found, so a
             # recipe/packaging page whose bottom-right happens to read '재료:/날짜:' is not mistaken for one.
             if (tb := detect_title_block_gated(pbs)):

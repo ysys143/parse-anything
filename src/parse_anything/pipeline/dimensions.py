@@ -77,6 +77,32 @@ def detect_dimensions(tokens: list[dict], *, include_lengths: "bool | str" = "au
     return out
 
 
+def reconcile_dimensions(dims: list[dict], *, chain_window: float = 0.02) -> "dict | None":
+    """§5-B arithmetic CANDIDATE: the largest length may be an overall size and the rest its chain, so
+    when their sum lands within ``chain_window`` of it, return ``{total, parts, sum, residual}`` -- a
+    NUMERIC candidate, NOT a geometrically verified chain. This is deliberately un-authoritative: with no
+    collinearity/axis check, coincidentally-equal unrelated features (300 = 100+100+100) or ordinate
+    (running) dimensions can produce a spurious candidate, and a real chain in comma or non-max units can
+    be missed. A consumer must treat ``residual`` as a hint (0 = clean, nonzero = a discrepancy worth a
+    look, e.g. the reference parser's 137+678+715 = 1530 vs 1529), never as proof. Verifying the chain
+    geometrically is future work."""
+    lengths = sorted(v for d in dims if d.get("kind") == "length" and (v := _leading_number(d["value"])) is not None)
+    if len(lengths) < 3:
+        return None
+    total, parts = lengths[-1], lengths[:-1]
+    s = sum(parts)
+    residual = abs(s - total)
+    if total <= 0 or residual > chain_window * total:     # not a plausible chain to this total -> no claim
+        return None
+    return {"total": total, "parts": parts, "sum": round(s, 3), "residual": round(residual, 3)}
+
+
+def _leading_number(value: str) -> "float | None":
+    # match the same shape detect_dimensions emits for a length -- keep thousands groups whole (12,345)
+    m = re.match(r"\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?", value.strip())
+    return float(m.group(0).replace(",", "")) if m else None
+
+
 def detect_dimensions_gated(tokens: list[dict]) -> list[dict]:
     """Wire-safe entry: returns dimensions ONLY when the tokens carry genuine drawing context (a diameter
     or >=2 degree-symbol angles). A prose page with a stray ``R2``/``±``/spelled ``deg`` establishes no
