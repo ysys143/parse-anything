@@ -950,8 +950,9 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
     figures_kept: list = []
     for f in figures:
         if _fig_source(f) == "vlm" and f.get("label") in raster_labels:
-            if f.get("description"):                              # keep the dropped VLM figure's description by
-                vlm_desc.setdefault(f["label"], f["description"])  # grafting it onto the surviving raster figure
+            if f.get("description"):                              # keep the dropped VLM figure's description AND its
+                vlm_desc.setdefault(f["label"],                   # gate flags by grafting onto the surviving raster
+                                    (f["description"], f.get("description_flags")))  # figure (flags computed at gate)
             continue
         figures_kept.append(f)
     for f in figures_kept:
@@ -959,13 +960,16 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
         source = _fig_source(f)
         node = {"id": f["id"], "type": f.get("role", "figure"), "zone": f.get("zone"), "label": f.get("label"),
                 "kind": f.get("kind"), "source": source, "file": f.get("file")}
-        desc = f.get("description") or (vlm_desc.get(f.get("label")) if source != "vlm" else None)
+        grafted = vlm_desc.get(f.get("label")) if (not f.get("description") and source != "vlm") else None
+        desc = f.get("description") or (grafted[0] if grafted else None)
         if desc:
             node["description"] = desc
         if f.get("chart_data"):  # FR-5.5: structured chart content (axis/legend/value tokens + bbox)
             node["chart_data"] = f["chart_data"]
-        if f.get("description_flags"):  # §5-A: numbers in the description absent from chart_data
-            node["description_flags"] = f["description_flags"]
+        # description gate flags -- own if present, else the grafted figure's (never emit a description ungated)
+        dflags = f.get("description_flags") or (grafted[1] if grafted else None)
+        if dflags:
+            node["description_flags"] = dflags
         for k in ("section", "refs"):
             if f.get(k):
                 node[k] = f[k]

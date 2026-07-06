@@ -226,3 +226,18 @@ def test_table_cell_bboxes_are_stripped_and_regions_demoted():
     doc, prov, nodes = _sem([], tables=tabs, pages_content=[(0, ["tb"])])
     assert nodes["tb"]["cells"] == [[{"text": "a"}, {"text": "b"}]]
     assert prov["tb"]["regions"] == [{"page": 1, "bbox": [0, 0, 9, 9]}] and prov["tb"]["order"] == 3
+
+
+def test_grafted_vlm_description_carries_its_gate_flags():
+    # A4: a VLM-only figure that duplicates a raster figure (same label) is dropped, but its gated
+    # description is grafted onto the survivor. The gate FLAGS must travel with it -- a description is
+    # never emitted ungated, even via grafting.
+    vlm = {"id": "p1_f0_vlm", "source": "vlm", "role": "figure", "type": "figure", "zone": "body",
+           "label": "Fig 1", "page": 1, "order": 2, "description": "총계 88,888건",
+           "description_flags": ["unverifiable_number:88888"]}
+    raster = {"id": "p1_f1", "source": "odl_image", "role": "figure", "type": "figure", "zone": "body",
+              "label": "Fig 1", "page": 1, "order": 3}          # survivor, no own description
+    _, _, nodes = _sem([], figures=[vlm, raster], pages_content=[(0, [])])
+    assert "p1_f0_vlm" not in nodes                              # VLM duplicate dropped
+    assert nodes["p1_f1"]["description"] == "총계 88,888건"       # description grafted
+    assert nodes["p1_f1"]["description_flags"] == ["unverifiable_number:88888"]  # AND its gate flags
