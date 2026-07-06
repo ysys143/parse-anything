@@ -69,3 +69,18 @@ def test_v5_gated_entry_requires_drawing_context():
     assert detect_dimensions_gated(prose) == []
     drawing = [_t("Ø17"), _t("R50"), _t("114.5")]
     assert len(detect_dimensions_gated(drawing)) >= 3         # diameter + radius + length
+
+
+def test_gated_emits_nothing_on_statistics_prose():
+    # the reproduced false-positive: R-squared, std-dev ±, spelled deg, bare stats numbers -> NOT a drawing
+    stats = [_t("model fit R2 was high"), _t("0.89 ± 0.03"), _t("500 samples over 12 runs"),
+             _t("114 cases and 50 controls"), _t("rotated 90 deg")]
+    assert detect_dimensions_gated(stats) == []              # no diameter / degree-symbol -> no context
+    # revision / section markers must not open the gate either
+    assert detect_dimensions_gated([_t("revision R1 and R2"), _t("Section R3"), _t("350 items")]) == []
+
+
+def test_gated_requires_a_diameter_or_degree_symbol_signal():
+    assert detect_dimensions_gated([_t("Ø17"), _t("R50"), _t("114.5")])          # diameter -> drawing
+    assert detect_dimensions_gated([_t("17°"), _t("22°"), _t("50")])             # >=2 degree-symbols -> drawing
+    assert detect_dimensions_gated([_t("±0.5"), _t("R2"), _t("90 deg")]) == []   # none of the strong signals

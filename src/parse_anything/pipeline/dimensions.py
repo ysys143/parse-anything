@@ -49,12 +49,24 @@ def _shaped(tokens: list[dict]) -> tuple[list[dict], list[list[tuple[int, int]]]
     return out, claimed_by_tok
 
 
+def _drawing_context(shaped: list[dict]) -> bool:
+    """A genuine drawing signal: a DIAMETER (Ø/φ -- essentially never in prose) or >=2 degree-SYMBOL
+    angles. Radius (``R2`` = R-squared / revision / section), spelled ``deg``, and ``±`` (mean ± sd) are
+    all common in prose, so they do NOT establish drawing context on their own -- otherwise a statistics
+    page cascades every bare number into a phantom 'length' (adversarial review, wiring). They are still
+    extracted once a real drawing is established."""
+    dia = sum(1 for r in shaped if r["kind"] == "diameter")
+    ang = sum(1 for r in shaped if r["kind"] == "angle" and "°" in r["value"])
+    return dia >= 1 or ang >= 2
+
+
 def detect_dimensions(tokens: list[dict], *, include_lengths: "bool | str" = "auto") -> list[dict]:
     """``tokens``: ``[{text, bbox?}]``. Returns ``[{value, kind, bbox?}]``. Shaped dimensions are always
-    extracted; bare lengths only when >=2 shaped dims exist (``"auto"``) or ``include_lengths=True``.
-    Not doc-type gated -- use ``detect_dimensions_gated`` at call sites (V5)."""
+    extracted; bare lengths only under drawing context (a diameter or >=2 degree-symbol angles) when
+    ``"auto"``, or unconditionally when ``include_lengths=True``. Not doc-type gated -- use
+    ``detect_dimensions_gated`` at call sites."""
     out, claimed_by_tok = _shaped(tokens)
-    want_lengths = include_lengths is True or (include_lengths == "auto" and len(out) >= 2)
+    want_lengths = include_lengths is True or (include_lengths == "auto" and _drawing_context(out))
     if want_lengths:
         for tok, claimed in zip(tokens, claimed_by_tok):
             text = tok.get("text") or ""
@@ -65,8 +77,9 @@ def detect_dimensions(tokens: list[dict], *, include_lengths: "bool | str" = "au
     return out
 
 
-def detect_dimensions_gated(tokens: list[dict], *, min_shaped: int = 2) -> list[dict]:
-    """Wire-safe entry (V5): returns dimensions only when the tokens carry drawing context -- at least
-    ``min_shaped`` shaped dimensions. A prose page with a stray "R5"/"20°" yields fewer -> ``[]``."""
+def detect_dimensions_gated(tokens: list[dict]) -> list[dict]:
+    """Wire-safe entry: returns dimensions ONLY when the tokens carry genuine drawing context (a diameter
+    or >=2 degree-symbol angles). A prose page with a stray ``R2``/``±``/spelled ``deg`` establishes no
+    context -> ``[]``, so statistics/science pages surface no phantom dimensions."""
     shaped, _ = _shaped(tokens)
-    return detect_dimensions(tokens, include_lengths=True) if len(shaped) >= min_shaped else []
+    return detect_dimensions(tokens, include_lengths=True) if _drawing_context(shaped) else []

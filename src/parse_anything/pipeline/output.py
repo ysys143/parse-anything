@@ -1283,6 +1283,41 @@ def _write_chunks(out: Path, chunks: list[dict]) -> None:
             f.write(json.dumps(ChunkRecord.from_dict(c).to_dict(), ensure_ascii=False) + "\n")
 
 
+def _extract_document_fields(blocks: list[dict]) -> dict:
+    """Run the self-gated field detectors (form KV / drawing dimensions / title block) per page and keep
+    only what their gates surface (FR-4.3 / 5.1 / 5.2). On ordinary prose every gate returns empty, so the
+    ``extractions`` overlay is simply absent -- this never fires on a paper/report. Values are quoted
+    verbatim by the detectors (§5-C). B4 diagram graphs need connector geometry (no producer yet) -> B4b."""
+    from .dimensions import detect_dimensions_gated
+    from .forms import detect_form_fields_gated
+    from .title_block import detect_title_block_gated
+
+    by_page: dict = {}
+    for b in blocks:
+        if b.get("bbox") and (b.get("text") or "").strip():
+            by_page.setdefault(b.get("page"), []).append(b)
+    forms, dims, tbs = [], [], []
+    for page in sorted(p for p in by_page if p is not None):
+        pbs = by_page[page]
+        if (ff := detect_form_fields_gated(pbs)):
+            forms.append({"page": page, "fields": ff})
+        dd = detect_dimensions_gated(pbs)
+        if dd:
+            dims.append({"page": page, "dimensions": dd})
+            # a title block lives on a drawing page -- only look for one where dimensions were found, so a
+            # recipe/packaging page whose bottom-right happens to read '재료:/날짜:' is not mistaken for one.
+            if (tb := detect_title_block_gated(pbs)):
+                tbs.append({"page": page, "fields": tb})
+    ex: dict = {}
+    if forms:
+        ex["form_fields"] = forms
+    if dims:
+        ex["dimensions"] = dims
+    if tbs:
+        ex["title_block"] = tbs
+    return ex
+
+
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
                          sections: list[dict], page_labels: dict[int, str | None],
@@ -1320,13 +1355,18 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
         doc["roles"] = {n["id"]: {"role": n["role"], "confidence": 1.0, "by": "ontology"}
                         for n in (*blocks, *tables, *figures) if n.get("role")}
         doc["zones"] = _zones_summary(blocks, tables, figures)
+        if (extractions := _extract_document_fields(blocks)):  # B*b: gated form/dimension/title-block overlay
+            doc["extractions"] = extractions
     (out / "document.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     if ontology is not None:
-        # Producer-backed seam (§5): a typed, contract-tagged structure view of the (loss-aware) document.json,
-        # giving StructureExport a live producer. Lossy-by-design -- keys outside the dataclasses are dropped
-        # here but preserved in document.json (the source of truth). from_dict consumes the flat doc directly.
+        # Producer-backed seam (§5): a typed, contract-tagged structure view of the (loss-aware) document.json.
+        # StructureExport.from_dict re-emits UNKNOWN top-level keys via its `document` passthrough, so
+        # ``extractions`` (a document.json-only overlay, not a typed contract field) is stripped here to keep
+        # the structure contract surface clean -- it lives in document.json, the source of truth.
+        struct_doc = {k: v for k, v in doc.items() if k != "extractions"}
         (out / "document.structure.json").write_text(
-            json.dumps(StructureExport.from_dict(doc).to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+            json.dumps(StructureExport.from_dict(struct_doc).to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8")
 
 
 def _write_tables(out: Path, tables: list[dict]) -> None:

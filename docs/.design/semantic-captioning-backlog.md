@@ -24,6 +24,8 @@
 | B3 | ~~FR-5.2 표제란 검출기 (코어)~~ **[완료·미wire]** | P2 | `title_block.py` 다국어 키 사전(Maßstab/Werkstoff/축척/재질/도번) + B1 기하 재사용. 적대적 리뷰 반박(REQUEST CHANGES) 반영: V1 generic 별칭 region 게이팅·V2d 키컷오프·V3 거리상한·V4 `detect_title_block_gated`(자동 우하단 region+밀도게이트). **잔여(B3b)**: wire, 멀티토큰 값 병합·우측정렬(좌측값) 레이아웃(V5) |
 | B4 | ~~FR-5.3/5.4 도식·분기 관계 그래프 (코어)~~ **[완료·미wire]** | P2 | `diagram.py` nodes(클러스터링)+edges(커넥터 endpoint→nearest, 경계거리·유한반경)+분기라벨(1:1). 적대적 리뷰 반박(REQUEST CHANGES) 반영: V1 노드클러스터링·V2 bbox방향 ambiguous·V3 경계거리+유한 기본반경·V4 라벨소비·V5 dedup. **잔여(B4b)**: 커넥터/화살촉을 vecfig 벡터경로에서 추출·wire(현재 커넥터 공급원 없음), 방향 검증 |
 
+| Bwire | ~~B1/B2/B3 파이프라인 wiring~~ **[완료]** | — | `_extract_document_fields`가 게이트 발동분만 `document.json.extractions`(form_fields/dimensions/title_block)로 방출. 적대적 리뷰 반박: B2를 **도면맥락 게이트**(diameter/°각도, R²·±·철자deg 제외)로 강화(통계 산문 phantom 차단), title-block은 dimensions 발동 페이지에만, extractions는 structure.json 계약에서 제외. **잔여**: B4 diagram wiring(커넥터 공급원 vecfig 필요) |
+
 ## C. 구현 — 트랜치 3 (저비용 마감, 미착수)
 
 | # | 사안 | 우선 |
