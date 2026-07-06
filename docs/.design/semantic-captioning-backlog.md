@@ -44,7 +44,8 @@
 | D1 | **순수 관계형 도식**(AS-IS/TO-BE 구조도) 라벨 — 현 policy 소스는 표·콜아웃 위주 | gt/README 잔존 |
 | D2 | **한국어 필기** 골든 — census는 영문. AI Hub 605 필요 | gt/README 잔존 |
 | D3 | score.py 강화: `A_unit`은 substring 휴리스틱, `B_arithmetic`은 form 구조 한정, `G_grounding`은 존재만(IoU 아님). **[부분]** `check_must_not`을 SCHEMA대로 caption만 스캔(structured verbatim 데이터 오탐 제거) | score.py 스캐폴드 |
-| D4 | ~~실제 파이프라인 산출을 `--out`으로 채점~~ **[결정적 완료]** `run_bench.py` 어댑터(document.json→{caption,structured,elements}, 무날조)로 골든 10건 결정적 실채점: G_grounding 9/10(래스터 drawing_dim만 0 elements→VLM/OCR 필요), caption_must_not 10/10, 캡션 체크(must_include·C_entity 16건)는 구조적 VLM 의존. **잔여**: det_vlm(live API) 실채점 사용자 확인 대기 | — |
+| D4 | ~~실제 파이프라인 산출을 `--out`으로 채점~~ **[결정적+live 완료]** `run_bench.py` 어댑터(document.json→{caption,structured,elements}, 무날조)로 골든 10건 실채점. **결정적**(무API): G_grounding 9/10, caption_must_not 10/10, 캡션 체크는 VLM 의존. **live**(det_vlm, Paddle 전사+Gemini 캡션, 라벨 페이지만 슬라이스해 1439p→~10p): 18 fail(det 19). **캡션 실제 작동 확인** — form/statistics must_include·handwriting C_entity가 결정적 FAIL→live PASS, 캡션 고품질(영수증 sub-total, 한국어 고령자 통계 원형/막대 차트, 1900 US Census). **잔여**: (1)결정적은 whole-doc·live는 target page라 비교 비대칭(결정적도 슬라이스 필요), (2)D3 A_unit/C_entity/G_grounding IoU 정밀화 | — |
+| D5 | **전면 래스터 도면 미서빙(신규 갭)**: `drawing_dim`(전면 래스터 기계도면)은 det_vlm에서도 caption='' elements=0 — figure-describe가 ODL-검출 figure **크롭**만 서술, 래스터 전면 이미지는 ODL figure/텍스트 없어 미크롭. 텍스트레이어 없는 전면 이미지 페이지를 통째 describable figure로 취급 필요(C1 이미지 입력과 접점) | run_bench live 채점 |
 
 ## E. 데이터 / 코퍼스
 

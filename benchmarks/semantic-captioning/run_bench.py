@@ -47,13 +47,35 @@ def _adapt(doc: dict) -> dict:
     return {"caption": caption, "structured": structured, "elements": elements}
 
 
-def _run_one(sample: Path, stem: str, mode: str, corpus_root: Path) -> dict:
+def _slice_page(pdf: Path, page_1based: int, dst: Path) -> Path:
+    """Extract the ONE labelled page into a fresh 1-page PDF -- so a live det_vlm run touches only the page
+    the gt actually scores, not all 489 pages of a policy doc. Images have no page hint and are used whole."""
+    import pypdfium2 as pdfium
+
+    src = pdfium.PdfDocument(str(pdf))
+    try:
+        out = pdfium.PdfDocument.new()
+        out.import_pages(src, [page_1based - 1])   # gt page is 1-based; import_pages is 0-based
+        out.save(str(dst))
+        out.close()
+    finally:
+        src.close()
+    return dst
+
+
+def _run_one(sample: Path, stem: str, mode: str, corpus_root: Path, primary: str = "gemini",
+             page: "int | None" = None) -> dict:
     import parse_anything.cli as cli
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "out"
-        argv = ["--pdf", str(sample), "--out", str(out), "--source-id", stem]
-        argv += ["--no-vlm"] if mode == "deterministic" else ["--mode", "det_vlm"]
+        pdf = sample
+        # for a live run, slice the multi-page PDF down to the single labelled page (huge cost saver);
+        # deterministic mode is cheap so it keeps whole-doc grounding
+        if page and mode != "deterministic" and sample.suffix.lower() == ".pdf":
+            pdf = _slice_page(sample, page, Path(td) / "page.pdf")
+        argv = ["--pdf", str(pdf), "--out", str(out), "--source-id", stem]
+        argv += ["--no-vlm"] if mode == "deterministic" else ["--mode", "det_vlm", "--primary", primary]
         # env_file default (.env at repo root) supplies the key for det_vlm; deterministic ignores it
         code = cli.run_cli(argv, cli.Runtime(environ={}, stdout=io.StringIO()),
                            env_file=corpus_root.parents[1] / ".env")
@@ -68,6 +90,8 @@ def _run_one(sample: Path, stem: str, mode: str, corpus_root: Path) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["deterministic", "det_vlm"], default="deterministic")
+    ap.add_argument("--primary", choices=["gemini", "paddle"], default="gemini",
+                    help="det_vlm page transcriber (captions are always Gemini)")
     ap.add_argument("--out", required=True, help="dir to write <label-stem>.json adapted outputs")
     ap.add_argument("--corpus", default=str(_HERE.parents[1] / ".local" / "semantic-captioning"),
                     help="corpus root that the gt 'sample' paths are relative to")
@@ -88,7 +112,7 @@ def main() -> int:
             print(f"  {stem:24} SKIP (sample missing: {sample})")
             continue
         try:
-            adapted = _run_one(sample, stem, a.mode, corpus_root)
+            adapted = _run_one(sample, stem, a.mode, corpus_root, a.primary, label.get("page"))
         except Exception as exc:   # noqa: BLE001 -- one bad sample must not abort the sweep
             print(f"  {stem:24} ERROR {type(exc).__name__}: {exc}")
             failed += 1
