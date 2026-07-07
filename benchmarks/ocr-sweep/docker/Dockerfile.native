@@ -8,21 +8,25 @@
 FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
-# jammy ships python3.10 (runs torch2.10 / transformers4.57 fine).
+# jammy ships python3.10 (runs torch2.10 / transformers4.57 fine). ninja-build is for the flash-attn
+# source compile below (the cudnn-DEVEL base already ships nvcc).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip git && \
+        python3 python3-pip git ninja-build && \
     rm -rf /var/lib/apt/lists/*
 
-# Model card: torch 2.10.0 / transformers 4.57.1 / CUDA 12.9+. NO flash-attn — the deepencoder runs
-# under sdpa (native_wrapper sets _attn_implementation="sdpa"; override via NATIVE_ATTN_IMPL). Forcing
-# a flash-attn wheel is exactly what broke this model before (it dragged torch down to 2.6).
-# NOTE(VM): if the cu129 wheel index or the 12.9.1 base tag doesn't resolve, bump to the nearest
-# available (cu128/cu130, 12.9.x) — the constraint is torch==2.10.0 + CUDA 12.9+.
+# Model card: torch 2.10.0 / transformers 4.57.1 / CUDA 12.9+.
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir torch==2.10.0 torchvision \
         --index-url https://download.pytorch.org/whl/cu129 && \
     python3 -m pip install --no-cache-dir \
-        transformers==4.57.1 pillow einops addict easydict pymupdf matplotlib
+        transformers==4.57.1 pillow einops addict easydict pymupdf matplotlib packaging wheel
+
+# flash-attn: REQUIRED for whole-doc (infer_multi packs 46 pages into one 32k context; eager's O(N^2)
+# attention matrix OOMs the L4's 24GB). No prebuilt wheel exists for torch2.10 (flash-attn ships wheels
+# only up to torch2.8), so compile from source against the installed torch2.10 (ABI auto-matches).
+# MAX_JOBS caps parallelism so the compile doesn't OOM the builder (~15-25 min).
+ENV MAX_JOBS=4
+RUN python3 -m pip install --no-cache-dir --no-build-isolation flash-attn
 
 WORKDIR /app
 COPY native_wrapper.py /app/native_wrapper.py

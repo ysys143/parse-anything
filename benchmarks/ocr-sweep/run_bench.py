@@ -190,7 +190,7 @@ def run_doc(model_id: str, pdf: str, out_dir: str, raw_dir: str, metrics_file: s
         })
         t0 = time.monotonic()
         cmd = ["parse-anything", "--pdf", pdf, "--out", out_dir, "--source-id", sanitize(model_id),
-               "--mode", "det_vlm", "--primary", "paddle", "--whole-doc", *parse_extra]
+               "--mode", "det_vlm", "--primary", "paddle", "--whole-doc", "--force", *parse_extra]
         r = subprocess.run(cmd, env=penv, capture_output=True, text=True)
         dt = time.monotonic() - t0
         ok = r.returncode == 0
@@ -217,7 +217,7 @@ def run_doc(model_id: str, pdf: str, out_dir: str, raw_dir: str, metrics_file: s
             "PADDLE_BASE_URL": f"http://127.0.0.1:{SHIM_PORT}", "PADDLE_MODEL": model_id,
         })
         cmd = ["parse-anything", "--pdf", pdf, "--out", out_dir, "--source-id", sanitize(model_id),
-               "--mode", "det_vlm", "--primary", "paddle", *parse_extra]
+               "--mode", "det_vlm", "--primary", "paddle", "--force", *parse_extra]
         r = subprocess.run(cmd, env=penv, capture_output=True, text=True)
         dt = time.monotonic() - t0
         ok = r.returncode == 0
