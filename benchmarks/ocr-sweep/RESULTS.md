@@ -117,6 +117,30 @@ Reproduce: `deploy_and_run.sh` (branch `feat/unlimited-wholedoc`) with
 `results-from-vm/scores_final.md`. NB: the scorer's "pages" column is the **file count** (per-page raw
 = 46; a merged `document.md` or a whole-doc blob = 1), not PDF pages.
 
+## Follow-up: parse-anything expects a clean-markdown contract (per-model adapters)
+
+The sweep also surfaced an architectural limitation. parse-anything's substrate is tuned for a specific
+output **format** — its default `--primary gemini` prompt asks for *clean GFM markdown, LaTeX math,
+markdown tables, `[figure]` placeholders*; `--primary paddle` is a first-class doc-specialist that also
+emits clean markdown. But each model here emits a **subtly different format**, and the substrate does not
+normalize them — it passes them through:
+
+- **Grounding tokens leak.** Nemotron's raw output carries `<x_..>`/`<class_..>` tokens (~12/page). In its
+  parse-anything `out_born/document.md`, **798 of them leak through unstripped** (`<x_0.334><y_0.1469>**CorrectiveFeedbackCSNL**<x_..><class_Page-header>`). Same for DeepSeek/Unlimited's `<|ref|>`/`<|det|>`.
+- **chandra emits HTML** (`<div data-bbox data-label>`), **olmOCR emits YAML front-matter** — neither is the
+  markdown the reading-order / semantic-equation / chunk stages assume.
+
+This is why the **headline scores use raw output** (the scorer's `normalize()` strips all markup, so
+transcription quality is compared format-agnostically). The substrate's *value* (document.md, semantic
+graph, chunks) is only fully realized for format-conforming models; its **value oracle** (unsourced-number
+stripping) is format-agnostic and did help (Unlimited halluc 0.698→0.591), but reading-order/semantic
+parsing are format-dependent.
+
+**Proposed:** a per-model **normalizer/adapter layer** between the transcriber and the substrate — strip
+grounding tokens, convert HTML layout blocks / front-matter to the expected clean markdown — so the
+substrate receives a uniform contract regardless of model. `src/parse_anything/normalizers.py` exists but
+the assembly path currently assumes clean input.
+
 ## Files
 - `results/scores_vs_gt.md` — the ranking above (vs published text). **Primary.**
 - `results/scores.md`, `results/scores_pipe.md` — pypdfium2-based. **Deprecated.**
