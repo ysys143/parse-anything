@@ -30,8 +30,18 @@ reference. Each model's 46 pages are concatenated and compared **whole-document,
 | 5 | deepseek-ai/DeepSeek-OCR | 3B | 0.879 | 0.885 | 4.00 | flawless equations |
 | 6 | PaddlePaddle/PaddleOCR-VL · single-shot | 0.9B | 0.876 | 0.871 | 2.75 | verbose (31k words); no LaTeX |
 | 7 | nanonets/Nanonets-OCR2-3B | 3.75B | 0.875 | 0.892 | 4.75 | high judge ceiling but degenerates ("!" loop) on some pages |
-| 8 | nvidia/NVIDIA-Nemotron-Parse-v1.2 | 0.9B | 0.066 | 0.022 | 0.00 | genuinely broken single-shot; needs its own postprocessor |
-| — | baidu/Unlimited-OCR | 3.3B | — | — | — | did not deploy on L4 (no flash-attn wheel; vLLM path exits at startup) |
+| 4 | nvidia/NVIDIA-Nemotron-Parse-v1.2 · **native** | 0.9B | **0.881** | 0.896 | — | REVIVED (was 0.066): vLLM served it image-BLIND; native transformers reads the page. See session-2 note. |
+| 9 | baidu/Unlimited-OCR · per-page (official vLLM) | 3.3B | 0.809 | 0.896 | — | now deploys (official `unlimited-ocr-cu129` image + `<image>` prompt); grounded bbox output inflates num_halluc (0.698) |
+
+> **Session-2 correction (this run).** The two "failures" above were OUR misconfigurations, not the models:
+> - **Nemotron-Parse 0.066 → 0.881.** Not a repetition problem. vLLM serves this ViT-H(enc)+mBart(dec)
+>   VLM *blind* — pages 10/20/30 gave byte-similar hallucinated `**100.05**` tables (the image never
+>   reached the encoder). The repetition-stop logits processor treated a symptom. Native transformers
+>   (`AutoProcessor` → `model.generate`) reads each page; num_halluc 0.979 → **0.247**. It vaults into
+>   the top cluster.
+> - **Unlimited-OCR now deploys** on Baidu's OFFICIAL vLLM image (the original "startup exit" was the
+>   GENERIC image), per-page **0.809**. The prompt must start with `<image>` (else empty output);
+>   max-model-len 16384 (8192 left 0 input budget for the ~3.5k image tokens).
 
 The vision judge is a 4-page (p4/p8/p12/p30), image-based, GT-free cross-check — it does **not** use
 pypdfium2 or the reference text, so it validates the objective ranking independently.
@@ -55,6 +65,38 @@ Nemotron-Parse-v1.2 stood in for the NVIDIA slot.
 - **Deployment was most of the work** — each model needed a different serving fix (vLLM version pins,
   context caps, custom images; the paddle pipeline also needed `libgl1`, backend `vllm-server`, served
   name `PaddleOCR-VL-1.6-0.9B`). See `models.json` notes and the git history.
+
+## Session 2: whole-doc vs per-page, and the parse-anything pair
+
+Does an end-to-end whole-document model (Unlimited-OCR's native `infer_multi`, 46 pages in one 32k-ctx
+call) **nullify** parse-anything, or **pair** with it? We measured three variants of Unlimited-OCR plus
+a parse-anything (`__pa`) wrap of each. token_f1 vs the published text (born doc):
+
+| variant | token_f1 | num_recall | num_halluc | note |
+|---|---|---|---|---|
+| per-page (a) | 0.809 | 0.896 | 0.698 | official vLLM, grounded output |
+| **per-page + parse-anything** | **0.830** | 0.896 | **0.591** | **substrate helps: +0.021 f1, halluc −0.107** |
+| whole-doc + parse-anything (c) | 0.716 | 0.534 | 0.5 | |
+| whole-doc raw (b) | 0.092 | 0.0 | 0.0 | early-stopped at 401 words on born |
+
+**Findings:**
+- **The pair wins, at per-page parity.** Wrapping the per-page transcription in parse-anything's
+  deterministic substrate raised token_f1 0.809 → 0.830 and cut num_halluc 0.698 → 0.591 (it strips
+  grounded-bbox coordinate noise / unsourced numbers via the value oracle). "Sum > parts."
+- **whole-doc did NOT nullify parse-anything — it underperformed.** Unlimited-OCR's native multi-page
+  mode early-stopped on the born doc (401 words, f1 0.092); the scan whole-doc was fuller (16.8k chars).
+  So the "one-shot model makes the substrate redundant" hypothesis is **rejected on this document**.
+- **Nemotron native (0.881) neither helped nor hurt under parse-anything (0.880)** — its output is
+  already clean markdown, so there's little bbox noise for the substrate to remove (unlike Unlimited).
+- **Caveat:** eager attention at `image_size=640` (flash-attn has no torch2.10 prebuilt wheel; the
+  source build OOMs the 32GB builder). whole-doc at `image_size=1024` + flash-attn is a follow-up.
+  The `__multi` raw's whole-doc early-stop, and the raw-vs-`__pa` word-count gap, are unexplained
+  whole-doc anomalies worth a follow-up.
+
+Reproduce: `deploy_and_run.sh` (branch `feat/unlimited-wholedoc`) with
+`ONLY="baidu/Unlimited-OCR,baidu/Unlimited-OCR__multi,nvidia/NVIDIA-Nemotron-Parse-v1.2"`; scores in
+`results-from-vm/scores_final.md`. NB: the scorer's "pages" column is the **file count** (per-page raw
+= 46; a merged `document.md` or a whole-doc blob = 1), not PDF pages.
 
 ## Files
 - `results/scores_vs_gt.md` — the ranking above (vs published text). **Primary.**
