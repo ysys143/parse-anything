@@ -163,19 +163,40 @@ def runner_logs(m: dict) -> str:
 # --- shim + parse-anything per doc -------------------------------------------------
 
 def run_doc(model_id: str, pdf: str, out_dir: str, raw_dir: str, metrics_file: str,
-            served: str, parse_extra: list[str]) -> dict:
+            served: str, parse_extra: list[str], pipeline: str = "per_page") -> dict:
     models_file = os.environ["_MODELS_FILE"]
     cache_file = os.path.join(
         os.path.dirname(metrics_file),
         os.path.basename(metrics_file).replace("metrics_", "cache_").replace(".jsonl", ".json"))
     # 1) BATCHED pre-transcription: fire all pages concurrently so vLLM continuous-batches them
     #    (keeps the GPU busy). Writes raw_<doc>/ + metrics + the cache parse-anything will replay.
+    #    whole_doc: ONE multi-image request (native multi-page); parse-anything is skipped below.
     pre = subprocess.run([sys.executable, PREWARM, "--models-file", models_file, "--model-id", model_id,
                           "--pdf", pdf, "--openai-base", f"http://127.0.0.1:{RUNNER_PORT}/v1",
                           "--served", served, "--raw-dir", raw_dir, "--cache-file", cache_file,
-                          "--metrics-file", metrics_file], capture_output=True, text=True)
+                          "--metrics-file", metrics_file, "--pipeline", pipeline],
+                         capture_output=True, text=True)
     log((pre.stdout or pre.stderr or "").strip().splitlines()[-1:][0] if (pre.stdout or pre.stderr).strip()
         else "prewarm done")
+    if pipeline == "whole_doc":
+        # (b) model-alone: prewarm already wrote the one-shot transcription to raw_<doc>/ (scored directly).
+        # (c-real) parse-anything wraps that SAME one-shot output: --whole-doc sends all pages in ONE
+        # OpenAI /v1 request to the runner (model.infer_multi), then the ODL substrate wraps it. We point
+        # PADDLE_BASE_URL at the runner's /v1 directly (native_wrapper is OpenAI-compatible; no shim).
+        penv = dict(os.environ)
+        penv.update({
+            "GEMINI_API_KEY": "dummy-unused-on-whole-doc-path", "PADDLE_API_KEY": "dummy",
+            "PADDLE_BASE_URL": f"http://127.0.0.1:{RUNNER_PORT}/v1", "PADDLE_MODEL": served,
+        })
+        t0 = time.monotonic()
+        cmd = ["parse-anything", "--pdf", pdf, "--out", out_dir, "--source-id", sanitize(model_id),
+               "--mode", "det_vlm", "--primary", "paddle", "--whole-doc", *parse_extra]
+        r = subprocess.run(cmd, env=penv, capture_output=True, text=True)
+        dt = time.monotonic() - t0
+        ok = r.returncode == 0
+        tail = ((r.stdout or "").strip().splitlines()[-1:] or [(r.stderr or "").strip()[-300:]])[0]
+        log(f"parse-anything(whole-doc) {'OK' if ok else 'FAIL'} ({dt:.0f}s): {tail[:200]}")
+        return {"ok": ok, "seconds": round(dt, 1), "pipeline": "whole_doc", "tail": tail[:300]}
     # 2) parse-anything consumes the cache INSTANTLY via the shim in replay mode (no model calls).
     env = dict(os.environ)
     env.update({
@@ -255,10 +276,11 @@ def main() -> int:
             stop_runner(m, proc)
             continue
         log("runner healthy")
+        pipeline = m.get("pipeline", "per_page")
         for tag, pdf in docs:
             res = run_doc(
                 mid, pdf, os.path.join(mdir, f"out_{tag}"), os.path.join(mdir, f"raw_{tag}"),
-                os.path.join(mdir, f"metrics_{tag}.jsonl"), served, parse_extra,
+                os.path.join(mdir, f"metrics_{tag}.jsonl"), served, parse_extra, pipeline,
             )
             _append(summary_path, {"model": mid, "doc": tag, **res})
         stop_runner(m, proc)

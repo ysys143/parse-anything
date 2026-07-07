@@ -1,25 +1,28 @@
-# Custom image for baidu/Unlimited-OCR (DeepSeek-OCR lineage, transformers model.infer()).
-# Wraps the native inference API behind OpenAI /v1 via native_wrapper.py, so the shim treats it
-# exactly like a vLLM server. Build context = the harness dir (COPY paths are relative to it).
-#   docker build -t pa-ocr/native-unlimited -f docker/Dockerfile.native .
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+# Custom image for baidu/Unlimited-OCR (DeepSeek-OCR lineage, transformers model.infer / infer_multi).
+# Wraps the native inference API behind OpenAI /v1 via native_wrapper.py, so the shim/prewarm treat it
+# exactly like a vLLM server. ONE image serves BOTH variants — the registry id selects the path:
+#   baidu/Unlimited-OCR         -> per-page  (model.infer, 1 image/request)
+#   baidu/Unlimited-OCR__multi  -> whole-doc (model.infer_multi, all pages in 1 request)
+# Build context = the harness dir (COPY paths are relative to it).
+#   docker build -t pa-ocr/unlimited-native -f docker/Dockerfile.native .
+FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
-# jammy base ships python3.10 (no python3.12 package); 3.10 runs torch2.10/transformers4.57 fine.
+# jammy ships python3.10 (runs torch2.10 / transformers4.57 fine).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip git ninja-build && \
+        python3 python3-pip git && \
     rm -rf /var/lib/apt/lists/*
 
-# torch 2.6 (cu124): flash-attn 2.7.3 ships a PREBUILT wheel for torch2.6 (torch2.10 forced a
-# from-source compile that failed). DeepSeek-OCR (same lineage) is validated on torch 2.6.
+# Model card: torch 2.10.0 / transformers 4.57.1 / CUDA 12.9+. NO flash-attn — the deepencoder runs
+# under sdpa (native_wrapper sets _attn_implementation="sdpa"; override via NATIVE_ATTN_IMPL). Forcing
+# a flash-attn wheel is exactly what broke this model before (it dragged torch down to 2.6).
+# NOTE(VM): if the cu129 wheel index or the 12.9.1 base tag doesn't resolve, bump to the nearest
+# available (cu128/cu130, 12.9.x) — the constraint is torch==2.10.0 + CUDA 12.9+.
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir torch==2.6.0 torchvision==0.21.0 \
-        --index-url https://download.pytorch.org/whl/cu124 && \
+    python3 -m pip install --no-cache-dir torch==2.10.0 torchvision \
+        --index-url https://download.pytorch.org/whl/cu129 && \
     python3 -m pip install --no-cache-dir \
-        transformers==4.57.1 pillow==12.1.1 einops==0.8.2 addict==2.4.0 easydict==1.13 pymupdf==1.27.2.2
-# flash-attn 2 (deepencoder imports it) — install the PREBUILT wheel (no compile) for torch2.6/cu12/py3.10.
-RUN python3 -m pip install --no-cache-dir \
-        https://github.com/Dao-AILab/flash-attn/releases/download/v2.7.3/flash_attn-2.7.3+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+        transformers==4.57.1 pillow einops addict easydict pymupdf
 
 WORKDIR /app
 COPY native_wrapper.py /app/native_wrapper.py

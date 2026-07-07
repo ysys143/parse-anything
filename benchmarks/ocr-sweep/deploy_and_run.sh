@@ -16,11 +16,20 @@ ONLY="${ONLY:-}"                                            # optional: comma-se
 
 ssh_do() { gcloud compute ssh "$INSTANCE" --project="$PROJECT" --zone="$ZONE" --command="$1"; }
 
-echo "[deploy] 1/5 install parse-anything via official install.sh"
-ssh_do "curl -fsSL '$INSTALL_URL' | sh && ~/.local/bin/parse-anything --help >/dev/null && echo parse-anything-OK"
-
-echo "[deploy] 2/5 clone repo (harness + document.pdf) from canonical source"
+echo "[deploy] 1/5 clone repo (harness + document.pdf + parse-anything SOURCE) from branch $REPO_BRANCH"
 ssh_do "rm -rf ~/pa-repo && git clone --depth 1 --branch '$REPO_BRANCH' '$REPO_URL' ~/pa-repo && ls ~/pa-repo/$HARNESS_SUBDIR"
+
+# Source install (NOT the release bundle) so branch-only features (e.g. --whole-doc) are present. The
+# DLVM ships system python3.10 but parse-anything needs >=3.11, so uv builds a 3.12 venv; ODL needs Java 17.
+echo "[deploy] 2/5 install parse-anything FROM SOURCE (uv venv py3.12) + Java 17 for ODL"
+ssh_do "set -e
+  sudo apt-get update -q && sudo apt-get install -y -q openjdk-17-jre-headless
+  command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH=\$HOME/.local/bin:\$PATH
+  uv venv --python 3.12 ~/pa-repo/.venv
+  uv pip install --python ~/pa-repo/.venv/bin/python -e ~/pa-repo
+  mkdir -p ~/.local/bin && ln -sf ~/pa-repo/.venv/bin/parse-anything ~/.local/bin/parse-anything
+  ~/.local/bin/parse-anything --help >/dev/null && echo parse-anything-source-OK"
 
 echo "[deploy] 3/5 build the scanned stress PDF (image-only, no text layer)"
 ssh_do "(command -v pip3 >/dev/null || sudo apt-get install -y -q python3-pip) && \

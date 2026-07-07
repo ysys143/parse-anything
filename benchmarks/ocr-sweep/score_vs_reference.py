@@ -51,12 +51,25 @@ def numbers(t: str) -> set[str]:
 
 
 def find_models(roots: list[str]) -> dict[str, list[str]]:
-    """Return {model_name: [page md files]} by locating raw_born dirs under the roots."""
+    """Return {model_name: [md files]} for scoring. Two artifact kinds are picked up:
+
+      raw_born/<name>/*.md            -> `<name>`      (raw model transcription: per-page concat,
+                                                        or a single whole-doc file for infer_multi)
+      out_born/**/document.md         -> `<name>__pa`  (parse-anything's assembled document = the
+                                                        deterministic-substrate wrapping of the same
+                                                        transcription; scored to compare model-alone
+                                                        vs the parse-anything pair)
+    """
     out: dict[str, list[str]] = {}
     for root in roots:
         for rb in glob.glob(os.path.join(root, "**", "raw_born"), recursive=True):
             name = os.path.basename(os.path.dirname(rb))
             files = sorted(glob.glob(os.path.join(rb, "**", "*.md"), recursive=True))
+            if files:
+                out.setdefault(name, []).extend(files)
+        for ob in glob.glob(os.path.join(root, "**", "out_born"), recursive=True):
+            name = os.path.basename(os.path.dirname(ob)) + "__pa"
+            files = sorted(glob.glob(os.path.join(ob, "**", "document.md"), recursive=True))
             if files:
                 out.setdefault(name, []).extend(files)
     return out

@@ -6,10 +6,12 @@ API behind the SAME OpenAI endpoint the shim already speaks. That keeps the shim
 it always POSTs {image_url + text} to http://127.0.0.1:8000/v1/chat/completions.
 
 native_kind:
-  deepseek_infer     -> AutoModel(trust_remote_code).infer(tokenizer, prompt, image_file, **infer_kwargs)
-                        (baidu/Unlimited-OCR, DeepSeek-OCR lineage)
-  nemotron_pipeline  -> NemotronOCRV2()(image) -> [{text,...}] joined into plain markdown
-                        (nvidia/nemotron-ocr-v2; detector+recognizer, no prompt)
+  deepseek_infer        -> AutoModel(trust_remote_code).infer(tokenizer, prompt, image_file, **infer_kwargs)
+                           (DeepSeek-OCR lineage, single image)
+  deepseek_infer_multi  -> same model; .infer_multi(image_files=[...]) when >1 image is sent, else .infer()
+                           (baidu/Unlimited-OCR native multi-page / long-horizon mode)
+  nemotron_pipeline     -> NemotronOCRV2()(image) -> [{text,...}] joined into plain markdown
+                           (nvidia/nemotron-ocr-v2; detector+recognizer, no prompt)
 
 Reads infer_kwargs/prompt from models.json. Runs GPU-side only.
 
@@ -49,13 +51,18 @@ def _ensure_loaded() -> None:
     global _MODEL
     if _MODEL is not None:
         return
-    if _KIND == "deepseek_infer":
+    if _KIND in ("deepseek_infer", "deepseek_infer_multi"):
         import torch
         from transformers import AutoModel, AutoTokenizer
         tok = AutoTokenizer.from_pretrained(_MODEL_ID, trust_remote_code=True)
+        # sdpa (not flash_attention_2): the model card wants torch2.10/transformers4.57; flash-attn is
+        # only needed for the SGLang fa3 backend, and forcing a flash-attn wheel is what broke the
+        # earlier torch2.6 downgrade. sdpa runs the deepencoder on plain torch. Fall back if a build
+        # hard-imports flash_attn.
+        attn = os.environ.get("NATIVE_ATTN_IMPL", "sdpa")
         model = AutoModel.from_pretrained(
             _MODEL_ID, trust_remote_code=True, use_safetensors=True,
-            _attn_implementation="flash_attention_2", torch_dtype=torch.bfloat16,
+            _attn_implementation=attn, torch_dtype=torch.bfloat16,
         ).eval().cuda()
         _MODEL = (model, tok)
     elif _KIND == "nemotron_pipeline":
@@ -85,6 +92,23 @@ def _infer_deepseek(png_path: str, prompt: str) -> str:
     return res if isinstance(res, str) else ""
 
 
+def _infer_deepseek_multi(png_paths: list[str], prompt: str) -> str:
+    """Multi-image path: DeepSeek-OCR-lineage .infer_multi() transcribes N page images in ONE call
+    (Unlimited-OCR's native multi-page / long-horizon mode, 32k ctx). Same DUAL-output contract as
+    .infer(): prefer the returned string; else read the written .mmd file(s), joined in page order."""
+    model, tok = _MODEL
+    kw = dict(_CFG.get("infer_kwargs") or {})
+    with tempfile.TemporaryDirectory() as out_dir:
+        res = model.infer_multi(tok, prompt=prompt, image_files=list(png_paths),
+                                output_path=out_dir, save_results=True, **kw)
+        if isinstance(res, str) and res.strip():
+            return res
+        written = sorted(glob.glob(os.path.join(out_dir, "**", "*.mmd"), recursive=True))
+        if written:
+            return "\n\n".join(open(w, encoding="utf-8").read() for w in written)
+    return res if isinstance(res, str) else ""
+
+
 def _infer_nemotron(png_path: str, _prompt: str) -> str:
     preds = _MODEL(png_path)
     parts = []
@@ -95,25 +119,34 @@ def _infer_nemotron(png_path: str, _prompt: str) -> str:
     return "\n\n".join(parts)
 
 
-def _run(png: bytes, prompt: str) -> str:
+def _run(pngs: list[bytes], prompt: str) -> str:
     _ensure_loaded()
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
-        tf.write(png)
-        path = tf.name
+    paths: list[str] = []
     try:
-        # model.infer() is single-image and not concurrency-safe on one GPU. The prewarm fires many
-        # requests at once (fine for vLLM batching); here we serialize so they queue instead of
-        # racing the model (OOM / corrupt state).
+        for png in pngs:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                tf.write(png)
+                paths.append(tf.name)
+        # native inference is not concurrency-safe on one GPU. The prewarm fires many requests at
+        # once (fine for vLLM batching); here we serialize so they queue instead of racing the model
+        # (OOM / corrupt state).
         with _INFER_LOCK:
-            if _KIND == "deepseek_infer":
-                return _infer_deepseek(path, prompt)
-            return _infer_nemotron(path, prompt)
+            if _KIND == "nemotron_pipeline":
+                return _infer_nemotron(paths[0], prompt)
+            if _KIND == "deepseek_infer_multi" and len(paths) > 1:
+                return _infer_deepseek_multi(paths, prompt)   # native multi-page
+            return _infer_deepseek(paths[0], prompt)          # single image (deepseek_infer or 1-img multi)
     finally:
-        os.unlink(path)
+        for p in paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
 
-def _extract(messages: list) -> tuple[bytes, str]:
-    png, prompt = b"", ""
+def _extract(messages: list) -> tuple[list[bytes], str]:
+    pngs: list[bytes] = []
+    prompt = ""
     for msg in messages:
         content = msg.get("content")
         if isinstance(content, str):
@@ -126,8 +159,8 @@ def _extract(messages: list) -> tuple[bytes, str]:
                 url = (part.get("image_url") or {}).get("url", "")
                 m = re.match(r"data:[^;]+;base64,(.*)", url, re.DOTALL)
                 if m:
-                    png = base64.b64decode(m.group(1))
-    return png, prompt
+                    pngs.append(base64.b64decode(m.group(1)))   # collect ALL images (multi-page)
+    return pngs, prompt
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -159,11 +192,11 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         try:
             req = json.loads(self.rfile.read(length))
-            png, prompt = _extract(req.get("messages", []))
-            if not png:
+            pngs, prompt = _extract(req.get("messages", []))
+            if not pngs:
                 self._json(400, {"error": {"message": "no image"}})
                 return
-            text = _run(png, prompt or (_CFG.get("prompt") or ""))
+            text = _run(pngs, prompt or (_CFG.get("prompt") or ""))
         except Exception as exc:  # noqa: BLE001
             print(f"[native] inference error: {exc!r}", flush=True)
             self._json(500, {"error": {"message": repr(exc)}})
@@ -186,7 +219,9 @@ def main() -> None:
     args = ap.parse_args()
     _CFG = _load_cfg(args.models_file, args.model_id)
     _KIND = _CFG.get("native_kind", "")
-    _MODEL_ID = args.model_id
+    # registry id (args.model_id) may be a synthetic variant like "baidu/Unlimited-OCR__multi";
+    # the actual HF repo to load comes from hf_id when present (both variants share one HF model).
+    _MODEL_ID = _CFG.get("hf_id") or args.model_id
     if args.preload:
         _ensure_loaded()
     print(f"[native] serving {_MODEL_ID} ({_KIND}) on :{args.port}/v1/chat/completions", flush=True)

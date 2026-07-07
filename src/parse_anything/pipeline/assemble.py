@@ -36,6 +36,8 @@ class DetVlmOptions:
     input_quality_min: float = 50.0  # R8.8 Laplacian-variance blur threshold (per-domain tunable)
     primary: str = "gemini"    # R10 primary transcriber: "gemini" (grounded) | "paddle" (doc-specialised)
     reading_order: bool = True  # R15 re-sequence VLM blocks into the PDF's ODL reading order (multi-column)
+    whole_doc: bool = False    # transcribe the WHOLE document in ONE multi-image call (e.g. Unlimited-OCR
+    #                            infer_multi), then let the deterministic substrate wrap that one-shot output
 
 
 def _table_markdown(table: OdlTable) -> str:
@@ -131,6 +133,7 @@ def assemble_document(
     original_filename: str | None = None,
     options: DetVlmOptions = DetVlmOptions(),
     primary_transcribe: Any | None = None,
+    primary_transcribe_multi: Any | None = None,
 ) -> DocumentResult:
     from .docmeta import build_meta
 
@@ -138,6 +141,16 @@ def assemble_document(
     n = page_count(pdf_path)
     pypdf_texts = [page_text(pdf_path, i) for i in range(n)]
     recurring = _recurring_numbers(pypdf_texts)
+
+    # whole-doc: ONE multi-image call transcribes the entire document (e.g. Unlimited-OCR infer_multi);
+    # the ODL substrate (structure/oracle/semantic graph) wraps that one-shot output. Bypasses the
+    # per-page / spanning loop entirely -- page 0 carries the document, the rest are folded.
+    if mode == "det_vlm" and options.whole_doc and primary_transcribe_multi is not None:
+        outcomes = _assemble_whole_doc(pdf_path, n, odl_doc, pypdf_texts, recurring,
+                                       primary_transcribe_multi=primary_transcribe_multi)
+        meta = build_meta(pdf_path, source_id=source_id, external_id=external_id, ingested_from=ingested_from,
+                          original_filename=original_filename, mode=mode, n_pages=n)
+        return DocumentResult(tuple(outcomes), structure=odl_doc, meta=meta)
 
     # det_vlm reconstructs page-spanning tables in ONE multi-image VLM request (R8.2, F9); other
     # pages (and all of deterministic mode) are processed singly.
@@ -225,6 +238,43 @@ def _assemble_spanning(
     flags.append("spanning_pages:" + "-".join(str(j) for j in group))
     outcomes = [PageOutcome(start, "det_vlm", True, markdown, 0.0, tuple(flags), extract_caption_labels(markdown))]
     outcomes += [PageOutcome(j, "folded", False, "", 0.0, (f"folded_into:{start}",)) for j in group[1:]]
+    return outcomes
+
+
+def _assemble_whole_doc(
+    pdf_path: str, n: int, odl_doc: OdlDocument, pypdf_texts: list[str], recurring: set[str], *,
+    primary_transcribe_multi: Callable[[list[bytes]], str],
+) -> list[PageOutcome]:
+    """Whole-document mode: transcribe ALL pages in ONE multi-image call (e.g. Unlimited-OCR
+    infer_multi), attribute the document to page 0, fold the rest -- the same start-page + folded
+    shape as _assemble_spanning, generalised to the whole document. The deterministic substrate
+    (ODL structure on DocumentResult.structure, value oracle, semantic graph) wraps the one-shot
+    transcription. Degrades to per-page deterministic assembly if the transcriber fails (never drop)."""
+    from .deterministic import number_tokens
+    from .odl_extract import extract_caption_labels
+    from .oracle import fabrication_flags
+    from .render import render_page_png
+
+    if n == 0:
+        return []
+    pngs = [render_page_png(pdf_path, i) for i in range(n)]
+    try:
+        markdown = primary_transcribe_multi(pngs)
+    except Exception:  # degrade: per-page deterministic for the whole doc, never drop
+        out = []
+        for i in range(n):
+            page = odl_doc.pages[i] if i < len(odl_doc.pages) else OdlPage(i, pypdf_texts[i], (), ())
+            det = _assemble_deterministic(i, page, pypdf_texts[i], recurring)
+            out.append(PageOutcome(i, "det_vlm", False, det.markdown, 0.0, (*det.flags, "whole_doc_failed")))
+        return out
+    # value oracle over the WHOLE document's number tokens (R-M1): flag transcribed numbers with no
+    # source in any page's text layer. min_value 1000 matches the per-page/spanning oracle.
+    source = [t.value for i in range(n) for t in number_tokens(pdf_path, i, min_value=1000)]
+    flags = [f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000)]
+    flags.append(f"whole_doc_pages:0-{n - 1}")
+    labels = extract_caption_labels(markdown)
+    outcomes = [PageOutcome(0, "det_vlm", True, markdown, 0.0, tuple(flags), labels)]
+    outcomes += [PageOutcome(i, "folded", False, "", 0.0, ("folded_into:0",)) for i in range(1, n)]
     return outcomes
 
 

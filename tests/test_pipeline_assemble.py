@@ -84,6 +84,57 @@ def test_det_vlm_primary_paddle_uses_paddle_transcriber(tmp_path):
     assert res.pages[0].route == "det_vlm" and "| H | V |" in res.pages[0].markdown   # Paddle is the primary VLM
 
 
+def test_whole_doc_transcribes_all_pages_in_one_call(tmp_path):
+    from parse_anything.pipeline.assemble import DetVlmOptions
+
+    pdf = _two_page_pdf(tmp_path / "w.pdf")
+    seen = {}
+
+    def multi(pngs):
+        seen["pages"] = len(pngs)          # ALL pages arrive in one call
+        return "# Whole Document\n\npage one and page two, one coherent markdown"
+
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=None,
+                            options=DetVlmOptions(whole_doc=True), primary_transcribe_multi=multi,
+                            odl_runner=lambda _p: _SPANNING_ODL)
+    assert seen["pages"] == 2                                   # one multi-image call over both pages
+    assert res.pages[0].route == "det_vlm" and "Whole Document" in res.pages[0].markdown  # page 0 carries the doc
+    assert any(f.startswith("whole_doc_pages:0-") for f in res.pages[0].flags)
+    assert res.pages[1].route == "folded" and res.pages[1].markdown == "" and "folded_into:0" in res.pages[1].flags
+    assert res.structure is not None                           # ODL substrate still attached for rich output
+
+
+def test_whole_doc_degrades_to_deterministic_on_failure(tmp_path):
+    from parse_anything.pipeline.assemble import DetVlmOptions
+
+    pdf = _two_page_pdf(tmp_path / "w.pdf")
+
+    def boom(_pngs):
+        raise RuntimeError("model down")
+
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=None,
+                            options=DetVlmOptions(whole_doc=True), primary_transcribe_multi=boom,
+                            odl_runner=lambda _p: _SPANNING_ODL)
+    assert len(res.pages) == 2 and all(p.route == "det_vlm" for p in res.pages)   # never dropped, no folding
+    assert all("whole_doc_failed" in p.flags for p in res.pages)
+
+
+def test_openai_multi_transcriber_sends_one_request_with_all_images():
+    from parse_anything.pipeline.openai_vlm import make_multi_transcriber
+
+    ok = HttpResponse(status_code=200,
+                      body=json.dumps({"choices": [{"message": {"content": "# DOC"}}]}).encode("utf-8"))
+    client = _CaptureClient([ok])
+    transcribe = make_multi_transcriber(client, base_url="http://x/v1", token="EMPTY", model="model")
+    out = transcribe([b"p1", b"p2", b"p3"])
+    assert out == "# DOC"
+    assert len(client.requests) == 1                           # ONE request for the whole document
+    body = json.loads(client.requests[0].body)
+    content = body["messages"][0]["content"]
+    assert sum(1 for c in content if c["type"] == "image_url") == 3   # all 3 pages in that request
+    assert sum(1 for c in content if c["type"] == "text") == 1
+
+
 class _CaptureClient:
     def __init__(self, responses):
         self.responses = list(responses)

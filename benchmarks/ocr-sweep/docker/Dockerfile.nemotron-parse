@@ -1,14 +1,22 @@
 # Thin custom image for nvidia/NVIDIA-Nemotron-Parse-v1.2 (swapped in for nemotron-ocr-v2).
-# It is vLLM-served, but the base vllm-openai image lacks its extra deps and the chat template,
-# so we layer them on. Keeps the base ENTRYPOINT (OpenAI api_server that accepts --model ...),
-# matching how the other vLLM models are launched.
+# It is vLLM-served, but the base vllm-openai image lacks its extra deps, the chat template, AND the
+# repetition-stop logits processor, so we layer them on. Keeps the base ENTRYPOINT (OpenAI api_server
+# that accepts --model ...), matching how the other vLLM models are launched.
 #   docker build -t pa-ocr/nemotron-parse -f docker/Dockerfile.nemotron-parse .
 FROM vllm/vllm-openai:v0.14.1
 
 # Extra runtime deps required by the model's remote code (per NVIDIA model card, vLLM path).
 RUN python3 -m pip install --no-cache-dir albumentations timm open_clip_torch
 
-# Bake the chat template the serve command references (avoids a runtime fetch race).
+# Bake (1) the chat template the serve command references and (2) the repo's logitsprocs/ module.
+# The repetition-stop processor (nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopProcessor)
+# is THE fix for the page-long collapse (empty \multicolumn rows / a hallucinated para repeated
+# verbatim) that scored the 0.066 run. The card requires logitsprocs/ on PYTHONPATH before vLLM starts.
 RUN python3 -m pip install --no-cache-dir "huggingface_hub[cli]" && \
     huggingface-cli download nvidia/NVIDIA-Nemotron-Parse-v1.2 chat_template.jinja \
+        --local-dir /opt/nemotron && \
+    huggingface-cli download nvidia/NVIDIA-Nemotron-Parse-v1.2 --include "logitsprocs/*" \
         --local-dir /opt/nemotron
+# NOTE(VM): confirm the module lands at /opt/nemotron/logitsprocs/nemotron_parse_vllm_logitprocs.py;
+# if the repo nests it differently, point PYTHONPATH at the dir that actually contains that module.
+ENV PYTHONPATH=/opt/nemotron/logitsprocs:${PYTHONPATH}

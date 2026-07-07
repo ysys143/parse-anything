@@ -149,7 +149,7 @@ def _run(args, runtime: Runtime, *, env_file: Path | None = None) -> int:
     options = DetVlmOptions(
         ground=not args.no_ground, spanning=not args.no_spanning,
         arithmetic=not args.no_arithmetic, prompt=custom_prompt,
-        primary=args.primary,
+        primary=args.primary, whole_doc=args.whole_doc,
     )
 
     # PaddleOCR (local-file upload) as the det_vlm primary transcriber (R10 --primary paddle), when configured.
@@ -160,11 +160,22 @@ def _run(args, runtime: Runtime, *, env_file: Path | None = None) -> int:
         primary_transcribe = make_transcriber(safe_client(runtime), base_url=settings.paddle_base_url,
                                               token=settings.paddle_api_key, model=settings.paddle_model or "PaddleOCR-VL-1.6")
 
+    # whole-doc: a one-shot multi-image transcriber (OpenAI /v1 at PADDLE_BASE_URL) so a model like
+    # Unlimited-OCR (infer_multi) transcribes the whole document in one call and the substrate wraps it.
+    primary_transcribe_multi = None
+    if mode == "det_vlm" and args.whole_doc and settings.paddle_base_url:
+        from parse_anything.pipeline.openai_vlm import make_multi_transcriber
+
+        primary_transcribe_multi = make_multi_transcriber(
+            safe_client(runtime), base_url=settings.paddle_base_url,
+            token=settings.paddle_api_key or "", model=settings.paddle_model or "model")
+
     result = run_document(
         args.pdf, mode=mode, vlm_client=client, api_key=key or "",
         source_id=args.source_id, external_id=args.external_id, ingested_from=args.ingested_from,
         original_filename=getattr(args, "original_filename", None),   # set only for image-wrapped input (FR-1)
         options=options, primary_transcribe=primary_transcribe,
+        primary_transcribe_multi=primary_transcribe_multi,
     )
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
@@ -232,6 +243,9 @@ def _parse_args(argv):
                         help="skip building document.chunks.jsonl (the small-to-big parent/child retrieval chunks)")
     parser.add_argument("--primary", choices=["gemini", "paddle"], default="gemini",
                         help="det_vlm primary transcriber: gemini (grounded) or paddle (doc-specialised)")
+    parser.add_argument("--whole-doc", action="store_true",
+                        help="det_vlm: transcribe the WHOLE document in ONE multi-image call (OpenAI /v1 at "
+                             "PADDLE_BASE_URL) and wrap that one-shot output -- for models like Unlimited-OCR (infer_multi)")
     parser.add_argument("--prompt", default=None, help="det_vlm: custom base prompt (overrides default)")
     parser.add_argument("--prompt-file", default=None, help="det_vlm: read custom base prompt from a file")
     return parser.parse_args(argv)

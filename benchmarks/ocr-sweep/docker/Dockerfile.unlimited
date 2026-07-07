@@ -1,6 +1,8 @@
-# baidu/Unlimited-OCR served via vLLM (its arch IS recognized on vllm-openai:latest with
-# --trust-remote-code; the remote modeling code just needs a couple extra deps). This replaces the
-# native transformers/flash-attn path (flash-attn had no torch2.6 wheel).
+# DEPRECATED / not wired into models.json. Kept only as a reference for the vLLM serving attempt.
+# `vllm/vllm-openai:latest` exited at startup for this model; the working path is now the native
+# transformers stack (Dockerfile.native + native_wrapper.py), which also unlocks infer_multi
+# (multi-page). To revive the vLLM route, replace the base below with baidu's OFFICIAL Unlimited-OCR
+# vLLM image (CUDA 12.9/13.0 variant, tag from the model card) instead of the generic image.
 #   docker build -t pa-ocr/unlimited -f docker/Dockerfile.unlimited .
 FROM vllm/vllm-openai:latest
 RUN python3 -m pip install --no-cache-dir addict matplotlib einops easydict

@@ -78,6 +78,27 @@ def transcribe(png: bytes, base: str, served: str, prompt: str, extra: dict, max
         return json.loads(r.read())["choices"][0]["message"]["content"]
 
 
+def transcribe_multi(pngs: list[bytes], base: str, served: str, prompt: str, extra: dict,
+                     max_tokens: int) -> str:
+    """whole-doc mode: send ALL page images in ONE request (multiple image_url parts) so the model
+    transcribes the whole document in a single native multi-page pass (Unlimited-OCR infer_multi)."""
+    content: list[dict] = [
+        {"type": "image_url",
+         "image_url": {"url": f"data:image/png;base64,{base64.b64encode(p).decode('ascii')}"}}
+        for p in pngs
+    ]
+    content.append({"type": "text", "text": prompt})
+    payload = {"model": served, "messages": [{"role": "user", "content": content}],
+               "max_tokens": max_tokens, "temperature": 0.0}
+    payload.update(extra)
+    req = urllib.request.Request(f"{base.rstrip('/')}/chat/completions",
+                                data=json.dumps(payload).encode(),
+                                headers={"Content-Type": "application/json", "Authorization": "Bearer EMPTY"},
+                                method="POST")
+    with urllib.request.urlopen(req, timeout=7200) as r:   # whole-doc pass is slow; generous timeout
+        return json.loads(r.read())["choices"][0]["message"]["content"]
+
+
 def sanitize(s: str) -> str:
     return "".join(c if c.isalnum() or c in "-._" else "_" for c in s)
 
@@ -93,6 +114,9 @@ def main() -> None:
     ap.add_argument("--cache-file", required=True)
     ap.add_argument("--metrics-file", required=True)
     ap.add_argument("--concurrency", type=int, default=16)
+    ap.add_argument("--pipeline", choices=["per_page", "whole_doc"], default="per_page",
+                    help="per_page: one request/page (default); whole_doc: all pages in ONE request "
+                         "(native multi-page, e.g. Unlimited-OCR infer_multi)")
     args = ap.parse_args()
 
     cfg = load_cfg(args.models_file, args.model_id)
@@ -104,6 +128,28 @@ def main() -> None:
     raw_model_dir = os.path.join(args.raw_dir, sanitize(args.model_id))
     os.makedirs(raw_model_dir, exist_ok=True)
     os.makedirs(os.path.dirname(args.metrics_file) or ".", exist_ok=True)
+
+    if args.pipeline == "whole_doc":
+        # ONE multi-image request -> one document. Written as a single 0001.md (the scorer concatenates
+        # every *.md in the dir, so one file == whole doc). No cache/parse-anything step for this path.
+        t0 = time.monotonic()
+        try:
+            doc_text = transcribe_multi(pngs, args.openai_base, args.served, prompt, extra, max_tokens)
+            state = "done"
+        except Exception as exc:  # noqa: BLE001
+            doc_text, state = "", f"failed:{type(exc).__name__}"
+        wall = time.monotonic() - t0
+        with open(os.path.join(raw_model_dir, "0001.md"), "w", encoding="utf-8") as fh:
+            fh.write(doc_text)
+        with open(args.metrics_file, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"model": args.model_id, "seq": 1, "latency_ms": round(wall * 1000, 1),
+                                 "chars": len(doc_text), "state": state,
+                                 "pipeline": "whole_doc", "pages": n}) + "\n")
+        with open(args.cache_file, "w", encoding="utf-8") as fh:
+            json.dump({"texts": [doc_text]}, fh)
+        print(f"[prewarm] {args.model_id}: whole-doc {n} pages -> {len(doc_text)} chars "
+              f"in {wall:.0f}s [{state}] -> {args.cache_file}")
+        return
 
     def work(i: int) -> tuple[int, str, float, str]:
         t0 = time.monotonic()

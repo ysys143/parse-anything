@@ -132,30 +132,51 @@
     },
     {
       "id": "baidu/Unlimited-OCR",
+      "hf_id": "baidu/Unlimited-OCR",
       "backend": "custom_docker",
-      "dockerfile": "docker/Dockerfile.unlimited",
-      "build_image": "pa-ocr/unlimited",
+      "dockerfile": "docker/Dockerfile.native",
+      "build_image": "pa-ocr/unlimited-native",
+      "native_kind": "deepseek_infer_multi",
+      "pipeline": "per_page",
       "docker_run_cmd": [
-        "--model",
+        "--models-file",
+        "/app/models.json",
+        "--model-id",
         "baidu/Unlimited-OCR",
-        "--served-model-name",
-        "model",
-        "--trust-remote-code",
-        "--dtype",
-        "bfloat16",
-        "--max-model-len",
-        "8192",
-        "--gpu-memory-utilization",
-        "0.85"
+        "--port",
+        "8000",
+        "--preload"
+      ],
+      "served_name": "model",
+      "prompt": "<image>document parsing.",
+      "extra_body": {},
+      "max_tokens": 8192,
+      "params": "3.3B (DeepSeek-OCR lineage)",
+      "notes": "(a) per-page path. Native transformers via native_wrapper.py (model.infer, sdpa attn) on torch2.10/transformers4.57 per model card — the earlier vLLM/flash-attn paths BOTH failed (vLLM startup exit; flash-attn had no torch2.6 wheel and torch was wrongly downgraded to get it). Prompt '<image>document parsing.' verbatim from the card. VM smoke: confirm sdpa loads (else set NATIVE_ATTN_IMPL or a torch2.10 flash-attn wheel)."
+    },
+    {
+      "id": "baidu/Unlimited-OCR__multi",
+      "hf_id": "baidu/Unlimited-OCR",
+      "backend": "custom_docker",
+      "dockerfile": "docker/Dockerfile.native",
+      "build_image": "pa-ocr/unlimited-native",
+      "native_kind": "deepseek_infer_multi",
+      "pipeline": "whole_doc",
+      "docker_run_cmd": [
+        "--models-file",
+        "/app/models.json",
+        "--model-id",
+        "baidu/Unlimited-OCR__multi",
+        "--port",
+        "8000",
+        "--preload"
       ],
       "served_name": "model",
       "prompt": "document parsing.",
-      "extra_body": {
-        "skip_special_tokens": false
-      },
-      "max_tokens": 8192,
+      "extra_body": {},
+      "max_tokens": 32768,
       "params": "3.3B (DeepSeek-OCR lineage)",
-      "notes": "Served via vLLM latest (arch recognized w/ trust_remote_code; needs addict/matplotlib in image). Prompt <image> placeholder injected by chat template so we send 'document parsing.' Native flash-attn path abandoned (no torch2.6 wheel)."
+      "notes": "(b) whole-doc path. Same HF model (hf_id) but prewarm sends ALL page PNGs in ONE request -> native_wrapper routes to model.infer_multi (Unlimited-OCR's 32k-ctx native multi-page). Scored standalone as its own row; parse-anything is skipped for whole_doc. VM smoke: confirm infer_multi accepts this prompt without an explicit per-image <image> placeholder (else adjust)."
     },
     {
       "id": "nvidia/NVIDIA-Nemotron-Parse-v1.2",
@@ -170,10 +191,13 @@
         "--trust-remote-code",
         "--chat-template",
         "/opt/nemotron/chat_template.jinja",
+        "--logits-processors",
+        "nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopProcessor",
+        "--attention-backend=TRITON_ATTN",
         "--dtype",
         "bfloat16",
         "--max-num-seqs",
-        "8",
+        "4",
         "--limit-mm-per-prompt",
         "{\"image\": 1}",
         "--port",
@@ -188,7 +212,7 @@
       },
       "max_tokens": 8192,
       "params": "885M (vision enc-dec VLM)",
-      "notes": "Swapped in for nemotron-ocr-v2 (C). Real markdown VLM, vLLM-served. Thin custom image = FROM vllm-openai:v0.14.1 + albumentations/timm/open_clip_torch + baked chat_template. v1.2 REQUIRES the 4-token prompt + skip_special_tokens=false. L4/Ada not on NVIDIA's validated list -> smoke-test first. max_tokens 9000->8192 (model ctx caps at 9000, request overflowed)."
+      "notes": "ROOT CAUSE of the 0.066 run: MISSING the model's repetition-stop logits processor. Every page collapsed into a repetition loop (empty \\multicolumn rows / a hallucinated LaTeX para repeated verbatim). The sampling params (temp0/top_k1/rep_penalty1.1) were ALREADY correct per the card; the fix is --logits-processors nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopProcessor (+ TRITON_ATTN for Ada). The processor module ships in the repo's logitsprocs/ dir -> Dockerfile puts it on PYTHONPATH. 4-token prompt + skip_special_tokens=false stay. Earlier 'needs its own postprocessor' note was a mis-diagnosis (bbox coords are 1 token/page, already stripped by the scorer)."
     },
     {
       "id": "PaddlePaddle/PaddleOCR-VL",
