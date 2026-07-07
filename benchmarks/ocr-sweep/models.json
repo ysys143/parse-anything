@@ -132,27 +132,26 @@
     },
     {
       "id": "baidu/Unlimited-OCR",
-      "hf_id": "baidu/Unlimited-OCR",
-      "backend": "custom_docker",
-      "dockerfile": "docker/Dockerfile.native",
-      "build_image": "pa-ocr/unlimited-native",
-      "native_kind": "deepseek_infer_multi",
-      "pipeline": "per_page",
-      "docker_run_cmd": [
-        "--models-file",
-        "/app/models.json",
-        "--model-id",
-        "baidu/Unlimited-OCR",
-        "--port",
-        "8000",
-        "--preload"
-      ],
+      "backend": "vllm_docker",
+      "vllm_image": "vllm/vllm-openai:unlimited-ocr-cu129",
       "served_name": "model",
-      "prompt": "<image>document parsing.",
-      "extra_body": {},
+      "pipeline": "per_page",
+      "serve_args": [
+        "--dtype",
+        "bfloat16",
+        "--max-model-len",
+        "8192",
+        "--gpu-memory-utilization",
+        "0.85"
+      ],
+      "trust_remote_code": true,
+      "prompt": "document parsing.",
+      "extra_body": {
+        "skip_special_tokens": false
+      },
       "max_tokens": 8192,
       "params": "3.3B (DeepSeek-OCR lineage)",
-      "notes": "(a) per-page path. Native transformers via native_wrapper.py (model.infer, sdpa attn) on torch2.10/transformers4.57 per model card — the earlier vLLM/flash-attn paths BOTH failed (vLLM startup exit; flash-attn had no torch2.6 wheel and torch was wrongly downgraded to get it). Prompt '<image>document parsing.' verbatim from the card. VM smoke: confirm sdpa loads (else set NATIVE_ATTN_IMPL or a torch2.10 flash-attn wheel)."
+      "notes": "(a) per-page via Baidu's OFFICIAL vLLM image (card: vllm/vllm-openai:unlimited-ocr [CUDA13] / :unlimited-ocr-cu129 [CUDA12.9, matches our VM]). The ORIGINAL 'vLLM startup exit' was the GENERIC vllm-openai image; the official one bakes the arch in -> fast, intended path, fair throughput vs the other vLLM-served models. whole-doc (infer_multi) is NOT available via vLLM per the card, so ONLY the __multi entry stays native. VM smoke: if the image tag differs or output repetition-loops, adjust tag / add a no-repeat-ngram logits processor to serve_args."
     },
     {
       "id": "baidu/Unlimited-OCR__multi",
@@ -174,9 +173,13 @@
       "served_name": "model",
       "prompt": "document parsing.",
       "extra_body": {},
+      "infer_kwargs": {
+        "no_repeat_ngram_size": 35,
+        "ngram_window": 1024
+      },
       "max_tokens": 32768,
       "params": "3.3B (DeepSeek-OCR lineage)",
-      "notes": "(b) whole-doc path. Same HF model (hf_id) but prewarm sends ALL page PNGs in ONE request -> native_wrapper routes to model.infer_multi (Unlimited-OCR's 32k-ctx native multi-page). Scored standalone as its own row; parse-anything is skipped for whole_doc. VM smoke: confirm infer_multi accepts this prompt without an explicit per-image <image> placeholder (else adjust)."
+      "notes": "(b/c) whole-doc path (native transformers infer_multi — the ONLY route for it; vLLM can't do multi-page per the card). prewarm sends ALL page PNGs in ONE request -> native_wrapper.model.infer_multi (32k ctx). infer_kwargs no_repeat_ngram_size=35/ngram_window=1024 are from the card's multi-page example — REQUIRED to prevent DeepSeek-lineage repetition collapse (the same failure Nemotron showed). Attn=eager (model has no sdpa; flash-attn avoided) is fine here: whole-doc is Unlimited's own axis, not a throughput comparison vs other models. VM smoke: confirm infer_multi accepts these kwargs + prompt."
     },
     {
       "id": "nvidia/NVIDIA-Nemotron-Parse-v1.2",
