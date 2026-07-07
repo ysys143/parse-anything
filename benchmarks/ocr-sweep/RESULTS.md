@@ -79,6 +79,11 @@ a parse-anything (`__pa`) wrap of each. token_f1 vs the published text (born doc
 | whole-doc + parse-anything (c) | 0.716 | 0.534 | 0.5 | |
 | whole-doc raw (b) | 0.092 | 0.0 | 0.0 | early-stopped at 401 words on born |
 
+**born − scan delta ≈ 0** (raw model output, token_f1): Nemotron 0.881 → **0.879**, Unlimited per-page
+0.809 → **0.810**, Unlimited whole-doc raw 0.092 → **0.120**. The model transcribes the same rendered
+image either way, so the scan (image-only 150dpi) reproduces the born ranking — consistent with the
+original sweep. (Scan `__pa` was not archived off the VM before teardown; only raw_scan is scored here.)
+
 **Findings:**
 - **The pair wins, at per-page parity.** Wrapping the per-page transcription in parse-anything's
   deterministic substrate raised token_f1 0.809 → 0.830 and cut num_halluc 0.698 → 0.591 (it strips
