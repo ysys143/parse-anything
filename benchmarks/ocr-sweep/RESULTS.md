@@ -76,8 +76,8 @@ a parse-anything (`__pa`) wrap of each. token_f1 vs the published text (born doc
 |---|---|---|---|---|
 | per-page (a) | 0.809 | 0.896 | 0.698 | official vLLM, grounded output |
 | **per-page + parse-anything** | **0.830** | 0.896 | **0.591** | **substrate helps: +0.021 f1, halluc −0.107** |
-| whole-doc + parse-anything (c) | 0.716 | 0.534 | 0.5 | |
-| whole-doc raw (b) | 0.092 | 0.0 | 0.0 | early-stopped at 401 words on born |
+| whole-doc + parse-anything (c) | 0.716 | 0.534 | 0.5 | NOT a pair — deterministic ODL fallback (see below) |
+| whole-doc raw (b) | 0.092 | 0.0 | 0.0 | model degenerated (`OFFICIALS'` loop) at image_size=640 |
 
 **born − scan delta ≈ 0** (raw model output, token_f1): Nemotron 0.881 → **0.879**, Unlimited per-page
 0.809 → **0.810**, Unlimited whole-doc raw 0.092 → **0.120**. The model transcribes the same rendered
@@ -88,15 +88,24 @@ original sweep. (Scan `__pa` was not archived off the VM before teardown; only r
 - **The pair wins, at per-page parity.** Wrapping the per-page transcription in parse-anything's
   deterministic substrate raised token_f1 0.809 → 0.830 and cut num_halluc 0.698 → 0.591 (it strips
   grounded-bbox coordinate noise / unsourced numbers via the value oracle). "Sum > parts."
-- **whole-doc did NOT nullify parse-anything — it underperformed.** Unlimited-OCR's native multi-page
-  mode early-stopped on the born doc (401 words, f1 0.092); the scan whole-doc was fuller (16.8k chars).
-  So the "one-shot model makes the substrate redundant" hypothesis is **rejected on this document**.
+- **whole-doc did NOT nullify parse-anything — it broke.** Unlimited-OCR's native `infer_multi`
+  degenerated after ~1 page into an `OFFICIALS'` repetition loop (raw = 381 words, f1 0.092), because
+  the whole-doc pages were run at **image_size=640** (a memory compromise, see caveat) — too low-res to
+  read, so the model looped. The "one-shot model makes the substrate redundant" hypothesis is
+  **rejected on this document**: the model's whole-doc output is unusable.
+- **(c) 0.716 is NOT a model+substrate pair — it is the DETERMINISTIC fallback.** parse-anything's
+  whole-doc model call errored, so `_assemble_whole_doc` degraded to per-page deterministic assembly:
+  the ledger shows all 46 pages `whole_doc_failed` + `used_vlm: false`, and `document.md` has **zero
+  grounded `<x_>` tokens** (pure ODL/pypdfium2 text + ODL figure refs). So 0.716 inadvertently measures
+  the **deterministic-mode floor** for this document — and the per-page VLM pair (0.830) beats
+  deterministic-only by **+0.114**, another point for the pair.
 - **Nemotron native (0.881) neither helped nor hurt under parse-anything (0.880)** — its output is
   already clean markdown, so there's little bbox noise for the substrate to remove (unlike Unlimited).
-- **Caveat:** eager attention at `image_size=640` (flash-attn has no torch2.10 prebuilt wheel; the
-  source build OOMs the 32GB builder). whole-doc at `image_size=1024` + flash-attn is a follow-up.
-  The `__multi` raw's whole-doc early-stop, and the raw-vs-`__pa` word-count gap, are unexplained
-  whole-doc anomalies worth a follow-up.
+- **Caveat / follow-up:** whole-doc ran eager at `image_size=640` because eager's O(N²) attention OOMs
+  the L4 (24GB) at 46 pages × image_size=1024, and flash-attn (O(N) memory) has **no torch2.10 prebuilt
+  wheel** — the source build OOMs the 32GB builder at MAX_JOBS≥4. Doing whole-doc *properly* needs
+  image_size=1024, which needs flash-attn (MAX_JOBS=2 build, ~40min). Until then, whole-doc for this
+  model is not fairly measured; the per-page and deterministic numbers above stand.
 
 Reproduce: `deploy_and_run.sh` (branch `feat/unlimited-wholedoc`) with
 `ONLY="baidu/Unlimited-OCR,baidu/Unlimited-OCR__multi,nvidia/NVIDIA-Nemotron-Parse-v1.2"`; scores in
