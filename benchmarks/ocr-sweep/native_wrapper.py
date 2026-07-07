@@ -83,13 +83,15 @@ def _infer_deepseek(png_path: str, prompt: str) -> str:
     with tempfile.TemporaryDirectory() as out_dir:
         res = model.infer(tok, prompt=prompt, image_file=png_path, output_path=out_dir,
                           save_results=True, **kw)
-        if isinstance(res, str) and res.strip():
-            return res
-        written = sorted(glob.glob(os.path.join(out_dir, "**", "*.mmd"), recursive=True))
+        text = res[0] if isinstance(res, (tuple, list)) and res else res   # may return (outputs, tokens)
+        if isinstance(text, str) and text.strip():
+            return text
+        written = sorted(glob.glob(os.path.join(out_dir, "**", "*.md"), recursive=True)
+                         + glob.glob(os.path.join(out_dir, "**", "*.mmd"), recursive=True))
         if written:
             with open(written[0], encoding="utf-8") as fh:
                 return fh.read()
-    return res if isinstance(res, str) else ""
+    return text if isinstance(text, str) else ""
 
 
 def _infer_deepseek_multi(png_paths: list[str], prompt: str) -> str:
@@ -101,12 +103,15 @@ def _infer_deepseek_multi(png_paths: list[str], prompt: str) -> str:
     with tempfile.TemporaryDirectory() as out_dir:
         res = model.infer_multi(tok, prompt=prompt, image_files=list(png_paths),
                                 output_path=out_dir, save_results=True, **kw)
-        if isinstance(res, str) and res.strip():
-            return res
-        written = sorted(glob.glob(os.path.join(out_dir, "**", "*.mmd"), recursive=True))
+        # infer_multi RETURNS a tuple (outputs, output_tokens) and SAVES to output_path/result.md.
+        text = res[0] if isinstance(res, (tuple, list)) and res else res
+        if isinstance(text, str) and text.strip():
+            return text
+        written = sorted(glob.glob(os.path.join(out_dir, "**", "*.md"), recursive=True)
+                         + glob.glob(os.path.join(out_dir, "**", "*.mmd"), recursive=True))
         if written:
             return "\n\n".join(open(w, encoding="utf-8").read() for w in written)
-    return res if isinstance(res, str) else ""
+    return text if isinstance(text, str) else ""
 
 
 def _infer_nemotron(png_path: str, _prompt: str) -> str:
