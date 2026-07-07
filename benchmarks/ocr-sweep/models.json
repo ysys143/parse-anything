@@ -184,38 +184,27 @@
     },
     {
       "id": "nvidia/NVIDIA-Nemotron-Parse-v1.2",
+      "hf_id": "nvidia/NVIDIA-Nemotron-Parse-v1.2",
       "backend": "custom_docker",
-      "dockerfile": "docker/Dockerfile.nemotron-parse",
-      "build_image": "pa-ocr/nemotron-parse",
+      "dockerfile": "docker/Dockerfile.nemotron-native",
+      "build_image": "pa-ocr/nemotron-native",
+      "native_kind": "nemotron_parse",
+      "pipeline": "per_page",
       "docker_run_cmd": [
-        "--model",
+        "--models-file",
+        "/app/models.json",
+        "--model-id",
         "nvidia/NVIDIA-Nemotron-Parse-v1.2",
-        "--served-model-name",
-        "model",
-        "--trust-remote-code",
-        "--chat-template",
-        "/opt/nemotron/chat_template.jinja",
-        "--logits-processors",
-        "nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopLogitsProcessor",
-        "--dtype",
-        "bfloat16",
-        "--max-num-seqs",
-        "4",
-        "--limit-mm-per-prompt",
-        "{\"image\": 1}",
         "--port",
-        "8000"
+        "8000",
+        "--preload"
       ],
       "served_name": "model",
       "prompt": "</s><s><predict_bbox><predict_classes><output_markdown><predict_no_text_in_pic>",
-      "extra_body": {
-        "repetition_penalty": 1.1,
-        "top_k": 1,
-        "skip_special_tokens": false
-      },
+      "extra_body": {},
       "max_tokens": 8192,
-      "params": "885M (vision enc-dec VLM)",
-      "notes": "ROOT CAUSE of the 0.066 run: MISSING the model's repetition-stop logits processor. Every page collapsed into a repetition loop (empty \\multicolumn rows / a hallucinated LaTeX para repeated verbatim). The sampling params (temp0/top_k1/rep_penalty1.1) were ALREADY correct per the card; the fix is --logits-processors nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopLogitsProcessor (exact class name confirmed on VM; the model card's 'StopProcessor' was wrong). TRITON_ATTN dropped (card scopes it to A100/A10; L4 uses vLLM's default). The processor module ships in the repo's logitsprocs/ dir -> Dockerfile puts it on PYTHONPATH. 4-token prompt + skip_special_tokens=false stay. Earlier 'needs its own postprocessor' note was a mis-diagnosis (bbox coords are 1 token/page, already stripped by the scorer)."
+      "params": "885M (ViT-H enc + mBart dec)",
+      "notes": "REAL ROOT CAUSE (found on VM): vLLM serves this encoder-decoder VLM BLIND — pages 10/20/30 produced IDENTICAL hallucinated \\multicolumn/**100.05** tables, i.e. the image never reached the ViT-H encoder (vLLM's mm enc-dec path is broken here; L4 is not on NVIDIA's validated list). The repetition was a SYMPTOM of image-blindness, not the disease — the repetition-stop logits processor (even REP_MAX=2 + table processor) can't fix a model that isn't seeing the image. Fix = native transformers (AutoProcessor -> model.generate -> batch_decode), verified on VM to produce real page text. 4-token prompt verbatim; grounded <x_>/<class_> tokens are stripped by the scorer. (Prior vLLM notes about logits-processors / class names were treating the symptom.)"
     },
     {
       "id": "PaddlePaddle/PaddleOCR-VL",

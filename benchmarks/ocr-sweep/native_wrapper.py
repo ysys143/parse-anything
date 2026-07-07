@@ -65,6 +65,17 @@ def _ensure_loaded() -> None:
             _attn_implementation=attn, torch_dtype=torch.bfloat16,
         ).eval().cuda()
         _MODEL = (model, tok)
+    elif _KIND == "nemotron_parse":
+        import torch
+        from transformers import AutoModel, AutoProcessor, GenerationConfig
+        # nvidia/NVIDIA-Nemotron-Parse-v1.2 is a ViT-H(enc)+mBart(dec) VLM. vLLM serves it BLIND
+        # (identical hallucinated output across pages); the native processor path feeds the image to
+        # the encoder correctly. Load model + processor + the model's own GenerationConfig.
+        model = AutoModel.from_pretrained(
+            _MODEL_ID, trust_remote_code=True, torch_dtype=torch.bfloat16).to("cuda:0").eval()
+        proc = AutoProcessor.from_pretrained(_MODEL_ID, trust_remote_code=True)
+        gc = GenerationConfig.from_pretrained(_MODEL_ID, trust_remote_code=True)
+        _MODEL = (model, proc, gc)
     elif _KIND == "nemotron_pipeline":
         from nemotron_ocr.inference.pipeline_v2 import NemotronOCRV2
         _MODEL = NemotronOCRV2()
@@ -114,6 +125,18 @@ def _infer_deepseek_multi(png_paths: list[str], prompt: str) -> str:
     return text if isinstance(text, str) else ""
 
 
+def _infer_nemotron_parse(png_path: str, prompt: str) -> str:
+    """Nemotron-Parse (ViT-H enc + mBart dec): processor feeds the image to the encoder and the
+    4-token task prompt to the decoder; the model's GenerationConfig handles length/repetition. The
+    grounded output (<x_..>/<class_..> tokens) is left as-is — the scorer strips those tags."""
+    from PIL import Image
+    model, proc, gc = _MODEL
+    img = Image.open(png_path).convert("RGB")
+    inputs = proc(images=[img], text=prompt, return_tensors="pt", add_special_tokens=False).to("cuda:0")
+    out = model.generate(**inputs, generation_config=gc)
+    return proc.batch_decode(out, skip_special_tokens=True)[0]
+
+
 def _infer_nemotron(png_path: str, _prompt: str) -> str:
     preds = _MODEL(png_path)
     parts = []
@@ -136,6 +159,8 @@ def _run(pngs: list[bytes], prompt: str) -> str:
         # once (fine for vLLM batching); here we serialize so they queue instead of racing the model
         # (OOM / corrupt state).
         with _INFER_LOCK:
+            if _KIND == "nemotron_parse":
+                return _infer_nemotron_parse(paths[0], prompt)
             if _KIND == "nemotron_pipeline":
                 return _infer_nemotron(paths[0], prompt)
             if _KIND == "deepseek_infer_multi" and len(paths) > 1:

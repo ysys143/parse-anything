@@ -1,0 +1,15 @@
+# Native transformers serving for nvidia/NVIDIA-Nemotron-Parse-v1.2 (ViT-H enc + mBart dec VLM).
+# vLLM serves this enc-dec model BLIND (identical hallucinated output regardless of the input page);
+# the native processor path (AutoProcessor -> model.generate) feeds the image to the encoder correctly.
+# Base is the vllm-openai image only for its known-good torch/transformers; we override the entrypoint
+# with native_wrapper.py and add the model's remote-code deps.
+#   docker build -t pa-ocr/nemotron-native -f docker/Dockerfile.nemotron-native .
+FROM vllm/vllm-openai:v0.14.1
+
+# Extra runtime deps the model's remote code imports (per NVIDIA model card).
+RUN python3 -m pip install --no-cache-dir albumentations timm open_clip_torch
+
+WORKDIR /app
+COPY native_wrapper.py /app/native_wrapper.py
+COPY models.json /app/models.json
+ENTRYPOINT ["python3", "/app/native_wrapper.py"]
