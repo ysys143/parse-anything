@@ -22,7 +22,7 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir torch==2.10.0 torchvision \
         --index-url https://download.pytorch.org/whl/cu129 && \
     python3 -m pip install --no-cache-dir \
-        transformers==4.57.1 pillow einops addict easydict pymupdf
+        transformers==4.57.1 pillow einops addict easydict pymupdf matplotlib
 
 WORKDIR /app
 COPY native_wrapper.py /app/native_wrapper.py

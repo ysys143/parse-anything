@@ -192,8 +192,7 @@
         "--chat-template",
         "/opt/nemotron/chat_template.jinja",
         "--logits-processors",
-        "nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopProcessor",
-        "--attention-backend=TRITON_ATTN",
+        "nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopLogitsProcessor",
         "--dtype",
         "bfloat16",
         "--max-num-seqs",
@@ -212,7 +211,7 @@
       },
       "max_tokens": 8192,
       "params": "885M (vision enc-dec VLM)",
-      "notes": "ROOT CAUSE of the 0.066 run: MISSING the model's repetition-stop logits processor. Every page collapsed into a repetition loop (empty \\multicolumn rows / a hallucinated LaTeX para repeated verbatim). The sampling params (temp0/top_k1/rep_penalty1.1) were ALREADY correct per the card; the fix is --logits-processors nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopProcessor (+ TRITON_ATTN for Ada). The processor module ships in the repo's logitsprocs/ dir -> Dockerfile puts it on PYTHONPATH. 4-token prompt + skip_special_tokens=false stay. Earlier 'needs its own postprocessor' note was a mis-diagnosis (bbox coords are 1 token/page, already stripped by the scorer)."
+      "notes": "ROOT CAUSE of the 0.066 run: MISSING the model's repetition-stop logits processor. Every page collapsed into a repetition loop (empty \\multicolumn rows / a hallucinated LaTeX para repeated verbatim). The sampling params (temp0/top_k1/rep_penalty1.1) were ALREADY correct per the card; the fix is --logits-processors nemotron_parse_vllm_logitprocs:NemotronParseRepetitionStopLogitsProcessor (exact class name confirmed on VM; the model card's 'StopProcessor' was wrong). TRITON_ATTN dropped (card scopes it to A100/A10; L4 uses vLLM's default). The processor module ships in the repo's logitsprocs/ dir -> Dockerfile puts it on PYTHONPATH. 4-token prompt + skip_special_tokens=false stay. Earlier 'needs its own postprocessor' note was a mis-diagnosis (bbox coords are 1 token/page, already stripped by the scorer)."
     },
     {
       "id": "PaddlePaddle/PaddleOCR-VL",
