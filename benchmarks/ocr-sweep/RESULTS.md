@@ -26,7 +26,7 @@ reference. Each model's 46 pages are concatenated and compared **whole-document,
 | 1 | datalab-to/chandra-ocr-2 | ~4B | **0.890** | 0.892 | 5.00 | top-cluster; strong numbers |
 | 2 | zai-org/GLM-OCR | 0.9B | 0.887 | 0.892 | 5.00 | ties top on the vision judge; smallest + fastest |
 | 2 | allenai/olmOCR-2-7B-1025-FP8 | 7B | 0.887 | 0.892 | 5.00 | **top-tier** (see correction) — strong on the figure page |
-| 4 | PaddlePaddle/PaddleOCR-VL · **pipeline** | 0.9B | 0.881 | 0.892 | — | layout pipeline; proper LaTeX (not vision-judged) |
+| 4 | PaddlePaddle/PaddleOCR-VL · **pipeline** | 0.9B | 0.881 | 0.892 | 4.50 | layout pipeline; proper LaTeX; handles the figure page cleanly (no loop, unlike single-shot) |
 | 4 | nvidia/NVIDIA-Nemotron-Parse-v1.2 · **native** | 0.9B | **0.881** | 0.896 | 3.25 | REVIVED (was 0.066): vLLM served it image-BLIND; native transformers reads the page. Top on objective text, **last on the vision judge** — drops figures/equations as picture boxes. See session-2 note. |
 | 6 | deepseek-ai/DeepSeek-OCR | 3B | 0.879 | 0.885 | 4.50 | flawless equations |
 | 7 | PaddlePaddle/PaddleOCR-VL · single-shot | 0.9B | 0.876 | 0.871 | 3.50 | verbose (31k words); no LaTeX; loops on the figure page |

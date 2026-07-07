@@ -209,8 +209,9 @@
         <tr><td>olmOCR-2-FP8</td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5.00"></td></tr>
         <tr><td>Nanonets-OCR2</td><td data-v="5"></td><td data-v="4"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.75"></td></tr>
         <tr><td>DeepSeek-OCR</td><td data-v="5"></td><td data-v="3"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.50"></td></tr>
+        <tr><td>PaddleOCR-VL · pipeline</td><td data-v="5"></td><td data-v="3"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.50"></td></tr>
         <tr><td>Unlimited-OCR · per-page</td><td data-v="5"></td><td data-v="3"></td><td data-v="4"></td><td data-v="4"></td><td data-v="4.00"></td></tr>
-        <tr><td>PaddleOCR-VL</td><td data-v="5"></td><td data-v="1"></td><td data-v="4"></td><td data-v="4"></td><td data-v="3.50"></td></tr>
+        <tr><td>PaddleOCR-VL · single-shot</td><td data-v="5"></td><td data-v="1"></td><td data-v="4"></td><td data-v="4"></td><td data-v="3.50"></td></tr>
         <tr><td>Nemotron-Parse · native</td><td data-v="5"></td><td data-v="1"></td><td data-v="3"></td><td data-v="4"></td><td data-v="3.25"></td></tr>
       </tbody>
       <caption>Holistic 0–5 per page (completeness, reading order, equation/figure fidelity, hallucination),
@@ -219,7 +220,9 @@
         barely separate the leaders; the <b>figure page (p8)</b> is the discriminator. Standout: <b>Nemotron-Parse&nbsp;·&nbsp;native</b>
         tops the objective text score (0.881) yet ranks last here (3.25) — its <span class="mono">&lt;predict_no_text_in_pic&gt;</span>
         prompt makes it emit figures AND display equations as bare <span class="mono">&lt;Picture&gt;</span> boxes, dropping
-        everything non-prose. PaddleOCR-VL loops on the figure page. The vision judge catches exactly what token-F1 can't.</caption>
+        everything non-prose. And <b>how you call PaddleOCR-VL matters</b>: its single-shot call loops on the figure page
+        (3.50), but its intended layout <b>pipeline</b> handles the same page cleanly as an image region and never loops (4.50).
+        The vision judge catches exactly what token-F1 can't.</caption>
     </table></div>
   </section>
 
