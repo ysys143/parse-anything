@@ -23,15 +23,15 @@ reference. Each model's 46 pages are concatenated and compared **whole-document,
 
 | # | model | size | token_f1 | num_recall | vision judge /5 | note |
 |---|---|---|---|---|---|---|
-| 1 | datalab-to/chandra-ocr-2 | ~4B | **0.890** | 0.892 | 4.25 | top-cluster; strong numbers |
-| 2 | zai-org/GLM-OCR | 0.9B | 0.887 | 0.892 | 4.75 | best on the vision judge; smallest + fastest |
-| 2 | allenai/olmOCR-2-7B-1025-FP8 | 7B | 0.887 | 0.892 | 4.25 | **top-tier** (see correction) — best on the figure page |
-| 4 | PaddlePaddle/PaddleOCR-VL · **pipeline** | 0.9B | 0.881 | 0.892 | — | layout pipeline; proper LaTeX |
-| 5 | deepseek-ai/DeepSeek-OCR | 3B | 0.879 | 0.885 | 4.00 | flawless equations |
-| 6 | PaddlePaddle/PaddleOCR-VL · single-shot | 0.9B | 0.876 | 0.871 | 2.75 | verbose (31k words); no LaTeX |
-| 7 | nanonets/Nanonets-OCR2-3B | 3.75B | 0.875 | 0.892 | 4.75 | high judge ceiling but degenerates ("!" loop) on some pages |
-| 4 | nvidia/NVIDIA-Nemotron-Parse-v1.2 · **native** | 0.9B | **0.881** | 0.896 | — | REVIVED (was 0.066): vLLM served it image-BLIND; native transformers reads the page. See session-2 note. |
-| 9 | baidu/Unlimited-OCR · per-page (official vLLM) | 3.3B | 0.809 | 0.896 | — | now deploys (official `unlimited-ocr-cu129` image + `<image>` prompt); grounded bbox output inflates num_halluc (0.698) |
+| 1 | datalab-to/chandra-ocr-2 | ~4B | **0.890** | 0.892 | 5.00 | top-cluster; strong numbers |
+| 2 | zai-org/GLM-OCR | 0.9B | 0.887 | 0.892 | 5.00 | ties top on the vision judge; smallest + fastest |
+| 2 | allenai/olmOCR-2-7B-1025-FP8 | 7B | 0.887 | 0.892 | 5.00 | **top-tier** (see correction) — strong on the figure page |
+| 4 | PaddlePaddle/PaddleOCR-VL · **pipeline** | 0.9B | 0.881 | 0.892 | — | layout pipeline; proper LaTeX (not vision-judged) |
+| 4 | nvidia/NVIDIA-Nemotron-Parse-v1.2 · **native** | 0.9B | **0.881** | 0.896 | 3.25 | REVIVED (was 0.066): vLLM served it image-BLIND; native transformers reads the page. Top on objective text, **last on the vision judge** — drops figures/equations as picture boxes. See session-2 note. |
+| 6 | deepseek-ai/DeepSeek-OCR | 3B | 0.879 | 0.885 | 4.50 | flawless equations |
+| 7 | PaddlePaddle/PaddleOCR-VL · single-shot | 0.9B | 0.876 | 0.871 | 3.50 | verbose (31k words); no LaTeX; loops on the figure page |
+| 8 | nanonets/Nanonets-OCR2-3B | 3.75B | 0.875 | 0.892 | 4.75 | high judge ceiling but degenerates ("!" loop) on some pages |
+| 9 | baidu/Unlimited-OCR · per-page (official vLLM) | 3.3B | 0.809 | 0.896 | 4.00 | now deploys (official `unlimited-ocr-cu129` image + `<image>` prompt); grounded bbox output inflates num_halluc (0.698) |
 
 > **Session-2 correction (this run).** The two "failures" above were OUR misconfigurations, not the models:
 > - **Nemotron-Parse 0.066 → 0.881.** Not a repetition problem. vLLM serves this ViT-H(enc)+mBart(dec)
@@ -44,7 +44,9 @@ reference. Each model's 46 pages are concatenated and compared **whole-document,
 >   max-model-len 16384 (8192 left 0 input budget for the ~3.5k image tokens).
 
 The vision judge is a 4-page (p4/p8/p12/p30), image-based, GT-free cross-check — it does **not** use
-pypdfium2 or the reference text, so it validates the objective ranking independently.
+pypdfium2 or the reference text, so it validates the objective ranking independently. In session 2 it was
+**re-scored directly by Claude** against the page images, on one consistent scale across all eight models
+(the earlier per-model scores are superseded; full per-page table in `report.html` §03).
 
 Excluded: `PP-OCRv6_medium_det` and `nemotron-ocr-v2` are detection-only (boxes, not text);
 Nemotron-Parse-v1.2 stood in for the NVIDIA slot.

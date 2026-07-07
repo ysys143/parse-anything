@@ -85,13 +85,13 @@
     <p class="lede">Each model self-hosted on a single NVIDIA L4 and driven through parse-anything's
       <span class="mono">det_vlm&nbsp;--primary&nbsp;paddle</span> path, transcribing a 46-page paper both
       born-digital and rasterized. Scored against the journal's <b>published full text</b>, then judged
-      page-by-page by a vision model. Size did not predict quality.</p>
+      page-by-page by Claude against the page images. Size did not predict quality.</p>
 
     <div class="meta">
       <div><div class="k">Models run</div><div class="v">8<small> / 8 · +2 revived (S2)</small></div></div>
       <div><div class="k">GPU</div><div class="v">L4<small> 24GB · GCP</small></div></div>
       <div><div class="k">Document</div><div class="v">46<small> pages ×2</small></div></div>
-      <div><div class="k">Transcriptions</div><div class="v">644</div></div>
+      <div><div class="k">Transcriptions</div><div class="v">736</div></div>
       <div><div class="k">Best overall</div><div class="v" style="color:var(--accent)">GLM-OCR<small> 0.9B</small></div></div>
     </div>
   </header>
@@ -99,24 +99,24 @@
   <section>
     <div class="sec-head"><h2><span class="n">01</span>Verdict</h2>
       <p>Ranking is objective text fidelity against the journal's published full text (whole-document,
-        order-insensitive), cross-checked by a page-by-page vision judge. The top five sit in a tight
+        order-insensitive), cross-checked by a page-by-page vision judge. The top six sit in a tight
         cluster (0.879–0.890); size did not predict quality.</p></div>
     <ol class="rank">
       <li><span class="pos">1</span><span class="name">chandra-2 <small>datalab-to · ~4B</small></span><span class="badge b-good">Top score</span>
         <div class="desc">Highest text F1 (0.890) against the published text, with strong number recall (0.892). Emits HTML+bbox layout; occasional invented detail on figures.</div></li>
       <li><span class="pos">2</span><span class="name">GLM-OCR <small>zai-org · 0.9B</small></span><span class="badge b-win">Best overall</span>
-        <div class="desc">Ties for the objective top (0.887) and wins the vision judge (4.75) — while being the smallest and fastest model. Clean LaTeX, correct subscripts, right reading order.</div></li>
+        <div class="desc">Ties for the objective top (0.887) and for the vision-judge top (5.00) — while being the smallest and fastest model. Clean LaTeX, correct subscripts, right reading order.</div></li>
       <li><span class="pos">2</span><span class="name">olmOCR-2-FP8 <small>allenai · 7B</small></span><span class="badge b-good">Corrected</span>
         <div class="desc">Ties GLM objectively (0.887, num_recall 0.892) and is best on the figure page. Against pypdfium2 it had looked worst — a false negative from its YAML front-matter / linearization mismatch, which the published-text score clears.</div></li>
       <li><span class="pos">4</span><span class="name">PaddleOCR-VL <small>PaddlePaddle · 0.9B</small></span><span class="badge b-warn">How you call it</span>
         <div class="desc">Its intended layout pipeline (paddleocr doc_parser + vLLM) scores 0.881 with proper LaTeX; the single-shot <span class="mono">OCR:</span> call is verbose and LaTeX-free at 0.876. How you call the model matters as much as which model — both go through parse-anything identically.</div></li>
-      <li><span class="pos">5</span><span class="name">DeepSeek-OCR <small>deepseek-ai · 3B</small></span><span class="badge b-good">Clean equations</span>
+      <li><span class="pos">4</span><span class="name">Nemotron-Parse · native <small>nvidia · 0.9B</small></span><span class="badge b-win">Revived 0.066→0.881</span>
+        <div class="desc"><b>Session 2:</b> not a bad model — vLLM served this enc-dec VLM <b>image-blind</b> (different pages gave identical hallucinated tables). Native transformers reads each page: <b>0.881</b> (ties the pipeline for 4th), num_halluc 0.979→0.247. Top on objective text — but <b>last on the vision judge</b> (3.25): it drops figures/equations as bare picture boxes.</div></li>
+      <li><span class="pos">6</span><span class="name">DeepSeek-OCR <small>deepseek-ai · 3B</small></span><span class="badge b-good">Clean equations</span>
         <div class="desc">0.879 with flawless equations and low hallucination among the leaders. Slightly sparse on the figure page and a few truncations; grounding tokens preserved.</div></li>
-      <li><span class="pos">6</span><span class="name">Nanonets-OCR2 <small>nanonets · 3.75B</small></span><span class="badge b-warn">High ceiling, unstable</span>
-        <div class="desc">0.875, and ties GLM on the vision judge (4.75) when it behaves — but degenerates into a repeating "!" loop on some pages. Great or broken, per page.</div></li>
-      <li><span class="pos">4</span><span class="name">Nemotron-Parse-v1.2 <small>nvidia · 0.9B</small></span><span class="badge b-win">Revived 0.066→0.881</span>
-        <div class="desc"><b>Session 2:</b> not a bad model — vLLM served this enc-dec VLM <b>image-blind</b> (different pages gave identical hallucinated tables). Native transformers reads each page: <b>0.881</b>, num_halluc 0.979→0.247. Vaults from worst into the top cluster.</div></li>
-      <li><span class="pos">9</span><span class="name">Unlimited-OCR <small>baidu · 3.3B</small></span><span class="badge b-good">Now deploys</span>
+      <li><span class="pos">7</span><span class="name">Nanonets-OCR2 <small>nanonets · 3.75B</small></span><span class="badge b-warn">High ceiling, unstable</span>
+        <div class="desc">0.875, and strong on the vision judge (4.75) when it behaves — but degenerates into a repeating "!" loop on some pages. Great or broken, per page.</div></li>
+      <li><span class="pos">8</span><span class="name">Unlimited-OCR · per-page <small>baidu · 3.3B</small></span><span class="badge b-good">Now deploys</span>
         <div class="desc"><b>Session 2:</b> the original "startup exit" was the GENERIC vLLM image — Baidu's OFFICIAL <span class="mono">unlimited-ocr-cu129</span> image works. Per-page <b>0.809</b> (prompt must start with <span class="mono">&lt;image&gt;</span>). Its native whole-doc mode is measured separately below.</div></li>
     </ol>
   </section>
@@ -133,18 +133,18 @@
         <tr><td>GLM-OCR</td><td data-v=".887"></td><td data-v=".834"></td><td data-v=".948"></td><td data-v=".892"></td><td data-v=".245" data-d="lo"></td></tr>
         <tr><td>olmOCR-2-FP8</td><td data-v=".887"></td><td data-v=".834"></td><td data-v=".948"></td><td data-v=".892"></td><td data-v=".245" data-d="lo"></td></tr>
         <tr><td>PaddleOCR-VL · pipeline</td><td data-v=".881"></td><td data-v=".838"></td><td data-v=".929"></td><td data-v=".892"></td><td data-v=".250" data-d="lo"></td></tr>
+        <tr><td>Nemotron-Parse · native</td><td data-v=".881"></td><td data-v=".838"></td><td data-v=".928"></td><td data-v=".896"></td><td data-v=".247" data-d="lo"></td></tr>
         <tr><td>DeepSeek-OCR</td><td data-v=".879"></td><td data-v=".837"></td><td data-v=".925"></td><td data-v=".885"></td><td data-v=".252" data-d="lo"></td></tr>
         <tr><td>PaddleOCR-VL · single-shot</td><td data-v=".876"></td><td data-v=".832"></td><td data-v=".926"></td><td data-v=".871"></td><td data-v=".255" data-d="lo"></td></tr>
         <tr><td>Nanonets-OCR2</td><td data-v=".875"></td><td data-v=".840"></td><td data-v=".913"></td><td data-v=".892"></td><td data-v=".248" data-d="lo"></td></tr>
-        <tr><td>Nemotron-Parse · native</td><td data-v=".881"></td><td data-v=".838"></td><td data-v=".928"></td><td data-v=".896"></td><td data-v=".247" data-d="lo"></td></tr>
         <tr><td>Unlimited-OCR · per-page</td><td data-v=".809"></td><td data-v=".837"></td><td data-v=".783"></td><td data-v=".896"></td><td data-v=".698" data-d="lo"></td></tr>
       </tbody>
       <caption><b>token_f1</b> = bag-of-words F1 vs the published text (headline). <b>tok_recall</b> / <b>tok_prec</b>
         = fraction of reference words reproduced / fraction of output words found in the reference.
         <b>num_recall</b> = fraction of ≥4-digit numbers reproduced. <b>num_halluc</b> = model numbers absent from the
         body-text reference — inflated, since figures/tables carry numbers the body text omits.
-        The last two rows are Session 2 (see §03): Nemotron-Parse served <b>native</b> (0.066→0.881),
-        Unlimited-OCR per-page on Baidu's official vLLM image. Grounded <span class="mono">&lt;x_&gt;</span> tokens are stripped by the scorer.</caption>
+        Session-2 additions (see §S2): <b>Nemotron-Parse · native</b> (0.066→0.881, ties the pipeline at rank 4) and
+        <b>Unlimited-OCR · per-page</b> (last, 0.809). Grounded <span class="mono">&lt;x_&gt;</span> tokens are stripped by the scorer.</caption>
     </table></div>
     <div class="note"><b>Why not pypdfium2?</b> An earlier version scored against pypdfium2's text extraction —
       itself a lossy, reading-order-scrambling step, so it measured "similarity to pypdfium2", not accuracy. It made
@@ -196,26 +196,30 @@
 
   <section>
     <div class="sec-head"><h2><span class="n">03</span>Vision judge</h2>
-      <p>A vision model scored each transcription 0–5 against the actual page image, on four representative pages:
-        dense body, a figure page, and two equation-heavy pages. GT-free, so it cross-checks the objective ranking —
-        catching what token overlap can't: LaTeX fidelity, figure handling, and repetition collapse.</p></div>
+      <p>Claude scored each transcription 0–5 against the actual page image, on four representative pages: a dense
+        body page, a figure page, and two equation-heavy pages. GT-free, so it cross-checks the objective ranking —
+        catching what token overlap can't: LaTeX fidelity, figure handling, and repetition collapse. Re-judged
+        directly (not by a proxy model) and consistently across all eight models in Session 2.</p></div>
     <div class="scroll"><table id="judgeTable">
       <thead><tr><th>Model</th><th data-m="j5">p4 · body</th><th data-m="j5">p8 · figure</th>
         <th data-m="j5">p12 · math</th><th data-m="j5">p30 · methods</th><th data-m="j5">avg</th></tr></thead>
       <tbody>
-        <tr><td>GLM-OCR</td><td data-v="4"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.75"></td></tr>
+        <tr><td>GLM-OCR</td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5.00"></td></tr>
+        <tr><td>chandra-2</td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5.00"></td></tr>
+        <tr><td>olmOCR-2-FP8</td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5"></td><td data-v="5.00"></td></tr>
         <tr><td>Nanonets-OCR2</td><td data-v="5"></td><td data-v="4"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.75"></td></tr>
-        <tr><td>chandra-2</td><td data-v="4"></td><td data-v="4"></td><td data-v="5"></td><td data-v="4"></td><td data-v="4.25"></td></tr>
-        <tr><td>olmOCR-2-FP8</td><td data-v="4"></td><td data-v="5"></td><td data-v="4"></td><td data-v="4"></td><td data-v="4.25"></td></tr>
-        <tr><td>DeepSeek-OCR</td><td data-v="3"></td><td data-v="3"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.00"></td></tr>
-        <tr><td>PaddleOCR-VL</td><td data-v="5"></td><td data-v="1"></td><td data-v="3"></td><td data-v="2"></td><td data-v="2.75"></td></tr>
-        <tr class="fail"><td>Nemotron-Parse</td><td data-v="0"></td><td data-v="0"></td><td data-v="0"></td><td data-v="0"></td><td data-v="0.00"></td></tr>
+        <tr><td>DeepSeek-OCR</td><td data-v="5"></td><td data-v="3"></td><td data-v="5"></td><td data-v="5"></td><td data-v="4.50"></td></tr>
+        <tr><td>Unlimited-OCR · per-page</td><td data-v="5"></td><td data-v="3"></td><td data-v="4"></td><td data-v="4"></td><td data-v="4.00"></td></tr>
+        <tr><td>PaddleOCR-VL</td><td data-v="5"></td><td data-v="1"></td><td data-v="4"></td><td data-v="4"></td><td data-v="3.50"></td></tr>
+        <tr><td>Nemotron-Parse · native</td><td data-v="5"></td><td data-v="1"></td><td data-v="3"></td><td data-v="4"></td><td data-v="3.25"></td></tr>
       </tbody>
-      <caption>Holistic 0–5 per page (completeness, reading order, equation/figure fidelity, hallucination).
-        <b>olmOCR</b> tops the figure page; <b>GLM / Nanonets / chandra / DeepSeek</b> all handle equations as clean LaTeX;
-        <b>PaddleOCR-VL &amp; Nemotron</b> collapse into repeating loops on the figure page.
-        PaddleOCR-VL's layout pipeline was not vision-judged. <b>Note:</b> this judge predates Session 2 —
-        Nemotron's 0 reflects its broken vLLM output, since fixed by native serving (§S2); it was not re-judged.</caption>
+      <caption>Holistic 0–5 per page (completeness, reading order, equation/figure fidelity, hallucination),
+        <b>re-judged directly by Claude in Session 2</b> against the actual page images (GT-free) — all eight rows on one
+        consistent scale, superseding the earlier per-model judge. The prose page (p4) and the equation pages (p12/p30)
+        barely separate the leaders; the <b>figure page (p8)</b> is the discriminator. Standout: <b>Nemotron-Parse&nbsp;·&nbsp;native</b>
+        tops the objective text score (0.881) yet ranks last here (3.25) — its <span class="mono">&lt;predict_no_text_in_pic&gt;</span>
+        prompt makes it emit figures AND display equations as bare <span class="mono">&lt;Picture&gt;</span> boxes, dropping
+        everything non-prose. PaddleOCR-VL loops on the figure page. The vision judge catches exactly what token-F1 can't.</caption>
     </table></div>
   </section>
 
@@ -247,10 +251,10 @@
   <section>
     <div class="sec-head"><h2><span class="n">05</span>How it was measured</h2></div>
     <ul class="tight">
-      <li><b>Integration.</b> parse-anything's <span class="mono">--primary paddle</span> transcriber speaks a 3-endpoint PaddleOCR jobs API. A shim mimics it and routes each page to whichever model is up — <b>zero changes to parse-anything</b>.</li>
+      <li><b>Integration.</b> parse-anything's <span class="mono">--primary paddle</span> transcriber speaks a 3-endpoint PaddleOCR jobs API. A shim mimics it and routes each page to whichever model is up — <b>zero changes to parse-anything</b> for the per-page sweep (the §S2 whole-doc pair adds a new <span class="mono">--whole-doc</span> path).</li>
       <li><b>Throughput.</b> Naïve one-page-at-a-time serving is batch=1 and starves the GPU. A pre-transcription pass fires all 46 pages concurrently so vLLM continuous-batches them, then parse-anything replays from cache — <b>~5× faster</b> (GLM born: 393s → 71s).</li>
       <li><b>Documents.</b> A 46-page PLOS Biology paper, born-digital, plus an image-only rasterization (text layer stripped) to force unaided OCR. Scored against the journal's published full text (PLOS JATS XML), <b>not</b> the born text layer.</li>
-      <li><b>Caveats.</b> Single document, single domain — read the objective scores as <b>relative</b> to this paper, not a general OCR benchmark. The earlier pypdfium2-based char-similarity metric is deprecated (it distorted the ranking). Nemotron-Parse is a structured model shown here in raw single-shot mode, which under-represents it.</li>
+      <li><b>Caveats.</b> Single document, single domain — read the objective scores as <b>relative</b> to this paper, not a general OCR benchmark. The earlier pypdfium2-based char-similarity metric is deprecated (it distorted the ranking). The vision judge (§03) was re-scored directly by Claude on one consistent scale across all eight models. Unlimited-OCR's whole-doc mode ran at reduced resolution (image_size=640) and is not yet fairly measured (§S2).</li>
     </ul>
   </section>
 
