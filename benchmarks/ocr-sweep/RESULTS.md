@@ -46,7 +46,10 @@ reference. Each model's 46 pages are concatenated and compared **whole-document,
 The vision judge is a 4-page (p4/p8/p12/p30), image-based, GT-free cross-check — it does **not** use
 pypdfium2 or the reference text, so it validates the objective ranking independently. In session 2 it was
 **re-scored directly by Claude** against the page images, on one consistent scale across all eight models
-(the earlier per-model scores are superseded; full per-page table in `report.html` §03).
+(the earlier per-model scores are superseded; full per-page table in `report.html` §03). Cross-check:
+Baidu's **hosted PaddleOCR-VL API** (aistudio, `PaddleOCR-VL-1.6`) was called on the four judge pages and
+returns output **byte-similar to the self-hosted pipeline** — same `doc_parser`, figure page handled
+cleanly, no loop. So PaddleOCR-VL's single-shot figure-page collapse is a single-shot artifact, not the model.
 
 Excluded: `PP-OCRv6_medium_det` and `nemotron-ocr-v2` are detection-only (boxes, not text);
 Nemotron-Parse-v1.2 stood in for the NVIDIA slot.

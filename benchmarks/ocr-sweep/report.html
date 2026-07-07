@@ -236,7 +236,7 @@
       <div class="card"><h3>olmOCR-2-FP8</h3><div class="sub">vLLM · FP8 on Ada</div>
         <p>FP8 weights run natively on the L4 (sm89). Works out of the box on <span class="mono">v0.11.2</span>; top-tier text F1 once scored against the published text rather than pypdfium2.</p></div>
       <div class="card"><h3>PaddleOCR-VL</h3><div class="sub">vLLM · trust_remote_code</div>
-        <p>Run two ways: single-shot on vLLM's element-level endpoint, and the official <span class="mono">paddleocr doc_parser</span> layout pipeline (backend <span class="mono">vllm-server</span>, served name <span class="mono">PaddleOCR-VL-1.6-0.9B</span>, needs <span class="mono">libgl1</span>). The pipeline gives proper LaTeX and edges the single-shot call.</p></div>
+        <p>Run two ways: single-shot on vLLM's element-level endpoint, and the official <span class="mono">paddleocr doc_parser</span> layout pipeline (backend <span class="mono">vllm-server</span>, served name <span class="mono">PaddleOCR-VL-1.6-0.9B</span>, needs <span class="mono">libgl1</span>). The pipeline gives proper LaTeX and edges the single-shot call. Cross-checked against Baidu's <b>hosted PaddleOCR-VL API</b> (aistudio): byte-similar to the self-hosted pipeline — same <span class="mono">doc_parser</span>, figure page handled cleanly, no loop. The single-shot figure-page collapse is a single-shot artifact, not the model.</p></div>
       <div class="card"><h3>Nemotron-Parse-v1.2</h3><div class="sub">native transformers (Session 2)</div>
         <p>vLLM serves this ViT-H+mBart enc-dec VLM <b>image-blind</b> — swapped to native
           <span class="mono">AutoProcessor → model.generate</span>, which feeds the image to the encoder correctly.
