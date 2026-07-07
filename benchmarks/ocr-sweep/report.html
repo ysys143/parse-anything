@@ -88,7 +88,7 @@
       page-by-page by a vision model. Size did not predict quality.</p>
 
     <div class="meta">
-      <div><div class="k">Models run</div><div class="v">7<small> / 8 deployed</small></div></div>
+      <div><div class="k">Models run</div><div class="v">8<small> / 8 · +2 revived (S2)</small></div></div>
       <div><div class="k">GPU</div><div class="v">L4<small> 24GB · GCP</small></div></div>
       <div><div class="k">Document</div><div class="v">46<small> pages ×2</small></div></div>
       <div><div class="k">Transcriptions</div><div class="v">644</div></div>
@@ -114,10 +114,10 @@
         <div class="desc">0.879 with flawless equations and low hallucination among the leaders. Slightly sparse on the figure page and a few truncations; grounding tokens preserved.</div></li>
       <li><span class="pos">6</span><span class="name">Nanonets-OCR2 <small>nanonets · 3.75B</small></span><span class="badge b-warn">High ceiling, unstable</span>
         <div class="desc">0.875, and ties GLM on the vision judge (4.75) when it behaves — but degenerates into a repeating "!" loop on some pages. Great or broken, per page.</div></li>
-      <li><span class="pos">7</span><span class="name">Nemotron-Parse-v1.2 <small>nvidia · 0.9B</small></span><span class="badge b-bad">Unusable here</span>
-        <div class="desc">0.066 — emits bbox tokens then collapses into hallucinated repeating tables. Needs its own postprocessing pipeline, not raw single-shot serving.</div></li>
-      <li><span class="pos">—</span><span class="name">Unlimited-OCR <small>baidu · 3.3B</small></span><span class="badge b-bad">Did not deploy</span>
-        <div class="desc">Could not be served on the L4 in-budget: no flash-attn wheel for its torch build, and its vLLM path exits at startup even with deps added. The hardest of the eight to run.</div></li>
+      <li><span class="pos">4</span><span class="name">Nemotron-Parse-v1.2 <small>nvidia · 0.9B</small></span><span class="badge b-win">Revived 0.066→0.881</span>
+        <div class="desc"><b>Session 2:</b> not a bad model — vLLM served this enc-dec VLM <b>image-blind</b> (different pages gave identical hallucinated tables). Native transformers reads each page: <b>0.881</b>, num_halluc 0.979→0.247. Vaults from worst into the top cluster.</div></li>
+      <li><span class="pos">9</span><span class="name">Unlimited-OCR <small>baidu · 3.3B</small></span><span class="badge b-good">Now deploys</span>
+        <div class="desc"><b>Session 2:</b> the original "startup exit" was the GENERIC vLLM image — Baidu's OFFICIAL <span class="mono">unlimited-ocr-cu129</span> image works. Per-page <b>0.809</b> (prompt must start with <span class="mono">&lt;image&gt;</span>). Its native whole-doc mode is measured separately below.</div></li>
     </ol>
   </section>
 
@@ -136,19 +136,62 @@
         <tr><td>DeepSeek-OCR</td><td data-v=".879"></td><td data-v=".837"></td><td data-v=".925"></td><td data-v=".885"></td><td data-v=".252" data-d="lo"></td></tr>
         <tr><td>PaddleOCR-VL · single-shot</td><td data-v=".876"></td><td data-v=".832"></td><td data-v=".926"></td><td data-v=".871"></td><td data-v=".255" data-d="lo"></td></tr>
         <tr><td>Nanonets-OCR2</td><td data-v=".875"></td><td data-v=".840"></td><td data-v=".913"></td><td data-v=".892"></td><td data-v=".248" data-d="lo"></td></tr>
-        <tr class="fail"><td>Nemotron-Parse</td><td data-v=".066"></td><td data-v=".035"></td><td data-v=".704"></td><td data-v=".022"></td><td data-v=".854" data-d="lo"></td></tr>
+        <tr><td>Nemotron-Parse · native</td><td data-v=".881"></td><td data-v=".838"></td><td data-v=".928"></td><td data-v=".896"></td><td data-v=".247" data-d="lo"></td></tr>
+        <tr><td>Unlimited-OCR · per-page</td><td data-v=".809"></td><td data-v=".837"></td><td data-v=".783"></td><td data-v=".896"></td><td data-v=".698" data-d="lo"></td></tr>
       </tbody>
       <caption><b>token_f1</b> = bag-of-words F1 vs the published text (headline). <b>tok_recall</b> / <b>tok_prec</b>
         = fraction of reference words reproduced / fraction of output words found in the reference.
         <b>num_recall</b> = fraction of ≥4-digit numbers reproduced. <b>num_halluc</b> = model numbers absent from the
         body-text reference — inflated, since figures/tables carry numbers the body text omits.
-        Nemotron's row reflects its raw bbox-token format, not post-processed.</caption>
+        The last two rows are Session 2 (see §03): Nemotron-Parse served <b>native</b> (0.066→0.881),
+        Unlimited-OCR per-page on Baidu's official vLLM image. Grounded <span class="mono">&lt;x_&gt;</span> tokens are stripped by the scorer.</caption>
     </table></div>
     <div class="note"><b>Why not pypdfium2?</b> An earlier version scored against pypdfium2's text extraction —
       itself a lossy, reading-order-scrambling step, so it measured "similarity to pypdfium2", not accuracy. It made
       olmOCR look worst (recall 0.685) when it is actually top-tier. The born-minus-scan gap was ≈0 across models —
       the model transcribes the same rendered image either way; parse-anything's value is the structured artifact it
       wraps around that text, not the raw characters.</div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2><span class="n">S2</span>Session 2 · two revivals + the parse-anything pair</h2>
+      <p>The two "failures" above were OUR misconfigurations, not the models — and the ground truth was in
+        the model <b>code</b>, not the card. We also asked: does an end-to-end whole-document model
+        <b>nullify</b> parse-anything, or <b>pair</b> with it?</p></div>
+
+    <div class="roster" style="margin-bottom:18px">
+      <div class="card"><h3>Nemotron-Parse · 0.066 → 0.881</h3><div class="sub">vLLM served it image-BLIND</div>
+        <p>Pages 10/20/30 gave byte-similar hallucinated <span class="mono">**100.05**</span> tables — the image
+          never reached the ViT-H encoder (vLLM's enc-dec multimodal path breaks here; L4 is not on NVIDIA's
+          validated list). The repetition-stop logits processor treated a symptom. Native transformers
+          (<span class="mono">AutoProcessor → generate</span>) reads each page; num_halluc 0.979→<b>0.247</b>.</p></div>
+      <div class="card"><h3>Unlimited-OCR · now deploys</h3><div class="sub">official image + &lt;image&gt; prompt</div>
+        <p>The generic <span class="mono">vllm-openai</span> image exits at startup; Baidu's official
+          <span class="mono">unlimited-ocr-cu129</span> image works. The prompt must start with
+          <span class="mono">&lt;image&gt;</span> (else empty output), and <span class="mono">max-model-len 16384</span>
+          (8192 left no room for the ~3.5k image tokens). Per-page <b>0.809</b>.</p></div>
+    </div>
+
+    <div class="scroll"><table id="pairTable">
+      <thead><tr><th>Unlimited-OCR variant</th><th data-m="hi">token_f1</th><th data-m="lo">num_halluc</th><th>note</th></tr></thead>
+      <tbody>
+        <tr><td>per-page + parse-anything</td><td data-v=".830"></td><td data-v=".591" data-d="lo"></td><td class="dim" style="text-align:left">substrate strips grounded-bbox noise</td></tr>
+        <tr><td>per-page (raw)</td><td data-v=".809"></td><td data-v=".698" data-d="lo"></td><td class="dim" style="text-align:left">official vLLM, grounded output</td></tr>
+        <tr><td>whole-doc + parse-anything</td><td data-v=".716"></td><td data-v=".500" data-d="lo"></td><td class="dim" style="text-align:left">NOT a pair — deterministic ODL fallback</td></tr>
+        <tr class="fail"><td>whole-doc (raw)</td><td data-v=".092"></td><td data-v=".000" data-d="lo"></td><td class="dim" style="text-align:left">model looped at image_size=640</td></tr>
+      </tbody>
+      <caption>Three variants of Unlimited-OCR (born doc), each optionally wrapped by parse-anything (<span class="mono">__pa</span>).</caption>
+    </table></div>
+
+    <div class="note"><b>The pair wins, and whole-doc did not nullify it.</b> Wrapping the per-page transcription in
+      parse-anything's deterministic substrate raised token_f1 <b>0.809 → 0.830</b> and cut num_halluc
+      <b>0.698 → 0.591</b> (the value oracle strips grounded-bbox coordinate noise / unsourced numbers). The model's
+      native whole-doc mode <b>broke</b> — it looped after ~1 page at <span class="mono">image_size=640</span> (an eager-memory
+      compromise; flash-attn has no torch2.10 wheel), so whole-doc raw is 0.092 and the whole-doc <span class="mono">__pa</span>
+      row (0.716) is really the <b>deterministic ODL floor</b>, which the per-page pair beats by +0.114. Nemotron native
+      (0.881) is already clean markdown, so parse-anything neither helped nor hurt it (0.880). <b>Lesson:</b> model cards
+      give happy-path recipes; the truth — the <span class="mono">&lt;image&gt;</span> requirement, the tuple return, the correct
+      logits-processor class name, the vLLM blindness — was only in the model source + empirical testing.</div>
   </section>
 
   <section>
@@ -171,7 +214,8 @@
       <caption>Holistic 0–5 per page (completeness, reading order, equation/figure fidelity, hallucination).
         <b>olmOCR</b> tops the figure page; <b>GLM / Nanonets / chandra / DeepSeek</b> all handle equations as clean LaTeX;
         <b>PaddleOCR-VL &amp; Nemotron</b> collapse into repeating loops on the figure page.
-        PaddleOCR-VL's layout pipeline was not vision-judged.</caption>
+        PaddleOCR-VL's layout pipeline was not vision-judged. <b>Note:</b> this judge predates Session 2 —
+        Nemotron's 0 reflects its broken vLLM output, since fixed by native serving (§S2); it was not re-judged.</caption>
     </table></div>
   </section>
 
@@ -186,10 +230,15 @@
         <p>FP8 weights run natively on the L4 (sm89). Works out of the box on <span class="mono">v0.11.2</span>; top-tier text F1 once scored against the published text rather than pypdfium2.</p></div>
       <div class="card"><h3>PaddleOCR-VL</h3><div class="sub">vLLM · trust_remote_code</div>
         <p>Run two ways: single-shot on vLLM's element-level endpoint, and the official <span class="mono">paddleocr doc_parser</span> layout pipeline (backend <span class="mono">vllm-server</span>, served name <span class="mono">PaddleOCR-VL-1.6-0.9B</span>, needs <span class="mono">libgl1</span>). The pipeline gives proper LaTeX and edges the single-shot call.</p></div>
-      <div class="card"><h3>Nemotron-Parse-v1.2</h3><div class="sub">vLLM · custom image</div>
-        <p>Swapped in for the detection-only <span class="mono">nemotron-ocr-v2</span>. Needed a baked chat template + extra deps + <span class="mono">max_tokens&lt;9000</span>. Serves, but output is unusable without its postprocessor.</p></div>
-      <div class="card dead"><h3>Unlimited-OCR</h3><div class="sub">did not deploy</div>
-        <p>flash-attn has no wheel for its torch build; the vLLM path recognizes the arch but exits at startup even after adding <span class="mono">addict</span>/<span class="mono">matplotlib</span>. Left as a documented failure.</p></div>
+      <div class="card"><h3>Nemotron-Parse-v1.2</h3><div class="sub">native transformers (Session 2)</div>
+        <p>vLLM serves this ViT-H+mBart enc-dec VLM <b>image-blind</b> — swapped to native
+          <span class="mono">AutoProcessor → model.generate</span>, which feeds the image to the encoder correctly.
+          0.066 → <b>0.881</b>. The card's vLLM recipe and "repetition" caveat both pointed the wrong way.</p></div>
+      <div class="card"><h3>Unlimited-OCR</h3><div class="sub">official vLLM + native whole-doc (Session 2)</div>
+        <p>Per-page on Baidu's official <span class="mono">unlimited-ocr-cu129</span> image (the generic image was the
+          "startup exit"), prompt starting with <span class="mono">&lt;image&gt;</span>. Whole-doc uses native
+          <span class="mono">infer_multi</span> (vLLM can't do multi-page); ran at <span class="mono">image_size=640</span>
+          because eager OOMs the L4 at 1024 and flash-attn has no torch2.10 wheel.</p></div>
       <div class="card dead"><h3>PP-OCRv6-det · nemotron-ocr-v2</h3><div class="sub">excluded / swapped</div>
         <p>Detection-only models (boxes, not text) — out of scope for a transcription comparison. Nemotron-Parse-v1.2 stood in for the NVIDIA slot.</p></div>
     </div>
@@ -205,7 +254,7 @@
     </ul>
   </section>
 
-  <footer>parse-anything OCR sweep · 7/8 models on 1× NVIDIA L4 · document: PLOS Biology 3002373 · scored vs PLOS published full text + vision judge</footer>
+  <footer>parse-anything OCR sweep · 8/8 models on 1× NVIDIA L4 (2 revived in Session 2) · document: PLOS Biology 3002373 · scored vs PLOS published full text + vision judge</footer>
 </div>
 
 <script>
@@ -233,11 +282,13 @@
     });
   }
   // objective: hi metrics normalized 0.6..1.0; num_halluc(lo) inverted over 0..0.9; coverage best at 1.0
-  paint("#objTable",(v,d)=>{
+  const objNorm=(v,d)=>{
     if(d==="lo") return 1-Math.min(v/0.4,1);           // 0 good, .4+ bad
     if(d==="cov") return 1-Math.min(Math.abs(v-1)/1.0,1); // 1.0 ideal
     return Math.max(0,(v-0.6)/0.4);                     // .6..1.0
-  });
+  };
+  paint("#objTable",objNorm);
+  paint("#pairTable",objNorm);   // Session-2 pair table, same heat scale
   // judge: 0..5
   paint("#judgeTable",(v)=>v/5);
 </script>
