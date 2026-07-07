@@ -142,6 +142,8 @@ substrate receives a uniform contract regardless of model. `src/parse_anything/n
 the assembly path currently assumes clean input.
 
 ## Files
+- `SERVING.md` — **per-model serving guide**: how to run each model (vLLM version pins, official images,
+  native transformers) and the gotcha that cost time for each. The operational companion to this doc.
 - `results/scores_vs_gt.md` — the ranking above (vs published text). **Primary.**
 - `results/scores.md`, `results/scores_pipe.md` — pypdfium2-based. **Deprecated.**
 - `gt/reference.txt`, `gt/plos.xml` — the ground-truth published text and its source.
