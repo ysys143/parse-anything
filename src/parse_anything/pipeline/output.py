@@ -487,7 +487,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         # A slide deck (landscape pages) is a graphic layout: keep ONE rendered image per page for a
         # consistent visual, with the VLM's text transcription alongside for search. Clearing per-figure
         # crops also means no chart-internal-text suppression, so the slide's own text survives too.
-        if pdf_path and result.pages:
+        if pdf_path and result.pages and not _is_image_wrapped_result(result):
             import pypdfium2 as _pdfium
 
             from .render import render_page_png
@@ -510,6 +510,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
         figures = [f for f in figures
                    if not _tiny_figure(f.get("bbox"))
                    and not (_text_line_strip(f.get("bbox")) and (f.get("page") or 0) - 1 in math_pages)]
+        if describe_figure is not None:
+            _add_page_raster_figures(pages_meta, figures, result, pdf_path)
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
         _bind_vector_captions(figures, blocks)  # 図N label + caption text (both modes)
         if describe_figure is not None:  # VLM figure judgement (det_vlm): whether a crop is meaningful
@@ -941,6 +943,46 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
             name = f"{fig['id']}.png"
             img.crop(box).save(adir / name)
             fig["file"] = f"assets/{name}"
+    finally:
+        doc.close()
+
+
+def _is_image_wrapped_result(result: DocumentResult) -> bool:
+    if result.meta is None:
+        return False
+    from .imagewrap import is_image
+
+    original = getattr(result.meta, "original_filename", None)
+    ingested = getattr(result.meta, "ingested_from", None)
+    return bool((original and is_image(str(original))) or (ingested and is_image(str(ingested))))
+
+
+def _add_page_raster_figures(pages_meta: dict[int, dict], figures: list[dict], result: DocumentResult,
+                             pdf_path: str | None) -> None:
+    if not pdf_path or not _is_image_wrapped_result(result) or result.structure is None:
+        return
+    import pypdfium2 as pdfium
+
+    existing = {int(f["page"]) - 1 for f in figures if f.get("page") and f.get("bbox")}
+    doc = pdfium.PdfDocument(pdf_path)
+    try:
+        for page in result.structure.pages:
+            pi = page.page_index
+            if pi in existing or pi >= len(doc):
+                continue
+            if (page.text or "").strip() or page.paragraphs or page.tables or page.images:
+                continue
+            width, height = doc[pi].get_size()
+            fid = f"p{pi + 1}_page"
+            figures.append({
+                "id": fid, "type": "figure", "page": pi + 1, "order": 10**8,
+                "label": None, "caption": None, "caption_id": None,
+                "bbox": [0.0, 0.0, float(width), float(height)], "file": None,
+                "kind": "image", "source": "page_raster",
+            })
+            meta = pages_meta.setdefault(pi, {"content": [], "blocks": [], "tables": [], "figures": []})
+            meta["figures"].append(fid)
+            meta["content"].append(fid)
     finally:
         doc.close()
 
@@ -1436,6 +1478,42 @@ def _quality_summary(pages, blocks: list[dict], tables: list[dict], figures: lis
     }
 
 
+_SPECIAL_OCR_HINTS = (
+    ("handwriting", ("handwriting", "handwritten", "handwrite", "manuscript", "signature",
+                     "손글씨", "자필", "수기", "필기", "서명")),
+    ("stamp", ("stamp", "seal", "chop", "도장", "직인", "인감", "날인")),
+    ("annotation", ("annotation", "annotated", "markup", "marginalia", "margin note",
+                    "주석", "첨삭", "메모", "교정")),
+)
+
+
+def _special_ocr_routing_hints(blocks: list[dict], figures: list[dict]) -> list[dict]:
+    hints: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for node in (*blocks, *figures):
+        target = str(node.get("id") or "")
+        page = node.get("page")
+        bbox = node.get("bbox")
+        if not target or page is None or not bbox:
+            continue
+        text = " ".join(str(node.get(k) or "") for k in ("type", "kind", "label", "caption", "description", "text")).lower()
+        for reason, keywords in _SPECIAL_OCR_HINTS:
+            if not any(k in text for k in keywords):
+                continue
+            key = (target, reason)
+            if key in seen:
+                continue
+            seen.add(key)
+            hints.append({
+                "target": target,
+                "page": page,
+                "bbox": list(bbox),
+                "route": "doc_specialized_ocr",
+                "reason": reason,
+            })
+    return hints
+
+
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
                          sections: list[dict], page_labels: dict[int, str | None],
@@ -1468,6 +1546,8 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
     doc["tables"] = [_l0(t) for t in tables]
     doc["figures"] = [_l0(f) for f in figures]
     doc["quality"] = _quality_summary(result.pages, blocks, tables, figures)  # FR-6: uncertainty at a glance
+    if routing_hints := _special_ocr_routing_hints(blocks, figures):
+        doc["routing_hints"] = routing_hints
     if ontology is not None:   # additive top-level: injected ontology + Layer-1 role overlay + zone summary
         doc["@context"] = _SEMANTIC_CONTEXT
         doc["ontology"] = ontology.profile_stamp()
@@ -1482,7 +1562,7 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
         # StructureExport.from_dict re-emits UNKNOWN top-level keys via its `document` passthrough, so
         # ``extractions`` (a document.json-only overlay, not a typed contract field) is stripped here to keep
         # the structure contract surface clean -- it lives in document.json, the source of truth.
-        struct_doc = {k: v for k, v in doc.items() if k not in ("extractions", "quality")}
+        struct_doc = {k: v for k, v in doc.items() if k not in ("extractions", "quality", "routing_hints")}
         (out / "document.structure.json").write_text(
             json.dumps(StructureExport.from_dict(struct_doc).to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8")

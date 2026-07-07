@@ -102,6 +102,42 @@ def test_vlm_labels_fill_table_label_and_add_missing_figures(tmp_path):
     assert "vlm" in str(figs[0]["id"])
 
 
+def test_document_json_carries_specialized_ocr_routing_hints(tmp_path):
+    figure = OdlImage(
+        0,
+        (72, 520, 180, 620),
+        element_id="stamp",
+        label="Approval stamp",
+        caption="Approval stamp with handwritten signature",
+        kind="stamp",
+    )
+    structure = OdlDocument(1, (OdlPage(0, "", (), (figure,)),))
+    meta = DocumentMeta("idroutehint12345", "idroutehint12345ff", "d.pdf", n_pages=1, mode="deterministic")
+    result = DocumentResult((PageOutcome(0, "deterministic", False, "", 0.0, ()),), structure=structure, meta=meta)
+
+    out = document_dir(tmp_path, result)
+    write_outputs(result, out, chunk=False)
+
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    hints = doc["routing_hints"]
+    assert hints == [
+        {
+            "target": "p1_stamp",
+            "page": 1,
+            "bbox": [72, 520, 180, 620],
+            "route": "doc_specialized_ocr",
+            "reason": "handwriting",
+        },
+        {
+            "target": "p1_stamp",
+            "page": 1,
+            "bbox": [72, 520, 180, 620],
+            "route": "doc_specialized_ocr",
+            "reason": "stamp",
+        },
+    ]
+
+
 def _result() -> DocumentResult:
     return DocumentResult(
         (

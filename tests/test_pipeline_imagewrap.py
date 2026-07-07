@@ -6,7 +6,13 @@ import json
 import pypdfium2 as pdfium
 from PIL import Image
 
+from parse_anything.cli_support import Runtime
 from parse_anything.pipeline.imagewrap import image_to_pdf, is_image
+
+
+def _stdout(runtime: Runtime) -> str:
+    assert isinstance(runtime.stdout, io.StringIO)
+    return runtime.stdout.getvalue()
 
 
 def test_is_image_by_suffix_case_insensitive():
@@ -70,11 +76,11 @@ def test_cli_skips_already_processed_image_on_rerun(tmp_path):
 
     r1 = cli.Runtime(environ={}, stdout=io.StringIO())
     assert cli.run_cli(args, r1, env_file=tmp_path / "absent.env") == 0
-    assert "mode=deterministic" in r1.stdout.getvalue()
+    assert "mode=deterministic" in _stdout(r1)
 
     r2 = cli.Runtime(environ={}, stdout=io.StringIO())
     assert cli.run_cli(args, r2, env_file=tmp_path / "absent.env") == 0
-    assert "skipped:" in r2.stdout.getvalue()   # stable hash -> recognized as already processed
+    assert "skipped:" in _stdout(r2)   # stable hash -> recognized as already processed
 
 
 def test_cli_corrupt_image_fails_cleanly_without_leaking_temp(tmp_path):
@@ -93,7 +99,7 @@ def test_cli_corrupt_image_fails_cleanly_without_leaking_temp(tmp_path):
     code = cli.run_cli(["--pdf", str(bad), "--out", str(tmp_path / "out"), "--no-vlm"], runtime,
                        env_file=tmp_path / "absent.env")
 
-    out = runtime.stdout.getvalue()
+    out = _stdout(runtime)
     assert code == 2 and "could not read image input" in out
     assert "Traceback" not in out
     leaked = set(glob.glob(f"{tempfile.gettempdir()}/*.pdf")) - before
@@ -113,7 +119,7 @@ def test_cli_accepts_image_input_and_records_original_as_provenance(tmp_path):
     code = cli.run_cli(["--pdf", str(png), "--out", str(out), "--no-vlm"], runtime, env_file=tmp_path / "absent.env")
 
     assert code == 0
-    assert "mode=deterministic" in runtime.stdout.getvalue()
+    assert "mode=deterministic" in _stdout(runtime)
     docdirs = list((out / "default").glob("*"))
     assert len(docdirs) == 1
     meta = json.loads((docdirs[0] / "document.json").read_text(encoding="utf-8"))
@@ -134,4 +140,66 @@ def test_cli_multi_frame_image_warns_about_dropped_pages(tmp_path):
                        env_file=tmp_path / "absent.env")
 
     assert code == 0
-    assert "only frame 1 of 3 wrapped" in runtime.stdout.getvalue()
+    assert "only frame 1 of 3 wrapped" in _stdout(runtime)
+
+
+def test_textless_image_page_is_described_as_page_level_figure(tmp_path):
+    from parse_anything.pipeline.docmeta import build_meta
+    from parse_anything.pipeline.odl_extract import OdlDocument, OdlPage
+    from parse_anything.pipeline.output import write_outputs
+    from parse_anything.pipeline.run import DocumentResult, PageOutcome
+
+    png = tmp_path / "drawing.png"
+    Image.new("RGB", (240, 160), "white").save(png)
+    pdf = tmp_path / "drawing.pdf"
+    image_to_pdf(str(png), str(pdf))
+
+    calls: list[tuple[bytes, str | None]] = []
+
+    def describe_figure(image: bytes, caption: str | None) -> str:
+        calls.append((image, caption))
+        return "KIND: diagram\nSchneckenwelle 16MnCr5 scale 2:1 dia32-0.1 Ra 1.6"
+
+    result = DocumentResult(
+        pages=(PageOutcome(0, "det_vlm", True, "", 0.0),),
+        structure=OdlDocument(1, (OdlPage(0, "", (), ()),)),
+        meta=build_meta(str(pdf), mode="det_vlm", n_pages=1, original_filename=png.name),
+    )
+
+    out = tmp_path / "out"
+    write_outputs(result, out, pdf_path=str(pdf), describe_figure=describe_figure)
+
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert len(calls) == 1 and calls[0][0].startswith(b"\x89PNG") and calls[0][1] is None
+    assert doc["pages"][0]["figures"] == ["p1_page"]
+    assert doc["pages"][0]["content"] == ["p1_page"]
+    assert doc["figures"][0]["source"] == "page_raster"
+    assert doc["figures"][0]["kind"] == "diagram"
+    assert doc["figures"][0]["description"] == "Schneckenwelle 16MnCr5 scale 2:1 dia32-0.1 Ra 1.6"
+    assert (out / doc["figures"][0]["file"]).exists()
+    assert "Schneckenwelle 16MnCr5" in (out / "document.md").read_text(encoding="utf-8")
+
+
+def test_textless_image_page_without_describer_does_not_fabricate_caption(tmp_path):
+    from parse_anything.pipeline.docmeta import build_meta
+    from parse_anything.pipeline.odl_extract import OdlDocument, OdlPage
+    from parse_anything.pipeline.output import write_outputs
+    from parse_anything.pipeline.run import DocumentResult, PageOutcome
+
+    png = tmp_path / "drawing.png"
+    Image.new("RGB", (240, 160), "white").save(png)
+    pdf = tmp_path / "drawing.pdf"
+    image_to_pdf(str(png), str(pdf))
+
+    result = DocumentResult(
+        pages=(PageOutcome(0, "deterministic", False, "", 0.0),),
+        structure=OdlDocument(1, (OdlPage(0, "", (), ()),)),
+        meta=build_meta(str(pdf), mode="deterministic", n_pages=1, original_filename=png.name),
+    )
+
+    out = tmp_path / "out"
+    write_outputs(result, out, pdf_path=str(pdf))
+
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert doc["figures"] == []
+    assert doc["pages"][0]["figures"] == []

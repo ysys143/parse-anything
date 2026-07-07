@@ -1,10 +1,29 @@
 from __future__ import annotations
 
+import html
 import json
+import re
 from collections.abc import Mapping
 from typing import Any
 
 from parse_anything.ir import NormalizedPage, ProviderName
+
+_COORD_TOKEN_RE = re.compile(r"<[xy]_-?\d+(?:\.\d+)?>", re.IGNORECASE)
+_CLASS_FIGURE_RE = re.compile(r"<class_(?:Picture|Figure|Image|Diagram)>", re.IGNORECASE)
+_CLASS_TOKEN_RE = re.compile(r"<class_[^>]+>", re.IGNORECASE)
+_REF_TOKEN_RE = re.compile(r"<\|ref\|>.*?<\|/ref\|>", re.IGNORECASE | re.DOTALL)
+_DET_TOKEN_RE = re.compile(r"<\|det\|>.*?<\|/det\|>", re.IGNORECASE | re.DOTALL)
+_HTML_LAYOUT_HINT_RE = re.compile(
+    r"</?(?:div|p|header|footer|section|article|main|aside|figure|figcaption|table|thead|tbody|tr|td|th|ul|ol|li|h[1-6]|img|math)\b",
+    re.IGNORECASE,
+)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_BLOCK_TAGS = r"div|p|header|footer|section|article|main|aside|figure|figcaption|table|thead|tbody|tr|td|th|ul|ol|li|h[1-6]"
+_BLOCK_END_RE = re.compile(rf"</(?:{_BLOCK_TAGS})>", re.IGNORECASE)
+_BLOCK_START_RE = re.compile(rf"<(?:{_BLOCK_TAGS})\b[^>]*>", re.IGNORECASE)
+_DISPLAY_MATH_RE = re.compile(r"<math\b[^>]*display=[\"']block[\"'][^>]*>(.*?)</math>", re.IGNORECASE | re.DOTALL)
+_INLINE_MATH_RE = re.compile(r"<math\b[^>]*>(.*?)</math>", re.IGNORECASE | re.DOTALL)
+_FRONTMATTER_LINE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*:\s*.*$")
 
 
 def decode_json_body(body: bytes | str) -> Any:
@@ -25,6 +44,63 @@ def try_decode_json(body: bytes | str) -> Any:
         return decode_json_body(body)
     except ValueError:
         return None
+
+
+def normalize_transcription_markdown(markdown: str) -> str:
+    text = _drop_yaml_frontmatter(markdown.strip())
+    text = _REF_TOKEN_RE.sub("", text)
+    text = _DET_TOKEN_RE.sub("", text)
+    text = _CLASS_FIGURE_RE.sub("\n[figure]\n", text)
+    text = _COORD_TOKEN_RE.sub("", text)
+    text = _CLASS_TOKEN_RE.sub("", text)
+    if "data-bbox" in text.lower() or _HTML_LAYOUT_HINT_RE.search(text):
+        text = _html_layout_to_markdown(text)
+    return _squash_blank_lines(text)
+
+
+def _drop_yaml_frontmatter(markdown: str) -> str:
+    lines = markdown.splitlines()
+    if not lines:
+        return markdown
+    first_index = next((index for index, line in enumerate(lines) if line.strip()), None)
+    if first_index is None:
+        return ""
+    first = lines[first_index].strip()
+    if first == "---":
+        for index in range(first_index + 1, len(lines)):
+            if lines[index].strip() == "---":
+                return "\n".join(lines[index + 1 :]).lstrip()
+        return markdown
+    if not first.lower().startswith("is_diagram:"):
+        return markdown
+    index = first_index
+    while index < len(lines) and (not lines[index].strip() or _FRONTMATTER_LINE_RE.match(lines[index].strip())):
+        index += 1
+    return "\n".join(lines[index:]).lstrip()
+
+
+def _html_layout_to_markdown(markdown: str) -> str:
+    text = re.sub(r"<img\b[^>]*>", "\n[figure]\n", markdown, flags=re.IGNORECASE)
+    text = _DISPLAY_MATH_RE.sub(lambda match: f"\n$${html.unescape(match.group(1)).strip()}$$\n", text)
+    text = _INLINE_MATH_RE.sub(lambda match: html.unescape(match.group(1)).strip(), text)
+    text = _BLOCK_END_RE.sub("\n", text)
+    text = _BLOCK_START_RE.sub("", text)
+    text = _HTML_TAG_RE.sub("", text)
+    return html.unescape(text)
+
+
+def _squash_blank_lines(markdown: str) -> str:
+    lines = [line.rstrip() for line in markdown.splitlines()]
+    out: list[str] = []
+    blank = False
+    for line in lines:
+        if line.strip():
+            out.append(line.strip())
+            blank = False
+        elif not blank and out:
+            out.append("")
+            blank = True
+    return "\n".join(out).strip()
 
 
 def normalize_deterministic(

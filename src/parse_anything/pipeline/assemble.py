@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -120,6 +120,23 @@ def _completeness_flags(pypdf_text: str, odl_text: str, recurring: set[str], *, 
     return flags
 
 
+def _number_sort_key(value: str) -> tuple[float, str]:
+    try:
+        return (float(value), value)
+    except ValueError:
+        return (float("inf"), value)
+
+
+def _recall_flags(markdown: str, source_values: Iterable[str], recurring: set[str], *, cap: int = 12) -> list[str]:
+    source = {str(v) for v in source_values} - recurring
+    emitted = set(extract_numbers(markdown, min_value=1000))
+    missing = sorted(source - emitted, key=_number_sort_key)
+    flags = [f"recall_missing_number:{v}" for v in missing[:cap]]
+    if len(missing) > cap:
+        flags.append(f"recall_missing_number_truncated:{len(missing) - cap}")
+    return flags
+
+
 def assemble_document(
     pdf_path: str,
     *,
@@ -213,6 +230,7 @@ def _assemble_spanning(
     from .render import render_page_png
     from .run import SPANNING_PROMPT
     from .vlm import VlmError, transcribe_images
+    from ..normalizers import normalize_transcription_markdown
 
     start = group[0]
     pngs = [render_page_png(pdf_path, j) for j in group]
@@ -233,8 +251,10 @@ def _assemble_spanning(
                                    ("spanning_vlm_failed",)))
         return out
 
+    markdown = normalize_transcription_markdown(markdown)
     source = [t.value for j in group for t in number_tokens(pdf_path, j, min_value=1000)]
     flags = [f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000)]
+    flags.extend(_recall_flags(markdown, source, recurring))
     flags.append("spanning_pages:" + "-".join(str(j) for j in group))
     outcomes = [PageOutcome(start, "det_vlm", True, markdown, 0.0, tuple(flags), extract_caption_labels(markdown))]
     outcomes += [PageOutcome(j, "folded", False, "", 0.0, (f"folded_into:{start}",)) for j in group[1:]]
@@ -254,6 +274,7 @@ def _assemble_whole_doc(
     from .odl_extract import extract_caption_labels
     from .oracle import fabrication_flags
     from .render import render_page_png
+    from ..normalizers import normalize_transcription_markdown
 
     if n == 0:
         return []
@@ -267,10 +288,12 @@ def _assemble_whole_doc(
             det = _assemble_deterministic(i, page, pypdf_texts[i], recurring)
             out.append(PageOutcome(i, "det_vlm", False, det.markdown, 0.0, (*det.flags, "whole_doc_failed")))
         return out
+    markdown = normalize_transcription_markdown(markdown)
     # value oracle over the WHOLE document's number tokens (R-M1): flag transcribed numbers with no
     # source in any page's text layer. min_value 1000 matches the per-page/spanning oracle.
     source = [t.value for i in range(n) for t in number_tokens(pdf_path, i, min_value=1000)]
     flags = [f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000)]
+    flags.extend(_recall_flags(markdown, source, recurring))
     flags.append(f"whole_doc_pages:0-{n - 1}")
     labels = extract_caption_labels(markdown)
     outcomes = [PageOutcome(0, "det_vlm", True, markdown, 0.0, tuple(flags), labels)]
@@ -302,6 +325,7 @@ def _assemble_det_vlm(
     from .render import render_page_png
     from .run import DEFAULT_PROMPT, LOW_QUALITY_SENTINEL, SCAN_PROMPT
     from .vlm import VlmError, transcribe_image
+    from ..normalizers import normalize_transcription_markdown
 
     needs_gemini = options.primary == "gemini"
     if needs_gemini and vlm_client is None:
@@ -339,9 +363,11 @@ def _assemble_det_vlm(
             return PageOutcome(page_index, "det_vlm", False, det.markdown, 0.0, (*flags, str(exc)))
         if markdown.strip() == LOW_QUALITY_SENTINEL:
             return PageOutcome(page_index, "det_vlm", True, "", 0.0, (*flags, "illegible_low_quality"))
+    markdown = normalize_transcription_markdown(markdown)
     if options.reading_order:  # follow the PDF's logical reading order (fixes multi-column linearization)
         markdown = _reorder_by_odl_order(markdown, odl_page)
     source = [t.value for t in number_tokens(pdf_path, page_index, min_value=1000)]
     flags.extend(f"unsourced_number:{v}" for v in fabrication_flags(markdown, source, min_value=1000))
+    flags.extend(_recall_flags(markdown, source, recurring))
     labels = extract_caption_labels(markdown)  # VLM reads captions ODL misses (R4.3)
     return PageOutcome(page_index, "det_vlm", True, markdown, 0.0, tuple(flags), labels)

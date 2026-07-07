@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from parse_anything.cli_support import Runtime, safe_client
@@ -23,7 +24,7 @@ from parse_anything.pipeline.output import document_dir, write_outputs
 from parse_anything.pipeline.run import run_document
 
 _FIG_DESCRIBE_PROMPT = (
-    "You are shown a small image cropped from a document page. Decide what it is.\n"
+    "You are shown an image region from a document page. It may be a crop or the whole page. Decide what it is.\n"
     "If it is DECORATION -- an icon, bullet or marker, logo, divider or rule line, background "
     "texture/gradient, page-number badge, or a purely ornamental graphic that carries no information "
     "-- reply with exactly the single word: DECORATION\n"
@@ -180,13 +181,14 @@ def _run(args, runtime: Runtime, *, env_file: Path | None = None) -> int:
     # Per-document dir = <out_root>/<source_id>/<document_id> (out_root resolved above).
     out_dir = document_dir(out_root, result)
 
-    describe_figure = None  # R14: a VLM text description for each cropped vector chart (det_vlm only)
+    describe_figure: Callable[[bytes, str | None], str] | None = None
     if client is not None and key and not args.no_describe_figures:
         from parse_anything.pipeline.vlm import transcribe_image
 
-        def describe_figure(png: bytes, caption: str | None) -> str:
+        def _describe_figure(png: bytes, caption: str | None) -> str:
             prompt = _FIG_DESCRIBE_PROMPT + (f"\nThe figure's caption is: {caption}" if caption else "")
             return transcribe_image(png, prompt, api_key=key, client=client)
+        describe_figure = _describe_figure
 
     from parse_anything.pipeline.ontology import bundled_ontology_root, load_ontology  # R15: injected node/zone ontology
 

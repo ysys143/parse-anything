@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from parse_anything.pipeline.assemble import _recurring_numbers, assemble_document
+from parse_anything.pipeline.output import write_outputs
 from parse_anything.providers import HttpResponse
 
 
@@ -37,6 +40,19 @@ def _two_page_pdf(path) -> str:
     c.showPage()
     c.save()
     return str(path)
+
+
+def _ocr_sweep_output(model: str, fixture: str = "outputs_p04.md") -> str:
+    path = Path(__file__).resolve().parents[1] / "benchmarks" / "ocr-sweep" / "judge_pages" / fixture
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(
+        rf"^===== MODEL: {re.escape(model)} =====\n(?P<body>.*?)(?=^===== MODEL: |\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(text)
+    if match is None:
+        raise AssertionError(f"missing sweep fixture section for {model}")
+    return match.group("body").strip()
 
 
 _SPANNING_ODL = {
@@ -84,6 +100,33 @@ def test_det_vlm_primary_paddle_uses_paddle_transcriber(tmp_path):
     assert res.pages[0].route == "det_vlm" and "| H | V |" in res.pages[0].markdown   # Paddle is the primary VLM
 
 
+def test_det_vlm_primary_adapter_normalizes_nonconforming_markdown(tmp_path):
+    from parse_anything.pipeline.assemble import DetVlmOptions
+
+    pdf = _pdf(tmp_path / "d.pdf", "value 1,234")
+    nonconforming = (
+        "<x_0.334><y_0.1469>Value 1,234<class_Text>\n\n"
+        "<class_Picture>\n\n"
+        "<|ref|>text<|/ref|><|det|>[[25, 0, 960, 95]]<|/det|>"
+    )
+    res = assemble_document(
+        pdf,
+        mode="det_vlm",
+        vlm_client=None,
+        options=DetVlmOptions(primary="paddle", reading_order=False),
+        primary_transcribe=lambda _png: nonconforming,
+        odl_runner=lambda _p: {"number of pages": 1, "kids": []},
+    )
+
+    page = res.pages[0]
+    assert page.route == "det_vlm"
+    assert "<x_" not in page.markdown
+    assert "<class_" not in page.markdown
+    assert "<|ref|>" not in page.markdown
+    assert "Value 1,234" in page.markdown
+    assert "[figure]" in page.markdown
+
+
 def test_whole_doc_transcribes_all_pages_in_one_call(tmp_path):
     from parse_anything.pipeline.assemble import DetVlmOptions
 
@@ -102,6 +145,53 @@ def test_whole_doc_transcribes_all_pages_in_one_call(tmp_path):
     assert any(f.startswith("whole_doc_pages:0-") for f in res.pages[0].flags)
     assert res.pages[1].route == "folded" and res.pages[1].markdown == "" and "folded_into:0" in res.pages[1].flags
     assert res.structure is not None                           # ODL substrate still attached for rich output
+
+
+def test_whole_doc_adapter_normalizes_nonconforming_markdown(tmp_path):
+    from parse_anything.pipeline.assemble import DetVlmOptions
+
+    pdf = _two_page_pdf(tmp_path / "w.pdf")
+
+    def multi(_pngs):
+        return "<x_0.1><y_0.2># Whole Document<class_Text>\n\n<class_Picture>"
+
+    res = assemble_document(
+        pdf,
+        mode="det_vlm",
+        vlm_client=None,
+        options=DetVlmOptions(whole_doc=True),
+        primary_transcribe_multi=multi,
+        odl_runner=lambda _p: _SPANNING_ODL,
+    )
+
+    assert "<x_" not in res.pages[0].markdown
+    assert "<class_" not in res.pages[0].markdown
+    assert "# Whole Document" in res.pages[0].markdown
+    assert "[figure]" in res.pages[0].markdown
+
+
+def test_adapter_replays_gcp_sweep_outputs_through_final_document(tmp_path):
+    from parse_anything.pipeline.assemble import DetVlmOptions
+
+    pdf = _pdf(tmp_path / "d.pdf", "value 1,234")
+    leak_tokens = ("<x_", "<y_", "<class_", "<|ref|>", "<|det|>", "<div", "data-bbox", "is_diagram:", "<header>")
+    models = ("olmOCR-2-FP8", "chandra-2", "DeepSeek-OCR", "Nanonets-OCR2", "Nemotron-Parse")
+
+    for model in models:
+        res = assemble_document(
+            pdf,
+            mode="det_vlm",
+            vlm_client=None,
+            options=DetVlmOptions(primary="paddle", reading_order=False),
+            primary_transcribe=lambda _png, model=model: _ocr_sweep_output(model),
+            odl_runner=lambda _p: {"number of pages": 1, "kids": []},
+        )
+        out_dir = tmp_path / model.replace("/", "_")
+        write_outputs(res, out_dir, pdf_path=pdf, headings=False, inline_figures=False, chunk=False)
+        document = (out_dir / "document.md").read_text(encoding="utf-8")
+
+        assert document.strip()
+        assert not any(token.lower() in document.lower() for token in leak_tokens), model
 
 
 def test_whole_doc_degrades_to_deterministic_on_failure(tmp_path):
@@ -213,6 +303,17 @@ def test_det_vlm_mode_uses_vlm_and_gates_numbers(tmp_path):
     assert page.markdown == "Value 1,234,567 and fabricated 9,999,999"   # VLM is the output
     assert "unsourced_number:9999999" in page.flags                       # value oracle (pypdfium2) gates VLM
     assert "unsourced_number:1234567" not in page.flags
+
+
+def test_det_vlm_mode_flags_text_layer_numbers_missing_from_vlm(tmp_path):
+    pdf = _pdf(tmp_path / "d.pdf", "authoritative values 1,234,567 and 2,345,678")
+    odl_json = {"number of pages": 1, "kids": [{"type": "paragraph", "page number": 1, "content": "text"}]}
+    client = _FakeClient([_gemini_ok("Value 1,234,567")])
+    res = assemble_document(pdf, mode="det_vlm", vlm_client=client, api_key="k", odl_runner=lambda _p: odl_json)
+    page = res.pages[0]
+    assert "recall_missing_number:2345678" in page.flags
+    assert "recall_missing_number:1234567" not in page.flags
+    assert "unsourced_number:2345678" not in page.flags
 
 
 def test_det_vlm_without_client_degrades_to_deterministic(tmp_path):

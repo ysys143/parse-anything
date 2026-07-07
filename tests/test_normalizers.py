@@ -9,6 +9,7 @@ from parse_anything.normalizers import (
     normalize_deterministic,
     normalize_gemini,
     normalize_paddle,
+    normalize_transcription_markdown,
 )
 
 
@@ -112,3 +113,51 @@ def test_decode_json_body_raises_on_malformed_provider_json():
     # When / Then
     with pytest.raises(ValueError, match="not valid JSON"):
         decode_json_body(b"{broken")
+
+
+def test_normalize_transcription_markdown_strips_grounding_tokens_and_maps_picture():
+    page = normalize_transcription_markdown(
+        "<x_0.334><y_0.1469>**Header**<class_Page-header>\n\n"
+        "<class_Picture>\n\n"
+        "<x_0.1><y_0.2>body<class_Text>"
+    )
+
+    assert "<x_" not in page
+    assert "<y_" not in page
+    assert "<class_" not in page
+    assert "**Header**" in page
+    assert "[figure]" in page
+    assert "body" in page
+
+
+def test_normalize_transcription_markdown_drops_ref_det_and_frontmatter():
+    page = normalize_transcription_markdown(
+        "is_diagram: False\nmodel: olmocr\n\n"
+        "Body text\n\n"
+        "<|ref|>text<|/ref|><|det|>[[25, 0, 960, 95]]<|/det|>"
+    )
+
+    assert "is_diagram:" not in page
+    assert "model:" not in page
+    assert "<|ref|>" not in page
+    assert "<|det|>" not in page
+    assert "Body text" in page
+
+
+def test_normalize_transcription_markdown_converts_html_layout_blocks():
+    page = normalize_transcription_markdown(
+        '<div data-bbox="22 0 960 93" data-label="Text"><p>Hello <math>x</math></p></div>'
+        '<div data-bbox="10 10 50 50" data-label="Figure"><img src="fig.png"></div>'
+    )
+
+    assert "<div" not in page
+    assert "data-bbox" not in page
+    assert "Hello" in page
+    assert "x" in page
+    assert "[figure]" in page
+
+
+def test_normalize_transcription_markdown_keeps_clean_markdown():
+    markdown = "# Heading\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n[figure]"
+
+    assert normalize_transcription_markdown(markdown) == markdown
