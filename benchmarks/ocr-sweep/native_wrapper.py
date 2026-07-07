@@ -55,11 +55,11 @@ def _ensure_loaded() -> None:
         import torch
         from transformers import AutoModel, AutoTokenizer
         tok = AutoTokenizer.from_pretrained(_MODEL_ID, trust_remote_code=True)
-        # sdpa (not flash_attention_2): the model card wants torch2.10/transformers4.57; flash-attn is
-        # only needed for the SGLang fa3 backend, and forcing a flash-attn wheel is what broke the
-        # earlier torch2.6 downgrade. sdpa runs the deepencoder on plain torch. Fall back if a build
-        # hard-imports flash_attn.
-        attn = os.environ.get("NATIVE_ATTN_IMPL", "sdpa")
+        # eager (not sdpa/flash_attention_2): UnlimitedOCRForCausalLM does NOT implement sdpa
+        # (transformers raises "does not support ... scaled_dot_product_attention"), and flash_attention_2
+        # needs the flash-attn wheel whose torch2.6 downgrade broke this model earlier. eager runs on
+        # plain torch2.10 -- slower but correct. Override via NATIVE_ATTN_IMPL (e.g. flash_attention_2).
+        attn = os.environ.get("NATIVE_ATTN_IMPL", "eager")
         model = AutoModel.from_pretrained(
             _MODEL_ID, trust_remote_code=True, use_safetensors=True,
             _attn_implementation=attn, torch_dtype=torch.bfloat16,
