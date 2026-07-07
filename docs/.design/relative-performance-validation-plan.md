@@ -37,41 +37,36 @@ say so and explain the failure mode.
 
 ## 3. Corpus Design
 
-The headline dataset is **OmniDocBench**. Do not use generated fixtures, private shadow documents, or
-hand-picked examples for the main improvement claim.
+The headline evidence is split by axis. A single image-only benchmark cannot prove the born-digital
+value-oracle claim, and a PDF text layer cannot be the gold target for a PDF extractor.
 
 Required corpus contract:
 
-- Pin the exact OmniDocBench release/version, split, document ids, and label schema in the run
-  manifest.
-- Prefer the full public OmniDocBench evaluation set. If provider cost forces a subset, use a
-  deterministic stratified subset that preserves document type, language, text/table/formula density,
-  scan/image-heavy pages, and long-tail hard cases.
-- Keep a separate calibration split for D-1 `SourceProfile` selection. Do not tune thresholds on the
-  same pages used for final scoring.
-- Report OmniDocBench's native metrics as first-class metrics. Local ODL-VL metrics may supplement
-  them, but cannot replace them in the headline result.
+- **Value axis:** use upstream facts that existed before PDF rendering. SEC EDGAR 10-K/10-Q XBRL is
+  the default hard-regime corpus: it has born-digital financial statements, complex tables, and
+  filer-authored numeric facts independent of any PDF extraction. `benchmarks/three-way/score_value_axis.py`
+  enforces this by rejecting fact files whose `source_kind` is not one of the upstream kinds
+  (`xbrl`, `sec_xbrl`, `filer_xbrl`, `author_markup`, `csv`, `html`, `jats`, `publisher_xml`,
+  `upstream_xbrl`).
+- **Structure axis:** use OmniDocBench, hand-labeled golden pages, or other explicit table/region
+  labels. Report table detection, TEDS, row/column/cell F1, merged-cell accuracy, and page-spanning
+  continuation only where those labels exist.
+- **Clean born-digital invariants:** run label-free checks such as run-invariance, source consistency,
+  unsourced-number rate, and artifact schema round-trip. These are guarantees, not claims that one
+  extractor transcribes cleaner text than another.
+- **Calibration split:** keep a separate D-1 `SourceProfile` calibration split. Do not tune thresholds
+  on the same documents used for final scoring.
 
-OmniDocBench coverage is mapped to ODL-VL proof targets as follows:
+The value-axis and structure-axis results must be reported separately:
 
-| OmniDocBench signal | ODL-VL proof target |
-| --- | --- |
-| Text blocks and reading order labels | Text fidelity, reading-order accuracy, heading/list/caption ordering |
-| Table annotations and rendered table outputs | Table detection, TEDS, row/column/cell reconstruction |
-| Formula labels / formula render checks | Formula preservation and OCR/VLM contamination detection |
-| Multi-language and document-type strata | Domain robustness and source-profile calibration |
-| Image-heavy or scan-like pages where present | OCR/VLM need detection, low-quality review signaling |
+| Axis | Valid GT | Main proof target | Invalid shortcut |
+| --- | --- | --- | --- |
+| Value | SEC XBRL, author CSV/HTML, publisher XML/JATS | Numeric exact recall, unsourced-number rate, silent-hallucination rate | PDF text extracted by pypdfium2, ODL, PyMuPDF, or a sibling extractor |
+| Structure | OmniDocBench labels, table HTML, human golden regions | Region/table/cell structure fidelity | Treating XBRL fact recall as table structure quality |
+| Clean invariants | Born-digital source text and artifact schemas | Determinism, source consistency, round-trip validity | Claiming broad quality wins without labeled targets |
 
-The following ODL-VL-specific checks are allowed as **secondary analyses** on the same OmniDocBench
-pages:
-
-- source-gate and unsourced-number analysis for pages with reliable born-digital text layers;
-- VLM call count, latency, and cost under `--diagnose` / `--use-profile`;
-- page-spanning table behavior only where OmniDocBench labels support continuation judgment;
-- privacy/provider eligibility as an operational note, not an OmniDocBench quality score.
-
-Do not claim improvement on arithmetic invariants, private-document privacy, or page-spanning table
-continuation unless the selected OmniDocBench labels support that claim directly.
+Do not claim improvement on arithmetic invariants, private-document privacy, page-spanning table
+continuation, or complex-form structure unless the selected labels support that claim directly.
 
 ## 4. Baseline Execution Rules
 

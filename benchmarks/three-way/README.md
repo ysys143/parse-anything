@@ -13,10 +13,13 @@ the other two, so the honest question is whether `pa` beats `max(odl, paddle)` �
 
 ## Corpus (`corpus/`)
 
-- `born.pdf` — born-digital, 46p. Its text layer is the ground truth (via pypdfium2).
+- `born.pdf` — born-digital, 46p. Its text layer is useful for smoke checks, but it is not the
+  headline value GT because that would score PDF extractors against a sibling PDF extraction.
 - `scan.pdf` — the same document rasterized to image-only (no text layer, `make_scan_pdf.py`).
   This isolates the OCR/VLM regime: ODL and parse-anything-deterministic have nothing to anchor to,
-  so the VLM must carry. That born→scan collapse is exactly the gap orchestration is meant to fill.
+  so the VLM must carry.
+- Independent value GT should be supplied as JSONL facts from upstream data such as SEC XBRL,
+  author CSV/HTML, or publisher XML/JATS.
 
 ## Run
 
@@ -32,12 +35,25 @@ $PY run_compare.py --corpus corpus --results results --run live --live
 # 3. score (whole-doc = fair, pagination-invariant; --granularity page for per-page)
 $PY score_compare.py --run-dir results/<run> --born corpus/born.pdf --out results/<run>/scores.json
 
-# 4. cost-vs-quality Pareto frontier (quality axis defaults to num_recall)
+# 4. non-circular value-axis score against upstream facts, e.g. SEC XBRL
+$PY score_value_axis.py --run-dir results/<run> --facts facts/sec-xbrl.jsonl --out results/<run>/value_axis.json
+
+# 5. cost-vs-quality Pareto frontier (quality axis defaults to num_recall)
 $PY pareto.py --run-dir results/<run> --scores results/<run>/scores.json --quality num_recall
 
-# 5. report (embeds the Pareto section + cost table if --pareto is passed)
+# 6. report (embeds the Pareto section + cost table if --pareto is passed)
 $PY make_report.py --run-dir results/<run> --scores results/<run>/scores.json --pareto results/<run>/pareto.json
 ```
+
+Fact JSONL schema for `score_value_axis.py`:
+
+```json
+{"doc":"sec_10q","name":"us-gaap:Revenue","value":"125000","unit":"USD","source_kind":"sec_xbrl"}
+```
+
+Accepted `source_kind` values are upstream-only: `xbrl`, `sec_xbrl`, `filer_xbrl`,
+`upstream_xbrl`, `author_markup`, `csv`, `html`, `jats`, and `publisher_xml`. PDF-derived facts
+are rejected so no extractor can get a circular perfect score.
 
 ## Why a Pareto curve (the point of the whole benchmark)
 
@@ -56,12 +72,17 @@ other parser gives more quality (default `num_recall`) at equal-or-lower cost. O
 strictly dominated = its extra cost bought nothing. Note the frontier can flip with the quality
 metric (on born-digital, ODL wins `num_recall` but pa wins `token_f1`) -- `--quality` selects it.
 
-## Metrics (reused from `../ocr-sweep/score.py`)
+## Metrics
 
 `char_sim` (order-sensitive fidelity), `token_f1` (order-insensitive recall), `num_recall`
 (≥4-digit numbers present — document-critical), `num_halluc` (fabricated numbers, lower better),
 `coverage` (word count vs GT, ~1 ideal). Scored against the born text layer; the scan is scored
 against the SAME GT (it's the same document).
+
+`score_value_axis.py` reports the separate value axis: `numeric_exact_recall`,
+`unsourced_number_rate`, matched upstream fact names, and unsourced numbers. It deliberately sets
+`structure_axis_scored=false`; table/region structure must be measured with table labels or
+OmniDocBench-style structure metrics.
 
 ## Verdict (`marginal_value_verdict` in `score_compare.py`)
 
