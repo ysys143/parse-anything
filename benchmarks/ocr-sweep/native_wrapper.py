@@ -55,11 +55,11 @@ def _ensure_loaded() -> None:
         import torch
         from transformers import AutoModel, AutoTokenizer
         tok = AutoTokenizer.from_pretrained(_MODEL_ID, trust_remote_code=True)
-        # flash_attention_2: REQUIRED for whole-doc — the model has no sdpa impl, and eager's O(N^2)
-        # attention matrix OOMs the L4 (24GB) when infer_multi packs 46 pages into one 32k context.
-        # flash-attn (O(N) memory) is compiled into the image from source (no torch2.10 prebuilt wheel).
-        # Override via NATIVE_ATTN_IMPL=eager for a single small page where memory isn't a constraint.
-        attn = os.environ.get("NATIVE_ATTN_IMPL", "flash_attention_2")
+        # eager: the model has no sdpa impl, and there's no torch2.10 flash-attn prebuilt wheel (source
+        # build OOMs the 32GB builder). eager fits the L4 for whole-doc ONLY at image_size=640
+        # (models.json infer_kwargs) + expandable_segments. Set NATIVE_ATTN_IMPL=flash_attention_2 once
+        # a flash-attn build is baked in (see Dockerfile.native) to allow image_size=1024 + more speed.
+        attn = os.environ.get("NATIVE_ATTN_IMPL", "eager")
         model = AutoModel.from_pretrained(
             _MODEL_ID, trust_remote_code=True, use_safetensors=True,
             _attn_implementation=attn, torch_dtype=torch.bfloat16,

@@ -174,7 +174,7 @@
       "prompt": "<image>Multi page parsing.",
       "extra_body": {},
       "infer_kwargs": {
-        "image_size": 1024,
+        "image_size": 640,
         "no_repeat_ngram_size": 35,
         "ngram_window": 1024
       },
