@@ -10,7 +10,13 @@ Originals are NOT committed (repo policy: artifacts never committed). See SOURCE
 licenses and known gaps. Some Korean public (policy) links may drift; verify from SOURCES.md.
 """
 from __future__ import annotations
-import argparse, json, sys, urllib.parse, urllib.request
+
+import argparse
+import json
+import re
+import sys
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 UA = {"User-Agent": "Mozilla/5.0 (semantic-captioning seed fetcher)"}
@@ -33,6 +39,8 @@ DIRECT = {
             "https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/1900_census_Julian.jpg/1280px-1900_census_Julian.jpg",
         "census_1950_us.jpg":
             "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Eugene_Freudenberg_%281900-1956%29_in_the_1950_US_census.jpg/1280px-Eugene_Freudenberg_%281900-1956%29_in_the_1950_US_census.jpg",
+        "wikimedia_korean_manuscript.jpg":
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Korean-manuscript.JPG/1280px-Korean-manuscript.JPG",
     },
     "statistics": {
         "kostat_고령자통계_2025.pdf":
@@ -52,6 +60,10 @@ DIRECT = {
     },
     # policy: some links drift (게시물 seq/파일명 변동). Verify from SOURCES.md if these 404/HTML.
     "policy": {
+        "swit_요구사항상세화_실무가이드라인.pdf":
+            "https://www.cisp.or.kr/wp-content/uploads/2021/03/2.%EA%B3%B5%EA%B3%B5SW%EC%82%AC%EC%97%85-%EC%A0%9C%EC%95%88%EC%9A%94%EC%B2%AD%EC%84%9C-%EC%9E%91%EC%84%B1%EC%9D%84-%EC%9C%84%ED%95%9C-%EC%9A%94%EA%B5%AC%EC%82%AC%ED%95%AD-%EA%B0%80%EC%9D%B4%EB%93%9C-20210219.pdf",
+        "swit_공공정보화_제안요청서_작성가이드.pdf":
+            "https://www.swit.or.kr/download.do?fileName=%2F201406%2F%EA%B3%B5%EA%B3%B5%EC%A0%95%EB%B3%B4%ED%99%94+%EC%82%AC%EC%97%85%EC%9C%A0%ED%98%95%EB%B3%84+%EC%A0%9C%EC%95%88%EC%9A%94%EC%B2%AD%EC%84%9C+%EC%9E%91%EC%84%B1+%EA%B0%80%EC%9D%B4%EB%93%9C.pdf",
         "knowhow_참여정부_정책보고서.pdf": "https://file3.knowhow.or.kr/download/27939/2.pdf",
     },
 }
@@ -67,37 +79,89 @@ def _get(url: str, timeout: int = 60) -> bytes:
     return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout).read()
 
 
-def _save(data: bytes, path: Path) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    head = data[:5]
-    kind = "pdf" if head.startswith(b"%PDF") else "img" if head[:3] in (b"\xff\xd8\xff", b"\x89PN") else "?"
+def _kind(data: bytes) -> str:
+    prefix = data[:256].lstrip().lower()
+    if data.startswith(b"%PDF"):
+        return "pdf"
+    if data.startswith((b"\xff\xd8\xff", b"\x89PNG", b"II*\x00", b"MM\x00*")):
+        return "img"
+    if prefix.startswith((b"<!doctype html", b"<html")) or b"<html" in prefix[:128]:
+        return "html"
+    return "?"
+
+
+def _expected_kind(name: str) -> str:
+    suffix = Path(name).suffix.lower()
+    if suffix == ".pdf":
+        return "pdf"
+    if suffix in {".jpg", ".jpeg", ".png", ".tif", ".tiff"}:
+        return "img"
+    return "?"
+
+
+def _validate_download(data: bytes, name: str) -> str:
+    kind = _kind(data)
+    expected = _expected_kind(name)
+    if kind == "html":
+        raise ValueError(f"unexpected html response for {name}")
+    if kind == "?":
+        raise ValueError(f"unknown response type for {name}")
+    if expected != "?" and kind != expected:
+        raise ValueError(f"unexpected {kind} response for {name}; expected {expected}")
+    return kind
+
+
+def _summary(data: bytes, kind: str) -> str:
     return f"{len(data):>9,}B {kind}"
 
 
-def fetch_direct(domain: str, out: Path) -> None:
+def _save(data: bytes, path: Path) -> str:
+    kind = _validate_download(data, path.name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return _summary(data, kind)
+
+
+def _checked(data: bytes, name: str) -> str:
+    return _summary(data, _validate_download(data, name))
+
+
+def fetch_direct(domain: str, out: Path, *, check: bool = False) -> int:
+    failures = 0
     for name, url in DIRECT.get(domain, {}).items():
         try:
-            print(f"  {name}: {_save(_get(url), out/domain/name)}")
+            data = _get(url)
+            result = _checked(data, name) if check else _save(data, out/domain/name)
+            print(f"  {name}: {result}")
         except Exception as e:
+            failures += 1
             print(f"  {name}: FAIL {e}")
+    return failures
 
 
-def fetch_patents(out: Path) -> None:
+def fetch_patents(out: Path, *, check: bool = False) -> int:
+    failures = 0
     for domain, pats in PATENTS.items():
         for pat in pats:
+            name = f"patent_{pat}.pdf"
             try:
                 html = _get(f"https://patents.google.com/patent/{pat}/en").decode("utf-8", "ignore")
-                import re
                 m = re.search(r'https://patentimages\.storage\.googleapis\.com/[^"]+\.pdf', html)
                 if not m:
-                    print(f"  patent_{pat}.pdf: FAIL no pdf link"); continue
-                print(f"  patent_{pat}.pdf: {_save(_get(m.group(0)), out/domain/f'patent_{pat}.pdf')}")
+                    failures += 1
+                    print(f"  {name}: FAIL no pdf link")
+                    continue
+                data = _get(m.group(0))
+                result = _checked(data, name) if check else _save(data, out/domain/name)
+                print(f"  {name}: {result}")
             except Exception as e:
-                print(f"  patent_{pat}.pdf: FAIL {e}")
+                failures += 1
+                print(f"  {name}: FAIL {e}")
+    return failures
 
 
-def fetch_cord(out: Path) -> None:
+def fetch_cord(out: Path, *, check: bool = False) -> int:
+    failures = 0
     for domain, spec in CORD.items():
         try:
             q = urllib.parse.urlencode({"dataset": spec["dataset"], "config": spec["config"], "split": spec["split"]})
@@ -105,9 +169,14 @@ def fetch_cord(out: Path) -> None:
             srcs = [r["row"]["image"]["src"] for r in data.get("rows", [])
                     if isinstance(r["row"].get("image"), dict) and r["row"]["image"].get("src")]
             for i, u in enumerate(srcs[: spec["n"]], 1):
-                print(f"  cord_receipt_{i}.jpg: {_save(_get(u), out/domain/f'cord_receipt_{i}.jpg')}")
+                name = f"cord_receipt_{i}.jpg"
+                img = _get(u)
+                result = _checked(img, name) if check else _save(img, out/domain/name)
+                print(f"  {name}: {result}")
         except Exception as e:
+            failures += 1
             print(f"  cord_receipt_*.jpg: FAIL {e}")
+    return failures
 
 
 def main() -> int:
@@ -115,6 +184,7 @@ def main() -> int:
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--domains", default="", help="comma-separated subset; default all")
     ap.add_argument("--list", action="store_true", help="print plan and exit")
+    ap.add_argument("--check", action="store_true", help="validate source URLs without writing files")
     a = ap.parse_args()
 
     all_domains = sorted(set(DIRECT) | set(PATENTS) | set(CORD))
@@ -127,12 +197,16 @@ def main() -> int:
 
     out = Path(a.out)
     print(f"-> {out}")
+    failures = 0
     for d in want:
         print(f"[{d}]")
-        if d in DIRECT: fetch_direct(d, out)
-        if d in PATENTS: fetch_patents(out)   # iterates its own domains; harmless if repeated
-        if d in CORD: fetch_cord(out)
-    return 0
+        if d in DIRECT:
+            failures += fetch_direct(d, out, check=a.check)
+        if d in PATENTS:
+            failures += fetch_patents(out, check=a.check)
+        if d in CORD:
+            failures += fetch_cord(out, check=a.check)
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

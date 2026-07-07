@@ -1,16 +1,16 @@
 """Run the parse-anything pipeline over the golden corpus and adapt each document.json into the flat
 shape score.py expects (``{caption, structured, elements}``), then you score with::
 
-    python run_bench.py --mode deterministic --out runs/det      # no API, no cost
+    python run_bench.py --mode deterministic --out runs/det
     python score.py --out runs/det
 
     python run_bench.py --mode det_vlm --out runs/vlm             # LIVE VLM (needs GEMINI_API_KEY; costs)
     python score.py --out runs/vlm
 
 The adapter is FAITHFUL: it copies only what the pipeline actually produced (figure descriptions ->
-``caption``; gated ``extractions`` + table cells + chart_data -> ``structured``; every bbox'd node ->
-``elements``). It never synthesizes a caption or a value the pipeline didn't emit -- an empty caption in
-deterministic mode is an honest "no VLM ran", not a fabricated pass.
+``caption``; gated ``extractions`` + block text + table cells + chart_data -> ``structured``; every
+bbox'd node -> ``elements``). It never synthesizes a caption or a value the pipeline didn't emit -- an
+empty caption in deterministic mode is an honest "no VLM ran", not a fabricated pass.
 """
 from __future__ import annotations
 
@@ -37,6 +37,17 @@ def _adapt(doc: dict) -> dict:
     structured: dict = {}
     if doc.get("extractions"):                 # B*b gated form/dimension/title-block overlay
         structured["extractions"] = doc["extractions"]
+    text_blocks = [
+        {
+            **({"page": b.get("page")} if b.get("page") is not None else {}),
+            **({"kind": b.get("kind") or b.get("type")} if b.get("kind") or b.get("type") else {}),
+            "text": text,
+        }
+        for b in doc.get("blocks", [])
+        if (text := (b.get("text") or "").strip())
+    ]
+    if text_blocks:
+        structured["text_blocks"] = text_blocks
     # table cells + chart_data carry the born-digital values C_entity / A_unit look for
     tables = [{"id": t.get("id"), "cells": t.get("cells")} for t in doc.get("tables", []) if t.get("cells")]
     if tables:
@@ -64,15 +75,13 @@ def _slice_page(pdf: Path, page_1based: int, dst: Path) -> Path:
 
 
 def _run_one(sample: Path, stem: str, mode: str, corpus_root: Path, primary: str = "gemini",
-             page: "int | None" = None) -> dict:
+             page: "int | None" = None, slice_pages: bool = True) -> dict:
     import parse_anything.cli as cli
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "out"
         pdf = sample
-        # for a live run, slice the multi-page PDF down to the single labelled page (huge cost saver);
-        # deterministic mode is cheap so it keeps whole-doc grounding
-        if page and mode != "deterministic" and sample.suffix.lower() == ".pdf":
+        if page and slice_pages and sample.suffix.lower() == ".pdf":
             pdf = _slice_page(sample, page, Path(td) / "page.pdf")
         argv = ["--pdf", str(pdf), "--out", str(out), "--source-id", stem]
         argv += ["--no-vlm"] if mode == "deterministic" else ["--mode", "det_vlm", "--primary", primary]
@@ -96,6 +105,8 @@ def main() -> int:
     ap.add_argument("--corpus", default=str(_HERE.parents[1] / ".local" / "semantic-captioning"),
                     help="corpus root that the gt 'sample' paths are relative to")
     ap.add_argument("--only", default=None, help="only run labels whose stem contains this substring")
+    ap.add_argument("--whole-doc", action="store_true",
+                    help="process complete PDFs instead of slicing to each gt page hint")
     a = ap.parse_args()
 
     out_dir = Path(a.out)
@@ -112,7 +123,8 @@ def main() -> int:
             print(f"  {stem:24} SKIP (sample missing: {sample})")
             continue
         try:
-            adapted = _run_one(sample, stem, a.mode, corpus_root, a.primary, label.get("page"))
+            adapted = _run_one(sample, stem, a.mode, corpus_root, a.primary, label.get("page"),
+                               slice_pages=not a.whole_doc)
         except Exception as exc:   # noqa: BLE001 -- one bad sample must not abort the sweep
             print(f"  {stem:24} ERROR {type(exc).__name__}: {exc}")
             failed += 1

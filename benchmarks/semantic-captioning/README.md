@@ -22,11 +22,13 @@ benchmarks/semantic-captioning/
 
 ```bash
 python benchmarks/semantic-captioning/fetch.py --out .local/semantic-captioning/corpus/raw
+python benchmarks/semantic-captioning/fetch.py --check
 ```
 
 - 대용량·비공개 성격의 원본은 `.local/semantic-captioning/`(gitignore)에 상주.
 - `fetch.py`는 공개 데이터셋만 받는다(라이선스는 `SOURCES.md` 참조).
-- 한국어 손글씨/도면 등 한국어-특정 갭은 무계정 공개 소스로 재현 불가 → AI Hub 승인 또는 자체 수집.
+- 한국어 손글씨는 공개 도메인 원고 seed를 포함한다. 현대식 한국어 필기 폼은 AI Hub 승인 또는 자체 수집 필요.
+- `--check`는 원본을 쓰지 않고 PDF/이미지 매직바이트를 검증해 HTML 리다이렉트·소스 URL drift를 실패로 잡는다.
 
 ## 시드 규모 원칙
 

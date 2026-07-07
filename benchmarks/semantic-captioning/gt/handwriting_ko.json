@@ -1,0 +1,27 @@
+{
+  "domain": "handwriting",
+  "sample": "corpus/raw/handwriting/wikimedia_korean_manuscript.jpg",
+  "figure_kind": "handwriting_document",
+  "elements_expected": [
+    {"kind": "handwriting", "note": "Korean/Hanja manuscript text lines"},
+    {"kind": "text_region", "note": "vertical manuscript columns"}
+  ],
+  "structured_expected": {
+    "script": "Korean/Hanja manuscript",
+    "source_title": "Korean manuscript of the Spring and Autumn Annals",
+    "layout": "vertical columns",
+    "reading_order": "right-to-left column groups"
+  },
+  "caption_expected": {
+    "must_include": ["Korean", "manuscript"],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "C_entity": {
+      "verbatim": ["Korean manuscript", "Spring and Autumn Annals"],
+      "assert": "source identity is not paraphrased away"
+    },
+    "G_grounding": {"assert": "handwritten text regions have bboxes"}
+  },
+  "notes": "T4-D2 public-domain Korean handwriting seed. This covers manuscript-style Korean/Hanja handwriting; modern Korean handwritten forms still require AI Hub approval or self-collected scans."
+}

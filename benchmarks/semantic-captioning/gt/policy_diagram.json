@@ -1,0 +1,43 @@
+{
+  "domain": "policy",
+  "sample": "corpus/raw/policy/swit_요구사항상세화_실무가이드라인.pdf",
+  "page": 30,
+  "figure_kind": "diagram",
+  "elements_expected": [
+    {"kind": "diagram", "note": "기능 요구사항 상세화 단계 관계도"},
+    {"kind": "node", "note": "사용자 요건 도출 / 요구사항 상세화 정의 / 기능점수 산출"},
+    {"kind": "edge", "note": "단계 간 진행 방향 화살표"}
+  ],
+  "structured_expected": {
+    "diagram_type": "process_flow",
+    "title": "기능 요구사항 상세화 단계",
+    "nodes": [
+      "사용자",
+      "업무 참조문서",
+      "사용자 요건 도출",
+      "요구사항 상세화 정의",
+      "기능점수 산출",
+      "기능 요구사항",
+      "상세화기능"
+    ],
+    "edges": [
+      {"from": "사용자", "to": "사용자 요건 도출"},
+      {"from": "업무 참조문서", "to": "사용자 요건 도출"},
+      {"from": "사용자 요건 도출", "to": "요구사항 상세화 정의"},
+      {"from": "요구사항 상세화 정의", "to": "기능점수 산출"},
+      {"from": "기능 요구사항", "to": "상세화기능"}
+    ]
+  },
+  "caption_expected": {
+    "must_include": ["기능 요구사항", "사용자 요건 도출", "기능점수 산출"],
+    "must_not_include": []
+  },
+  "risk_checks": {
+    "C_entity": {
+      "verbatim": ["기능 요구사항 상세화 단계", "사용자 요건 도출", "요구사항 상세화 정의", "기능점수 산출"],
+      "assert": "diagram node labels are copied verbatim"
+    },
+    "G_grounding": {"assert": "diagram nodes and arrows have original-page bboxes"}
+  },
+  "notes": "T4-D1 pure relational policy diagram seed. Existing policy.json is text/callout-heavy; this page targets FR-5.3/5.4 relation extraction."
+}

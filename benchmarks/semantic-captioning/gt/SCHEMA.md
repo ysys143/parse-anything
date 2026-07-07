@@ -13,7 +13,7 @@ G grounding·H PII)를 negative/positive 어서션으로 인코딩해 참조 파
   "domain": "...",                       // 8 도메인 중 하나
   "sample": "corpus/raw/<domain>/<file>",
   "page": 8,                             // 1-indexed (이미지는 생략)
-  "figure_kind": "table|chart|drawing|form|diagram|handwriting_form|photo|text",
+  "figure_kind": "table|chart|drawing|form|diagram|handwriting_form|handwriting_document|photo|text",
   "elements_expected": [                 // FR-2 탐지가 찾아야 할 요소
     {"kind": "table", "note": "..."}
   ],

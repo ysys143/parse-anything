@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -50,6 +51,83 @@ def flatten_text(obj) -> str:
     return " ".join(out)
 
 
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _walk_dicts(obj):
+    if isinstance(obj, dict):
+        yield obj
+        for value in obj.values():
+            yield from _walk_dicts(value)
+    elif isinstance(obj, (list, tuple)):
+        for value in obj:
+            yield from _walk_dicts(value)
+
+
+def _structured_unit_hit(structured, unit: str) -> bool:
+    target = unit.lower()
+    for item in _walk_dicts(structured):
+        for key in ("unit", "increment_unit", "expected_unit", "currency", "scale_unit"):
+            value = item.get(key)
+            if isinstance(value, str) and value.lower() == target:
+                return True
+    return False
+
+
+def _has_currency_structure(structured, currency: str) -> bool:
+    if _structured_unit_hit(structured, currency):
+        return True
+    if currency.upper() == "IDR":
+        return bool(isinstance(structured, dict) and structured.get("line_items") and structured.get("totals"))
+    return False
+
+
+def _scale_hit(blob: str, structured, expected: str) -> bool:
+    m = re.search(r"(\d+\s*:\s*\d+)", expected)
+    if not m:
+        return False
+    wanted = re.sub(r"\s+", "", m.group(1))
+    for item in _walk_dicts(structured):
+        value = item.get("scale")
+        if isinstance(value, str) and re.sub(r"\s+", "", value) == wanted:
+            return True
+    wanted_pattern = r"\s*:\s*".join(re.escape(part) for part in wanted.split(":"))
+    return bool(re.search(rf"(?:scale|maßstab|masstab).{{0,24}}{wanted_pattern}", blob, re.IGNORECASE))
+
+
+def _unit_attached_to_value(blob: str, unit: str) -> bool:
+    if unit == "%":
+        return bool(re.search(r"\d[\d,.]*\s*%", blob))
+    if unit == "시:분":
+        return bool(re.search(r"\b\d{1,2}:\d{2}\b", blob))
+    return bool(re.search(rf"\d[\d,.:\-]*{re.escape(unit)}", blob))
+
+
+def _implied_unit_hit(blob: str, structured, unit: str) -> bool:
+    if unit.upper() == "IDR":
+        return _has_currency_structure(structured, unit)
+    if unit.lower() == "mm":
+        return "dimensions" in (structured if isinstance(structured, dict) else {}) or bool(
+            re.search(r"(?:\bdia|[ø⌀]|[rR]\d|\d[\d,.]*(?:\s*[±-]|\s*x\s*45))", blob)
+        )
+    return unit.lower() in blob.lower()
+
+
+def _unit_requirement_hit(requirement: str, blob: str, structured) -> bool:
+    req = requirement.strip()
+    low = req.lower()
+    if not req or low in ("none", "n/a"):
+        return True
+    if "scale" in low:
+        return _scale_hit(blob, structured, req)
+    if "(implied)" in low:
+        return _implied_unit_hit(blob, structured, req.split("(", 1)[0].strip())
+    return _structured_unit_hit(structured, req) or _unit_attached_to_value(blob, req)
+
+
 def sum_residual(parts, total) -> float:
     """abs(sum(parts) - total) -- mirrors guards.sum_residual (F7)."""
     return abs(sum(parts) - total)
@@ -57,6 +135,19 @@ def sum_residual(parts, total) -> float:
 
 def _bboxes(output: dict) -> int:
     return sum(1 for e in output.get("elements", []) if e.get("bbox"))
+
+
+def _bbox_iou(a, b) -> float:
+    ax0, ay0, ax1, ay1 = [float(v) for v in a]
+    bx0, by0, bx1, by1 = [float(v) for v in b]
+    ix0, iy0 = max(ax0, bx0), max(ay0, by0)
+    ix1, iy1 = min(ax1, bx1), min(ay1, by1)
+    iw, ih = max(0.0, ix1 - ix0), max(0.0, iy1 - iy0)
+    inter = iw * ih
+    area_a = max(0.0, ax1 - ax0) * max(0.0, ay1 - ay0)
+    area_b = max(0.0, bx1 - bx0) * max(0.0, by1 - by0)
+    union = area_a + area_b - inter
+    return inter / union if union else 0.0
 
 
 # --- checks (each returns (check_id, status, detail)) ----------------------
@@ -85,21 +176,61 @@ def check_A_unit(label, output):
     a = label.get("risk_checks", {}).get("A_unit")
     if not a:
         return ("A_unit", "SKIP", "n/a")
-    units = a.get("expected_unit")
-    units = units if isinstance(units, list) else [units]
+    units = [part.strip() for unit in _as_list(a.get("expected_unit")) for part in str(unit).split(",")]
     cap = (output.get("caption") or "") + " " + flatten_text(output.get("structured"))
-    if any(u and u.lower() in ("none", "n/a") for u in units):  # negative control
+    if any(u and u.lower() in ("none", "n/a") for u in units):
         return ("A_unit", "PASS", "no-unit expected (negative control)")
-    hit = [u for u in units if u and u in cap]
-    return ("A_unit", "PASS" if hit else "FAIL", f"units_found={hit}" if hit else f"none of {units} present")
+    hit = [u for u in units if _unit_requirement_hit(u, cap, output.get("structured"))]
+    miss = [u for u in units if u and u not in hit]
+    return ("A_unit", "PASS" if not miss else "FAIL",
+            f"units_found={hit}" if not miss else f"missing_or_detached={miss}")
 
 
-def check_B_arithmetic(_, output):
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _arithmetic_checks(structured) -> list[dict]:
+    if not isinstance(structured, dict):
+        return []
+    checks = structured.get("arithmetic_checks")
+    if isinstance(checks, dict):
+        return [checks]
+    if isinstance(checks, list):
+        return [c for c in checks if isinstance(c, dict)]
+    return []
+
+
+def check_B_arithmetic(label, output):
+    b = label.get("risk_checks", {}).get("B_arithmetic")
+    if not b:
+        return ("B_arithmetic", "SKIP", "n/a")
+    relation = str(b.get("relation", "")).lower()
+    assertion = str(b.get("assert", "")).lower()
+    if relation.startswith("none") or assertion in ("n/a", "none"):
+        return ("B_arithmetic", "PASS", "no arithmetic expected")
     st = output.get("structured", {})
+    explicit = []
+    for check in _arithmetic_checks(st):
+        parts = [_to_float(v) for v in _as_list(check.get("parts"))]
+        total = _to_float(check.get("total"))
+        tolerance = _to_float(check.get("tolerance")) or 0.0
+        if total is None or any(v is None for v in parts):
+            explicit.append(("invalid", None))
+            continue
+        residual = sum_residual([v for v in parts if v is not None], total)
+        explicit.append(("ok" if residual <= tolerance else "fail", residual))
+    if explicit:
+        failed = [r for status, r in explicit if status != "ok"]
+        return ("B_arithmetic", "FAIL" if failed else "PASS",
+                f"residuals={failed}" if failed else "explicit arithmetic checks ok")
     li = st.get("line_items")
     tot = st.get("totals")
     if not (li and tot):
-        return ("B_arithmetic", "SKIP", "no line_items/totals in output")
+        return ("B_arithmetic", "SKIP", "no arithmetic structure in output")
     prices = [x.get("price", 0) for x in li]
     r1 = sum_residual(prices, tot.get("sub_total", 0))
     comps = [tot.get(k, 0) for k in ("sub_total", "service", "pb1", "rounding")]
@@ -123,6 +254,22 @@ def check_G_grounding(label, output):
     got = _bboxes(output)
     if exp == 0:
         return ("G_grounding", "SKIP", "no elements")
+    expected_boxes = [e for e in label.get("elements_expected", []) if e.get("bbox")]
+    if expected_boxes:
+        threshold = float(label.get("grounding_iou_threshold", 0.5))
+        actual = [e for e in output.get("elements", []) if e.get("bbox")]
+        missed = []
+        for expected in expected_boxes:
+            expected_kind = (expected.get("kind") or "").lower()
+            candidates = [
+                _bbox_iou(expected["bbox"], candidate["bbox"])
+                for candidate in actual
+                if not expected_kind or (candidate.get("kind") or "").lower() == expected_kind
+            ]
+            if max(candidates, default=0.0) < threshold:
+                missed.append(expected)
+        return ("G_grounding", "FAIL" if missed else "PASS",
+                f"missed_iou={len(missed)} threshold={threshold}" if missed else f"{len(expected_boxes)} bbox IoU match(es)")
     return ("G_grounding", "PASS" if got >= 1 else "FAIL", f"{got} bbox'd elements (expected ~{exp})")
 
 

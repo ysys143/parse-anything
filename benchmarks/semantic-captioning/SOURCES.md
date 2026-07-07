@@ -2,9 +2,9 @@
 
 Semantic Captioning 역설계용 최소 시드(도메인당 2~3장). 전부 **무계정 공개 소스**.
 원본 바이너리는 커밋하지 않는다(`fetch.py`로 재현, 로컬 `.local/semantic-captioning/corpus/raw/` 상주).
-취득 기준일 2026-07-06.
+취득 기준일 2026-07-07.
 
-## 구성 (8 도메인 / 19 파일)
+## 구성 (8 도메인 / 21 파일)
 
 | 도메인 | 파일 | 출처 | 라이선스 |
 |---|---|---|---|
@@ -21,18 +21,20 @@ Semantic Captioning 역설계용 최소 시드(도메인당 2~3장). 전부 **�
 | insurance | hyundai_실손의료비_약관_2026.pdf | hi.co.kr | 시각화 요약+보통/특별약관 |
 | insurance | insure_or_kr_생명보험표준약관_및해설.pdf | 보험연수원 | 표준약관+해설 |
 | insurance | kiri_표준약관개정안_주요내용.pdf | 보험연구원 | 개정안 요약 |
-| policy | swit_요구사항상세화_실무가이드라인.pdf | swit.or.kr | 공공SW RFP 가이드. 도식·표 다수 |
-| policy | swit_공공정보화_제안요청서_작성가이드.pdf | swit.or.kr | RFP 다이어그램·표 |
+| policy | swit_요구사항상세화_실무가이드라인.pdf | [SWIT ref_sq=1104](https://www.swit.or.kr/IS/web/isCbmRefView.jsp?ref_sq=1104&schCode=) / [CISP PDF mirror](https://www.cisp.or.kr/wp-content/uploads/2021/03/2.%EA%B3%B5%EA%B3%B5SW%EC%82%AC%EC%97%85-%EC%A0%9C%EC%95%88%EC%9A%94%EC%B2%AD%EC%84%9C-%EC%9E%91%EC%84%B1%EC%9D%84-%EC%9C%84%ED%95%9C-%EC%9A%94%EA%B5%AC%EC%82%AC%ED%95%AD-%EA%B0%80%EC%9D%B4%EB%93%9C-20210219.pdf) | 공공SW RFP 가이드. 도식·표 다수 |
+| policy | swit_공공정보화_제안요청서_작성가이드.pdf | [SWIT download.do](https://www.swit.or.kr/download.do?fileName=%2F201406%2F%EA%B3%B5%EA%B3%B5%EC%A0%95%EB%B3%B4%ED%99%94+%EC%82%AC%EC%97%85%EC%9C%A0%ED%98%95%EB%B3%84+%EC%A0%9C%EC%95%88%EC%9A%94%EC%B2%AD%EC%84%9C+%EC%9E%91%EC%84%B1+%EA%B0%80%EC%9D%B4%EB%93%9C.pdf) | RFP 다이어그램·표 |
 | policy | knowhow_참여정부_정책보고서.pdf | knowhow.or.kr | 정책 도식·표 |
 | handwriting | census_1900_population_schedule.jpg | Wikimedia Commons | Public Domain. 인쇄 폼 + 전면 필기 기입 |
 | handwriting | census_1950_us.jpg | Wikimedia Commons | Public Domain. 필기 인구조사 명부 |
+| handwriting | wikimedia_korean_manuscript.jpg | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Korean-manuscript.JPG) | Public Domain. 한국어/한자 원고 필기 |
 
 ## 알려진 갭 / 주의
 
 1. **도면 치수**: 특허(drawing/)는 규정상 치수 희소 → drawing_dim/(Wikimedia 치수 도면)으로 보완.
    한국어 표제란 치수 도면이 필요하면 KIPRIS 기계 특허 중 치수 포함본 추가.
-2. **손글씨(한국어 갭)**: handwriting/census는 "필기+폼 구조" 능력 검증용이나 **영문**.
-   한국어 필기 인식 검증은 AI Hub 605(내국인·비배포) 또는 자체 스캔 필요. form/(CORD)은 인쇄.
+2. **손글씨(현대 한국어 폼 갭)**: handwriting/census는 "필기+폼 구조" 능력 검증용 영문이고,
+   wikimedia_korean_manuscript는 한국어/한자 원고 seed. 현대 한국어 필기 신청서·폼 검증은
+   AI Hub 605(내국인·비배포) 또는 자체 스캔 필요. form/(CORD)은 인쇄.
 3. **통계 인포그래픽 삽화 저작권**: 입력용 자유, 결과 재배포 시 이미지 주의.
 4. **약관 개별사 저작물**: samsungfire/hyundai는 각 사 저작물. 재배포·공개엔 표준약관(insure/kiri) 우선.
 5. **CC BY-SA 3.0(schneckenwelle)**: 재배포·파생 시 출처표시 + 동일조건 유지.
@@ -41,4 +43,6 @@ Semantic Captioning 역설계용 최소 시드(도메인당 2~3장). 전부 **�
 
 - 대부분 안정 직링크. **CORD**는 HF datasets-server의 서명 URL이 만료되므로 fetch 시점에 API 재질의.
 - **patent**은 Google Patents 페이지에서 patentimages PDF 링크를 재추출(해시 URL 변동 대비).
+- 직접 다운로드는 저장 전 PDF/이미지 매직바이트를 검증한다. HTML 응답·알 수 없는 바이트는 실패.
+- `--check`는 파일을 쓰지 않고 원본 URL을 검증한다.
 - 일부 한국 공공(policy) 링크는 게시물 seq/파일명 변동 가능 → 실패 시 SOURCES 표의 출처에서 수동 확인.
