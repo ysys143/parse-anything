@@ -1,5 +1,9 @@
 # Semantic Captioning — 갭 분석 (PRD ↔ parse-anything 현 구현)
 
+> **[STALE — 트랜치-3 착수 이전 스냅샷]** 현재(2026-07-10) FR별 패리티는
+> [semantic-captioning-status.md](./semantic-captioning-status.md)를 참조. 이 문서는 착수 시점
+> 기준선(baseline)으로 보존한다.
+>
 > [semantic-captioning-plan.md](./semantic-captioning-plan.md)의 기능 요구사항(FR-1~8)을 현재
 > parse-anything 구현과 대조한 갭 분석. 코드 근거는 조사 시점 기준(`src/parse_anything/`), file:line은
 > 변동 가능하므로 사용 전 재확인. 참조 상용 파서 관련 구체 분석은 커밋하지 않는다(로컬 전용).
