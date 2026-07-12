@@ -34,6 +34,24 @@ def test_assets_crops_figure_image_and_sets_pointer(tmp_path):
     assert doc["figures"][0]["id"] == "p1_i1" and doc["figures"][0]["file"] == "assets/p1_i1.png"
 
 
+def test_page_covering_scan_image_is_not_emitted_as_figure(tmp_path):
+    pdf = _one_page_pdf(tmp_path / "scan.pdf")
+    page_image = OdlImage(0, (0.0, 0.0, letter[0], letter[1]), element_id="1", kind="image")
+    structure = OdlDocument(1, (OdlPage(0, "", (), (page_image,)),))
+    meta = DocumentMeta("idscanpageimage", "idscanpageimageff", "scan.pdf", n_pages=1, mode="det_vlm")
+    result = DocumentResult((PageOutcome(0, "det_vlm", True, "OCR text", 0.0, ()),), structure=structure, meta=meta)
+
+    out = document_dir(tmp_path, result)
+    write_outputs(result, out, pdf_path=pdf)
+
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert doc["figures"] == []
+    assert doc["pages"][0]["figures"] == []
+    assert doc["pages"][0]["content"] == []
+    assert not (out / "assets" / "p1_1.png").exists()
+    assert "![" not in (out / "document.md").read_text(encoding="utf-8")
+
+
 def test_rich_output_document_json_and_tables(tmp_path):
     table = OdlTable(0, 2, 2, (50, 500, 400, 600), (("H", "V"), ("a", "1")), label="표 1", caption="cap",
                      cell_boxes=(((10, 10, 20, 20), (30, 10, 40, 20)), ((10, 30, 20, 40), (30, 30, 40, 40))))
@@ -136,6 +154,40 @@ def test_document_json_carries_specialized_ocr_routing_hints(tmp_path):
             "reason": "stamp",
         },
     ]
+
+
+def test_specialized_ocr_transcribes_routed_figure_crop(tmp_path):
+    pdf = _one_page_pdf(tmp_path / "d.pdf")
+    figure = OdlImage(
+        0,
+        (72, 520, 180, 620),
+        element_id="stamp",
+        label="Approval stamp",
+        caption="Approval stamp with handwritten signature",
+        kind="stamp",
+    )
+    structure = OdlDocument(1, (OdlPage(0, "", (), (figure,)),))
+    meta = DocumentMeta("idrouteocr123456", "idrouteocr123456ff", "d.pdf", n_pages=1, mode="deterministic")
+    result = DocumentResult((PageOutcome(0, "deterministic", False, "", 0.0, ()),), structure=structure, meta=meta)
+    seen: list[bytes] = []
+
+    def special_ocr(image: bytes) -> str:
+        seen.append(image)
+        return "APPROVED by Kim"
+
+    out = document_dir(tmp_path, result)
+    write_outputs(result, out, pdf_path=pdf, special_ocr=special_ocr, chunk=False)
+
+    doc = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    fig = doc["figures"][0]
+    assert seen and seen[0].startswith(b"\x89PNG")
+    assert fig["ocr_text"] == "APPROVED by Kim"
+    assert fig["ocr_provider"] == "doc_specialized_ocr"
+    assert fig["ocr_reasons"] == ["handwriting", "stamp"]
+
+    sem = json.loads((out / "document.semantic.json").read_text(encoding="utf-8"))
+    node = next(n for n in sem["nodes"] if n["id"] == "p1_stamp")
+    assert node["ocr_text"] == "APPROVED by Kim"
 
 
 def _result() -> DocumentResult:

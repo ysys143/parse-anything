@@ -32,6 +32,9 @@ import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
+
+import restore_scan_figures
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHIM = os.path.join(HERE, "shim_server.py")
@@ -283,6 +286,13 @@ def main() -> int:
                 os.path.join(mdir, f"metrics_{tag}.jsonl"), served, parse_extra, pipeline,
             )
             _append(summary_path, {"model": mid, "doc": tag, **res})
+        if args.scan:
+            restored = restore_scan_figures.restore_model_dir(Path(mdir), Path(args.scan))
+            if restored["restored_figures"]:
+                log(
+                    "restored scan figures from born template: "
+                    f"{restored['restored_figures']} figures in {restored['restored_documents']} document(s)"
+                )
         stop_runner(m, proc)
         log(f"{mid} done; VRAM freed")
 

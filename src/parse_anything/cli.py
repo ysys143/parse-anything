@@ -153,13 +153,17 @@ def _run(args, runtime: Runtime, *, env_file: Path | None = None) -> int:
         primary=args.primary, whole_doc=args.whole_doc,
     )
 
-    # PaddleOCR (local-file upload) as the det_vlm primary transcriber (R10 --primary paddle), when configured.
-    primary_transcribe = None
-    if mode == "det_vlm" and options.primary == "paddle" and settings.paddle_api_key and settings.paddle_base_url:
+    paddle_transcribe = None
+    if settings.has_paddle:
         from parse_anything.pipeline.paddle_vlm import make_transcriber
 
-        primary_transcribe = make_transcriber(safe_client(runtime), base_url=settings.paddle_base_url,
-                                              token=settings.paddle_api_key, model=settings.paddle_model or "PaddleOCR-VL-1.6")
+        paddle_transcribe = make_transcriber(safe_client(runtime), base_url=settings.paddle_base_url or "",
+                                             token=settings.paddle_api_key or "",
+                                             model=settings.paddle_model or "PaddleOCR-VL-1.6")
+
+    primary_transcribe = None
+    if mode == "det_vlm" and options.primary == "paddle":
+        primary_transcribe = paddle_transcribe
 
     # whole-doc: a one-shot multi-image transcriber (OpenAI /v1 at PADDLE_BASE_URL) so a model like
     # Unlimited-OCR (infer_multi) transcribes the whole document in one call and the substrate wraps it.
@@ -195,7 +199,8 @@ def _run(args, runtime: Runtime, *, env_file: Path | None = None) -> int:
     ontology = load_ontology(args.ontology or "default", bundled_ontology_root())
     write_outputs(result, out_dir, pdf_path=args.pdf, arithmetic=options.arithmetic,
                   inline_figures=not args.no_inline_figures, headings=not args.no_headings,
-                  describe_figure=describe_figure, ontology=ontology, chunk=not args.no_chunks)
+                  describe_figure=describe_figure, special_ocr=paddle_transcribe,
+                  ontology=ontology, chunk=not args.no_chunks)
     if args.review:
         from parse_anything.pipeline.review import write_review
 

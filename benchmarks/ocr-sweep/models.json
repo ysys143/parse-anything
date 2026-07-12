@@ -103,7 +103,7 @@
     {
       "id": "datalab-to/chandra-ocr-2",
       "backend": "vllm_docker",
-      "vllm_image": "vllm/vllm-openai:latest",
+      "vllm_image": "vllm/vllm-openai:v0.17.0",
       "served_name": "model",
       "serve_args": [
         "--dtype",

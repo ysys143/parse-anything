@@ -18,7 +18,7 @@ from typing import Any
 # MINOR bumps on additive fields. Consumers gate on MAJOR (see check_compatible).
 # v1.1: StructureExport gains context/zones; ChunkRecord gains the parent/child small-to-big model
 # (level/children/prev/next/is_continuation/page_span via source_refs/display_text/embedding_text/tokenizer).
-STRUCTURE_CONTRACT: tuple[str, str] = ("parse-anything.structure", "1.3")  # +Figure.diagram_graph (additive)
+STRUCTURE_CONTRACT: tuple[str, str] = ("parse-anything.structure", "1.4")
 CHUNK_CONTRACT: tuple[str, str] = ("parse-anything.chunks", "1.1")
 # Layer 2 clean projection + its geometry sidecar (the two artifacts PR #4's pipeline actually produces).
 SEMANTIC_CONTRACT: tuple[str, str] = ("parse-anything.semantic", "1.0")
@@ -166,6 +166,9 @@ class Figure:
     description_flags: list[str] | None = None  # §5-A: description numbers absent from chart_data
     kind_confidence: str | None = None          # FR-2: "low" when the vector chart/diagram call is thin
     diagram_graph: dict | None = None           # FR-5.3/5.4: {nodes, edges} of a vector diagram
+    ocr_text: str | None = None
+    ocr_provider: str | None = None
+    ocr_reasons: list[str] | None = None
     section: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -176,6 +179,7 @@ class Figure:
             "source": self.source, "description": self.description,
             "chart_data": self.chart_data, "description_flags": self.description_flags,
             "kind_confidence": self.kind_confidence, "diagram_graph": self.diagram_graph,
+            "ocr_text": self.ocr_text, "ocr_provider": self.ocr_provider, "ocr_reasons": self.ocr_reasons,
             "section": self.section,
         })
 

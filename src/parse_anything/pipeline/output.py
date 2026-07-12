@@ -100,6 +100,8 @@ def interleave_figures(markdown: str, figs: list[dict], blocks: tuple) -> str:
             ref += "\n\n" + cap
         if fig.get("description"):  # a VLM text description of the chart, as a blockquote under the image
             ref += "\n\n> " + " ".join(fig["description"].split())
+        if fig.get("ocr_text"):
+            ref += "\n\n> OCR: " + " ".join(str(fig["ocr_text"]).split())
         if not blocks:
             end_refs.append(ref)
             continue
@@ -260,6 +262,9 @@ def _consolidate_figure_units(markdown: str) -> str:
                     source = j
                     remove.add(j)
                     break
+                if _PAGE_MARKER.match(bs):
+                    j += 1
+                    continue
                 if bs.startswith(("![", "#")):
                     break
                 cap_parts.append(j)
@@ -307,6 +312,8 @@ def _consolidate_figure_units(markdown: str) -> str:
                 break
             if src is not None:                                # proof it is a figure unit -> commit tail+source
                 for k in scan:
+                    if _PAGE_MARKER.match(blocks[k].strip()):
+                        continue
                     cap_parts.append(k)
                     remove.add(k)
                 source = src
@@ -402,7 +409,7 @@ def _assemble_document(pages: Sequence[tuple[str | None, str]]) -> str:
     """Assemble per-page Markdown into one continuous document. The page boundary is a physical PDF
     artifact, not document structure, so a sentence wrapped across it is STITCHED back (the same
     continuation rule reflow uses within a page, plus a terminator check since the page break carries
-    no blank-line signal). Each page is marked with an invisible ``<!-- page N -->`` comment (printed
+    no blank-line signal). Each page is marked with an invisible ``<!-- page N -->`` comment (physical
     label) so provenance survives without interrupting the prose. The per-page files keep the splits."""
     out = ""
     for i, (label, md) in enumerate(pages):
@@ -427,9 +434,8 @@ def _assemble_document(pages: Sequence[tuple[str | None, str]]) -> str:
             and "|" not in last and "|" not in first \
             and not _no_fold_into(last) and not _starts_unit(first) \
             and not _starts_figure_unit(first)  # a caption/image opening a page is its own block
-        if stitch:  # mid-sentence wrap -> join the fragments, marker invisibly between them
-            sep = "" if (_is_cjk(last[-1:]) or _is_cjk(first.lstrip()[:1])) else " "
-            out = f"{out}{marker}{sep}{first.lstrip()}{rest}"
+        if stitch:
+            out = f"{out}\n\n{marker}\n\n{first.lstrip()}{rest}" if marker else f"{out}\n\n{md}"
         else:
             out = f"{out}\n\n{marker}\n\n{md}" if marker else f"{out}\n\n{md}"
     return out
@@ -445,6 +451,7 @@ def _default_ontology():
 def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str | None = None,
                   arithmetic: bool = True, inline_figures: bool = True, headings: bool = True,
                   describe_figure: "Callable[[bytes, str | None], str] | None" = None,
+                  special_ocr: "Callable[[bytes], str] | None" = None,
                   ontology: "Ontology | None" = None, chunk: bool = True) -> None:
     out = Path(out_dir)
     pages_dir = out / "pages"
@@ -468,6 +475,8 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     if result.meta is not None and result.structure is not None:
         labels_by_page = {p.page_index: p.labels for p in result.pages}
         pages_meta, blocks, tables, figures = build_graph(result.structure, labels_by_page, arithmetic=arithmetic)
+        if pdf_path and not _is_image_wrapped_result(result):
+            _drop_page_covering_image_figures(pages_meta, figures, pdf_path)
         for t in tables:  # per-table view files are named by the table's graph id
             t["views"] = {"md": f"tables/{t['id']}.md", "json": f"tables/{t['id']}.json",
                           "html": f"tables/{t['id']}.html"}   # FR-4.2: span-preserving view
@@ -514,6 +523,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
             _add_page_raster_figures(pages_meta, figures, result, pdf_path)
         _write_assets(out, figures, pdf_path)  # fills each figure["file"]
         _bind_vector_captions(figures, blocks)  # 図N label + caption text (both modes)
+        _apply_special_ocr(figures, out, special_ocr)
         if describe_figure is not None:  # VLM figure judgement (det_vlm): whether a crop is meaningful
             # CONTENT (chart/diagram/photo/table) or DECORATION (icon/logo/divider/background) is a
             # semantic call, not a size one -- two same-size crops can differ -- so let the VLM decide.
@@ -528,7 +538,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
                     verdict = describe_figure((out / f["file"]).read_bytes(), f.get("caption")).strip()
                 except Exception:  # noqa: BLE001 -- a failed call must not abort the run; keep the figure
                     verdict = ""
-                if verdict.upper().startswith("DECORATION"):
+                if verdict.upper().startswith("DECORATION") and not f.get("ocr_text"):
                     continue                                  # ornamental crop -> drop, it carries no info
                 kind, desc = _split_figure_kind(verdict)      # B0b: 'KIND: X' first line, then description
                 if desc:  # FR-3.2: keep the description for ANY content figure (raster too), not just vector;
@@ -612,7 +622,7 @@ def write_outputs(result: DocumentResult, out_dir: str | Path, *, pdf_path: str 
     # so it stays contiguous instead of scattered through the body and split at the page break; the
     # per-page files above keep each page's own content. A no-op when no such column is detected.
     doc_md_by_index = consolidate_front_matter(md_by_index, blocks_by_page)
-    pages_doc = [(page_labels.get(pi) or str(pi + 1), doc_md_by_index[pi]) for pi, _ in rendered]
+    pages_doc = [(str(pi + 1), doc_md_by_index[pi]) for pi, _ in rendered]
     (out / "document.md").write_text(
         _stitch_broken_paragraphs(_consolidate_figure_units(
             _detach_image_from_trailing_text(_assemble_document(pages_doc)))), encoding="utf-8")
@@ -947,6 +957,54 @@ def _write_assets(out: Path, figures: list[dict], pdf_path: str | None, *, scale
         doc.close()
 
 
+def _bbox_covers_page(bbox: Sequence[float], page_width: float, page_height: float) -> bool:
+    x0, y0, x1, y1 = (float(v) for v in bbox)
+    width = max(0.0, x1 - x0)
+    height = max(0.0, y1 - y0)
+    page_area = page_width * page_height
+    if page_area <= 0.0:
+        return False
+    edge_margin = max(4.0, min(page_width, page_height) * 0.04)
+    touches_page_edges = (
+        x0 <= edge_margin
+        and y0 <= edge_margin
+        and x1 >= page_width - edge_margin
+        and y1 >= page_height - edge_margin
+    )
+    return touches_page_edges and (width * height / page_area) >= 0.85
+
+
+def _drop_page_covering_image_figures(pages_meta: dict[int, dict], figures: list[dict], pdf_path: str) -> None:
+    if not figures:
+        return
+    import pypdfium2 as pdfium
+
+    dropped: set[object] = set()
+    doc = pdfium.PdfDocument(pdf_path)
+    try:
+        for fig in figures:
+            if str(fig.get("kind") or "").lower() != "image" or fig.get("source") == "page_raster":
+                continue
+            bbox = fig.get("bbox")
+            page = fig.get("page")
+            if not bbox or len(bbox) != 4 or page is None:
+                continue
+            pi = int(page) - 1
+            if pi < 0 or pi >= len(doc):
+                continue
+            page_width, page_height = doc[pi].get_size()
+            if _bbox_covers_page(bbox, float(page_width), float(page_height)):
+                dropped.add(fig["id"])
+    finally:
+        doc.close()
+    if not dropped:
+        return
+    figures[:] = [f for f in figures if f.get("id") not in dropped]
+    for meta in pages_meta.values():
+        for key in ("figures", "content"):
+            meta[key] = [node_id for node_id in meta.get(key, []) if node_id not in dropped]
+
+
 def _is_image_wrapped_result(result: DocumentResult) -> bool:
     if result.meta is None:
         return False
@@ -1113,6 +1171,12 @@ def _build_semantic(blocks: list[dict], tables: list[dict], figures: list[dict],
             node["chart_data"] = f["chart_data"]
         if f.get("diagram_graph"):  # FR-5.3/5.4: nodes + (undirected) connector edges of a diagram
             node["diagram_graph"] = f["diagram_graph"]
+        if f.get("ocr_text"):
+            node["ocr_text"] = f["ocr_text"]
+        if f.get("ocr_provider"):
+            node["ocr_provider"] = f["ocr_provider"]
+        if f.get("ocr_reasons"):
+            node["ocr_reasons"] = f["ocr_reasons"]
         # description gate flags -- own if present, else the grafted figure's (never emit a description ungated)
         dflags = f.get("description_flags") or (grafted[1] if grafted else None)
         if dflags:
@@ -1254,7 +1318,8 @@ def _chunk_node_text(n: dict) -> str:
     if t == "table":
         return f"[{n.get('label') or 'Table'}]"
     if t == "figure":
-        return f"[{n.get('label') or 'Figure'}] {n.get('caption') or n.get('description') or ''}".strip()
+        text = n.get("ocr_text") or n.get("caption") or n.get("description") or ""
+        return f"[{n.get('label') or 'Figure'}] {text}".strip()
     return n.get("text", "")
 
 
@@ -1496,10 +1561,7 @@ def _special_ocr_routing_hints(blocks: list[dict], figures: list[dict]) -> list[
         bbox = node.get("bbox")
         if not target or page is None or not bbox:
             continue
-        text = " ".join(str(node.get(k) or "") for k in ("type", "kind", "label", "caption", "description", "text")).lower()
-        for reason, keywords in _SPECIAL_OCR_HINTS:
-            if not any(k in text for k in keywords):
-                continue
+        for reason in _special_ocr_reasons(node):
             key = (target, reason)
             if key in seen:
                 continue
@@ -1514,6 +1576,38 @@ def _special_ocr_routing_hints(blocks: list[dict], figures: list[dict]) -> list[
     return hints
 
 
+def _special_ocr_reasons(node: dict) -> list[str]:
+    text = " ".join(str(node.get(k) or "") for k in ("type", "kind", "label", "caption", "description", "text")).lower()
+    return [reason for reason, keywords in _SPECIAL_OCR_HINTS if any(k in text for k in keywords)]
+
+
+def _apply_special_ocr(figures: list[dict], out: Path, special_ocr: "Callable[[bytes], str] | None") -> None:
+    if special_ocr is None:
+        return
+    for figure in figures:
+        reasons = _special_ocr_reasons(figure)
+        file_ref = figure.get("file")
+        if not reasons or not file_ref:
+            continue
+        try:
+            text = special_ocr((out / str(file_ref)).read_bytes()).strip()
+        except (OSError, RuntimeError):
+            continue
+        if text:
+            figure["ocr_text"] = text
+            figure["ocr_provider"] = "doc_specialized_ocr"
+            figure["ocr_reasons"] = reasons
+
+
+def _stable_page_label(label: str | None, page_number: int) -> str | None:
+    if label is None:
+        return None
+    stripped = label.strip()
+    if re.fullmatch(r"-?\d+", stripped) and int(stripped) <= 0:
+        return str(page_number)
+    return label
+
+
 def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int, dict],
                          blocks: list[dict], tables: list[dict], figures: list[dict],
                          sections: list[dict], page_labels: dict[int, str | None],
@@ -1525,7 +1619,7 @@ def _write_document_json(out: Path, result: DocumentResult, pages_meta: dict[int
     doc["pages"] = [
         {
             "page_index": p.page_index, "page_number": p.page_index + 1,
-            "page_label": page_labels.get(p.page_index),
+            "page_label": _stable_page_label(page_labels.get(p.page_index), p.page_index + 1),
             "mode": p.route, "used_vlm": p.used_vlm, "flags": list(p.flags),
             "markdown_file": f"pages/page-{p.page_index:03d}.md",
             "content": pages_meta.get(p.page_index, {}).get("content", []),

@@ -69,6 +69,27 @@ def test_figure_chart_data_and_description_flags_survive_round_trip():
     assert "chart_data" not in plain and "description_flags" not in plain
 
 
+def test_figure_specialized_ocr_fields_survive_round_trip():
+    fig = Figure(
+        id="p1_stamp",
+        page=1,
+        order=2,
+        kind="stamp",
+        ocr_text="APPROVED by Kim",
+        ocr_provider="doc_specialized_ocr",
+        ocr_reasons=["handwriting", "stamp"],
+    )
+    d = fig.to_dict()
+    assert d["ocr_text"] == "APPROVED by Kim"
+    assert d["ocr_provider"] == "doc_specialized_ocr"
+    assert d["ocr_reasons"] == ["handwriting", "stamp"]
+    assert Figure.from_dict(d).to_dict() == d
+
+    exp = StructureExport.from_dict({"figures": [d], "document": {}, "pages": [], "sections": [],
+                                     "blocks": [], "tables": [], "roles": {}})
+    assert exp.figures[0].ocr_text == "APPROVED by Kim"
+
+
 def test_compact_omits_none_optionals():
     d = Block(id="b", type="paragraph", page=1, order=0, bbox=[0, 0, 1, 1], text="x").to_dict()
     assert "font_size" not in d and "section" not in d and "refs" not in d
@@ -190,6 +211,6 @@ def test_structure_export_carries_context_and_zones():
                           context={"doco": "http://purl.org/spar/doco/"},
                           zones=[{"zone": "references", "pages": [9, 10]}])
     d = exp.to_dict()
-    assert d["contract"]["version"] == "1.3"  # bumped for Figure.diagram_graph (additive)
+    assert d["contract"]["version"] == "1.4"
     assert d["@context"]["doco"].endswith("/doco/") and d["zones"][0]["zone"] == "references"
     assert StructureExport.from_dict(d).to_dict() == d

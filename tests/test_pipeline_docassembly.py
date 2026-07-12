@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from parse_anything.pipeline.output import _assemble_document
+from parse_anything.pipeline.output import _assemble_document, _stable_page_label
 
 
 def test_stitches_midsentence_page_break_with_invisible_marker():
     doc = _assemble_document([("128", "本文が家電産業の"), ("129", "製造工程について。")])
     assert doc.startswith("<!-- page 128 -->")
-    assert "家電産業の<!-- page 129 -->製造工程について。" in doc   # CJK join, marker invisibly between
+    assert "家電産業の\n\n<!-- page 129 -->\n\n製造工程について。" in doc
+
+
+def test_nonpositive_numeric_page_labels_fall_back_to_physical_page_number():
+    assert _stable_page_label("-13", 1) == "1"
+    assert _stable_page_label("0", 7) == "7"
+    assert _stable_page_label("iv", 4) == "iv"
+    assert _stable_page_label(None, 4) is None
 
 
 def test_paragraph_break_when_sentence_completes_on_the_page():
@@ -21,7 +28,7 @@ def test_does_not_stitch_a_continuation_into_a_heading_or_table():
 
 def test_latin_text_joins_with_a_space():
     doc = _assemble_document([("1", "the quick brown"), ("2", "fox jumped.")])
-    assert "the quick brown<!-- page 2 --> fox jumped." in doc   # space sep for non-CJK
+    assert "the quick brown\n\n<!-- page 2 -->\n\nfox jumped." in doc
 
 
 def test_url_split_across_a_page_break_is_rejoined():
@@ -62,6 +69,7 @@ def test_consolidate_merges_split_caption_and_source_into_figure_unit():
     assert blocks[0].startswith("![Fig 2]")                  # image first
     assert "**Fig 2. Title.**" in blocks[1] and "tail part here." in blocks[1] and "<!-- page" not in blocks[1]
     assert "Source: https://doi.org/x.g002" in blocks[1]     # source attached to the caption (no blank line)
+    assert "<!-- page 3 -->" in blocks
     assert "Body paragraph after the figure." in "\n\n".join(blocks)
 
 

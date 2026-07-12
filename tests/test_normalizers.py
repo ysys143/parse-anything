@@ -91,6 +91,50 @@ def test_normalize_paddle_accepts_markdown_as_plain_string():
     assert page.markdown == "## Plain string markdown"
 
 
+def test_normalize_paddle_cleans_plain_string_markdown():
+    result = {
+        "layoutParsingResults": [
+            {
+                "markdown": (
+                    "CorrectiveFeedbackCSNL\n\n"
+                    "## PLOS BIOLOGY\n\n"
+                    "## 6\n\n"
+                    "## figure\n\n"
+                    "This figure depicts an experimental timeline with fixation and feedback.\n\n"
+                    "figure benefits of transparency in the peer review process; therefore, metadata follows. "
+                    "Copyright: © 2023 Lee et al. Data Availability Statement: Raw data are available.\n\n"
+                    "## Introduction\n\n"
+                    "Perceptual decision-making means committing to a proposition about an objective world state.\n\n"
+                    "### Introduction\n\n"
+                    "Perceptual decision-making means committing to a proposition about an objective world state.\n\n"
+                    "11. 2017年1月1日Introduction Perceptual decision-making means committing to a proposition "
+                    "about an objective world state.\n\n"
+                    "Copyright: © 2023 Lee et al.\n\n"
+                    "Data Availability Statement: Raw data are available at https://doi.\n\n"
+                    "org/10.5281/zenodo.8427373)."
+                )
+            }
+        ]
+    }
+
+    # When
+    page = normalize_paddle(result)
+
+    # Then
+    assert "CorrectiveFeedbackCSNL" not in page.markdown
+    assert "PLOS BIOLOGY" not in page.markdown
+    assert "## 6" not in page.markdown
+    assert "## figure" not in page.markdown
+    assert "This figure depicts" not in page.markdown
+    assert "benefits of transparency" not in page.markdown
+    assert "2017年1月1日Introduction" not in page.markdown
+    assert page.markdown.count("Introduction") == 1
+    assert page.markdown.count("Perceptual decision-making means") == 1
+    assert "Copyright:" not in page.markdown
+    assert "Data Availability Statement:" not in page.markdown
+    assert "org/10.5281/zenodo" not in page.markdown
+
+
 def test_normalize_paddle_empty_result_returns_empty_markdown():
     # When
     page = normalize_paddle({"layoutParsingResults": []})
@@ -144,6 +188,91 @@ def test_normalize_transcription_markdown_drops_ref_det_and_frontmatter():
     assert "Body text" in page
 
 
+def test_normalize_transcription_markdown_drops_unresolved_local_image_refs():
+    page = normalize_transcription_markdown(
+        "Before\n\n"
+        "![Diagram showing a generated crop](page_613_1042_1012_388.png)\n\n"
+        "![real crop](assets/p4_1.png)\n\n"
+        "After"
+    )
+
+    assert "page_613_1042_1012_388.png" not in page
+    assert "![Diagram showing a generated crop]" not in page
+    assert "![real crop](assets/p4_1.png)" in page
+    assert "Before" in page and "After" in page
+
+
+def test_normalize_transcription_markdown_drops_standalone_det_line():
+    page = normalize_transcription_markdown("Body\n\n<|det|>image [800\n\nNext <|ref|>anchor")
+
+    assert "<|det|>" not in page
+    assert "<|ref|>" not in page
+    assert "image [800" not in page
+    assert "Body" in page
+    assert "Next anchor" in page
+
+
+def test_normalize_transcription_markdown_strips_plos_running_furniture():
+    page = normalize_transcription_markdown(
+        "PLOS BIOLOGY | Corrective feedback on perceptual decisions body starts here\n"
+        "PLOS Biology | https://doi.org/10.1371/journal.pbio.3002373 November 8, 2023 7 / 32\n"
+        "# 7 / 32\n"
+        "<page_number>8 / 32</page_number>\n"
+        "Body continues"
+    )
+
+    assert "PLOS BIOLOGY" not in page
+    assert "PLOS Biology | https://doi.org" not in page
+    assert "7 / 32" not in page
+    assert "8 / 32" not in page
+    assert "body starts here" in page
+    assert "Body continues" in page
+
+
+def test_normalize_transcription_markdown_strips_furniture_after_vendor_markup():
+    page = normalize_transcription_markdown(
+        '<div data-bbox="1 2 3 4" data-label="Page-Header">'
+        "PLOS BIOLOGY _____ Corrective feedback on perceptual decisions"
+        "</div>"
+        '<div data-bbox="1 2 3 4" data-label="Text"><p>Body starts.</p></div>'
+        "<x_0.1543><y_0.4555>"
+        "PLOS Biology | https://doi.org/10.1371/journal.pbio.3002373 November 8, 2023 1 / 32"
+        "<x_0.7051><y_0.4672><class_Page-footer>"
+    )
+
+    assert "PLOS BIOLOGY" not in page
+    assert "PLOS Biology | https://doi.org" not in page
+    assert "1 / 32" not in page
+    assert "Body starts." in page
+
+
+def test_normalize_transcription_markdown_strips_split_plos_furniture():
+    page = normalize_transcription_markdown(
+        "PLOS BIOLOGY\n"
+        "Corrective feedback on perceptual decisions Here, we tested the feedback computations.\n"
+        "Corrective feedback on perceptual decisions PLOS Biology | "
+        "https://doi.org/10.1371/journal.pbio.3002373\n"
+        "November 8, 2023 32 / 32\n"
+        "32 / 32 figure\n"
+        "Final paragraph."
+    )
+
+    assert "PLOS BIOLOGY" not in page
+    assert "Corrective feedback on perceptual decisions" not in page
+    assert "https://doi.org/10.1371/journal.pbio.3002373" not in page
+    assert "32 / 32" not in page
+    assert "Here, we tested the feedback computations." in page
+    assert "Final paragraph." in page
+
+
+def test_normalize_transcription_markdown_strips_orphan_plos_footer_stem():
+    page = normalize_transcription_markdown("Body\nPLOS Biology |<br>\nNext")
+
+    assert "PLOS Biology" not in page
+    assert "Body" in page
+    assert "Next" in page
+
+
 def test_normalize_transcription_markdown_converts_html_layout_blocks():
     page = normalize_transcription_markdown(
         '<div data-bbox="22 0 960 93" data-label="Text"><p>Hello <math>x</math></p></div>'
@@ -161,3 +290,19 @@ def test_normalize_transcription_markdown_keeps_clean_markdown():
     markdown = "# Heading\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n[figure]"
 
     assert normalize_transcription_markdown(markdown) == markdown
+
+
+def test_normalize_transcription_markdown_dedupes_scan_page_repeats():
+    markdown = (
+        "## Introduction\n\n"
+        "Perceptual decision-making (PDM) means committing to a proposition about an objective world state. "
+        "Decision-makers adjust future commitments based on past commitments.\n\n"
+        "### Introduction\n\n"
+        "Perceptual decision-making (PDM) means committing to a proposition about an objective world state. "
+        "Decision-makers adjust future commitments based on past commitments."
+    )
+
+    page = normalize_transcription_markdown(markdown)
+
+    assert page.count("Introduction") == 1
+    assert page.count("Perceptual decision-making") == 1

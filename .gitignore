@@ -239,6 +239,7 @@ ledger.jsonl
 benchmarks/**/results/
 demo/out/
 /results/
+/results-from-vm/
 /profiles/
 
 # Local measurement prototypes + data (incl. private documents). Never committed.
